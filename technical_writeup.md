@@ -54,7 +54,7 @@ Below is a detailed comparison of the two methods.
 3. Run the `l10_test.sh` automated script.
 4. Scan the system’s BMC MAC address, HOST MAC address, and Service Tag (all found on the system label).
 
-The automated script handles booting, OS deployment, running the test, log retention, and error reporting.  
+Done - The automated script handles booting, OS deployment, running the test, log retention, and error reporting.  
 If issues arise, the script provides clear guidance on possible causes and corrective actions.
 
 ---
