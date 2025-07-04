@@ -1,6 +1,6 @@
 # L10 Test Process Overview
 
-The original method for running the L10 test was time-consuming and error-prone, requiring ~2 hours to complete and 20–30 minutes of active operator time. To improve efficiency and reduce errors, a new automated process was developed, currently in use at Franklin and TSS, which reduces total test time to ~1 hour 35 minutes and minimizes operator involvement.
+The original method for running the L10 test was time-consuming and error-prone, requiring ~2 hours to complete and 20–30 minutes of active operator time. To improve efficiency and eliminates user error, a new automated process was developed, currently in use at Franklin and TSS, which reduces total test time to ~1 hour 35 minutes and minimizes operator involvement.
 
 Below is a detailed comparison of the two methods.
 
@@ -54,7 +54,7 @@ Below is a detailed comparison of the two methods.
 3. Run the `l10_test.sh` automated script.
 4. Scan the system’s BMC MAC address, HOST MAC address, and Service Tag (all found on the system label).
 
-That’s it — the automated script handles booting, OS deployment, running the test, log retention, and error reporting.  
+The automated script handles booting, OS deployment, running the test, log retention, and error reporting.  
 If issues arise, the script provides clear guidance on possible causes and corrective actions.
 
 ---
