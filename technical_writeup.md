@@ -67,3 +67,37 @@ If issues arise, the script provides clear guidance on possible causes and corre
 ✅ Simplifies log collection and reporting  
 
 The automated method is now the preferred approach for running L10 tests, ensuring greater efficiency, reliability, and ease of use.
+
+---
+
+# Technical Details
+
+Understanding how the automated process works is key to verifying it’s functioning properly. Below is a step-by-step breakdown of what the script does behind the scenes:
+
+1. **Check BMC DHCP Lease**  
+   When the script starts, it polls the DHCP server to see if an IP address has been assigned to the system’s **BMC MAC address**.
+
+2. **BMC Powers On and Requests IP**  
+   As soon as the system is powered on with all Ethernet cables connected, the BMC automatically powers up and requests an IP address from the DHCP server.
+
+3. **Verify BMC Response via IPMI**  
+   Once the script detects a valid DHCP lease for the BMC, it queries the BMC at that IP until it receives a valid IPMI response.
+
+4. **Configure PXE Boot and Power On Host**  
+   After confirming BMC communication, the script sets the boot device to PXE and sends a power-on command to the host system via IPMI.
+
+5. **Check HOST DHCP Lease**  
+   The script then monitors the DHCP server to see if the **HOST MAC address** has been assigned an IP.
+
+6. **PXE Boot and OS Load**  
+   Once the host begins booting via PXE, it requests an IP from DHCP, downloads the PXE image of the L10 OS into memory, and boots into it.
+
+7. **Verify HOST OS Readiness via SSH**  
+   The script continuously checks if port 22 (SSH) is open on the host, indicating that the L10 OS is fully booted and ready.
+
+8. **Run L10 Test**  
+   Once SSH access is confirmed, the script connects to the host and runs the L10 test program, using the appropriate modules for the system configuration.
+
+9. **Collect Logs and Shut Down**  
+   The L10 test runs for approximately 1.5 hours. When complete, the script retrieves the logs via SCP, saving them in a folder named after the system’s service tag, then powers off the system.
+
