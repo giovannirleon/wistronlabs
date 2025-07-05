@@ -38,4 +38,21 @@ This script remotely controls the host system’s power state or checks its curr
 - `-i IP_ADDRESS` — Specify the BMC by its **IP address**.
 - `-m MAC_ADDRESS` — Specify the BMC by its **MAC address**.
 
+---
+
+# `check_station.sh`
+
+This script checks the current status of a specified station.
+
+The status can be one of the following:
+1. No TMUX session is running on the station.
+2. A TMUX session is running, but no L10 test is in progress.
+3. An L10 test is currently running on the station.
+
+## Usage
+
+```bash
+./check_station.sh <station_number>
+
+
 
