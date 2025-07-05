@@ -103,3 +103,41 @@ Understanding how the automated process works is key to verifying it’s functio
 9. **Collect Logs and Shut Down**  
    The L10 test runs for approximately 1.5 hours. When complete, the script retrieves the logs via SCP, saving them in a folder named after the system’s service tag, then powers off the system.
 
+---
+
+# Improvements
+
+## 1. Module Selectability
+
+When a system fails the L10 test, it can be due to one or more failing test modules. Some modules, like `CPUGPUPulsePower`, take a long time to run, while others, like `SSD`, only take a few seconds.  
+
+Previously, if the `SSD` module failed (e.g., due to a faulty SSD or connection), the operator would fix the hardware issue and then have to rerun the **entire** 1 hour 30-minute L10 test — even though the failing module only took seconds.  
+
+To save time and avoid rerunning unnecessary tests, an `-o` (options) flag was added to the L10 test script. When the script is run with this flag, it prompts the operator to select which specific modules to rerun, instead of executing the full test suite.  
+
+**Example:**  
+*(Include example usage/output here if available)*
+
+---
+
+## 2. Implementation of TMUX
+
+SSH is a command-line tool that allows operators to securely connect to the L10 server from their own computers and run commands remotely.  
+
+However, SSH connections are **not persistent** — if the operator’s connection drops, any running scripts or programs on that session also terminate.  
+For example, if an L10 test is 1 hour 20 minutes into its run and the SSH connection is lost, the test would have to be restarted from the beginning.  
+
+This issue is addressed by using **TMUX**, a *terminal multiplexer*. TMUX creates a persistent, virtual terminal session that runs directly on the L10 server.  
+
+### How it works
+- The operator SSHs into the L10 server and attaches to their station’s TMUX session.
+- All scripts and programs run inside the TMUX session on the server.
+- If the SSH connection drops, the TMUX session — and the running test — continues uninterrupted.
+- The operator can reconnect at any time and reattach to their session to resume monitoring.
+
+### Benefits
+✅ Tests continue running even if the operator disconnects  
+✅ No need to restart long-running tests due to connection loss  
+✅ Multiple operators can attach to the same TMUX session for collaboration or support
+
+
