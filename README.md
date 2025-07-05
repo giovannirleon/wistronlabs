@@ -11,7 +11,31 @@ Accessing the BIOS serial console is useful for advanced troubleshooting during 
 ./bios_serial.sh <-i IP_ADDRESS | -m MAC_ADDRESS>
 ```
 
-## Options
+## Required Options (choose one)
 
-- `-i` — Specify the BMC by its **IP address**.
-- `-m` — Specify the BMC by its **MAC address**.
+- `-i IP_ADDRESS` — Specify the BMC by its **IP address**.
+- `-m MAC_ADDRESS` — Specify the BMC by its **MAC address**.
+
+---
+
+# `chassis_power.sh`
+
+This script remotely controls the host system’s power state or checks its current power status.
+
+## Usage
+
+```bash
+./chassis_power.sh <on|off|status> <-i IP_ADDRESS | -m MAC_ADDRESS>
+```
+
+## Commands
+- `on` — Power on the system.
+- `off` — Power off the system.
+- `status` — Display the system’s current power status.
+  
+## Required Options (choose one)
+
+- `-i IP_ADDRESS` — Specify the BMC by its **IP address**.
+- `-m MAC_ADDRESS` — Specify the BMC by its **MAC address**.
+
+
