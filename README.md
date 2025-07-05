@@ -85,4 +85,16 @@ This is useful when the DHCP server reassigns IP addresses to different systems,
 ./clear_known_hosts.sh
 ```
 
+---
+
+# `get_ip.sh`
+
+This script retrieves the current IP address assigned to a given MAC address, if a lease exists.
+
+## Usage
+
+```bash
+./get_ip.sh <mac_address>
+```
+
 
