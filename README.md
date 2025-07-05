@@ -104,6 +104,8 @@ This script retrieves the current IP address assigned to a given MAC address, if
 This script attaches to a specified station’s TMUX session by its number.  
 If a TMUX session for the station does not already exist, the script creates one.
 
+This session appears as a green bar at the bottom of your terminal, labeled with `[stn_#]` on the left.
+
 ## Usage
 
 ```bash
