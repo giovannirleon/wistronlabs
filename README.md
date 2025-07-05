@@ -53,6 +53,5 @@ The status can be one of the following:
 
 ```bash
 ./check_station.sh <station_number>
-
-
+```
 
