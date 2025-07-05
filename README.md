@@ -125,6 +125,9 @@ You will also need to scan the following, as found on the system label:
 - HOST MAC address
 - Service Tag
 
+Once the system boots, a second TMUX session is automatically created between the L10 server and the Gaines system under test.  
+This session appears as a second green bar at the bottom of your terminal, labeled with the `[SERVICE TAG]` on the left.
+
 **Note:** This script must be run inside a TMUX session.  
 To join a TMUX session, use [`join_station.sh`](#join_stationsh).
 
