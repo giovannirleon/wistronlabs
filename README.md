@@ -82,7 +82,7 @@ This is useful when the DHCP server reassigns IP addresses to different systems,
 ## Usage
 
 ```bash
-sudo ./clear_known_hosts.sh
+./clear_known_hosts.sh
 ```
 
 
