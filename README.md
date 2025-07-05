@@ -68,5 +68,21 @@ This is useful if systems are receiving incorrect or inconsistent IP addresses.
 
 ```bash
 sudo ./clear_dhcp.sh
+```
+
+---
+
+# `clear_known_hosts.sh`
+
+This script clears all **known SSH hosts** entries on the server.
+
+This is useful when the DHCP server reassigns IP addresses to different systems, which can cause a  
+**"Host Key Verification Failed"** error when attempting to SSH.
+
+## Usage
+
+```bash
+sudo ./clear_known_hosts.sh
+```
 
 
