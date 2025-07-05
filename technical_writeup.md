@@ -115,9 +115,6 @@ Previously, if the `SSD` module failed (e.g., due to a faulty SSD or connection)
 
 To save time and avoid rerunning unnecessary tests, an `-o` (options) flag was added to the L10 test script. When the script is run with this flag, it prompts the operator to select which specific modules to rerun, instead of executing the full test suite.  
 
-**Example:**  
-*(Include example usage/output here if available)*
-
 ---
 
 ## 2. Implementation of TMUX
