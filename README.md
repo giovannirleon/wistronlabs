@@ -134,4 +134,15 @@ To join a TMUX session, use [`join_station.sh`](#join_stationsh).
 ./l10_test.sh
 ```
 
+# `list_stations.sh`
+
+This script lists all stations that currently have an associated TMUX session.  
+This is useful for getting a quick CLI view of which stations are active.
+
+## Usage
+
+```bash
+./list_stations.sh
+```
+
 
