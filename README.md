@@ -97,4 +97,17 @@ This script retrieves the current IP address assigned to a given MAC address, if
 ./get_ip.sh <mac_address>
 ```
 
+---
+
+# `join_station.sh`
+
+This script attaches to a specified station’s TMUX session by its number.  
+If a TMUX session for the station does not already exist, the script creates one.
+
+## Usage
+
+```bash
+./join_station.sh <station_number>
+```
+
 
