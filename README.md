@@ -110,4 +110,28 @@ If a TMUX session for the station does not already exist, the script creates one
 ./join_station.sh <station_number>
 ```
 
+---
+
+# `l10_test.sh`
+
+This script automatically runs the L10 test.  
+Before running, ensure the system is properly set up:
+- Power connected
+- Coolant connected
+- Ethernet connected
+
+You will also need to scan the following, as found on the system label:
+- BMC MAC address
+- HOST MAC address
+- Service Tag
+
+**Note:** This script must be run inside a TMUX session.  
+To join a TMUX session, use [`join_station.sh`](#join_stationsh).
+
+## Usage
+
+```bash
+./l10_test.sh
+```
+
 
