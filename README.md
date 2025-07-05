@@ -170,3 +170,18 @@ This script restarts the following services to restore PXE functionality:
 ```bash
 sudo ./restart_pxe_services.sh
 ```
+
+---
+
+# `restart_station.sh`
+
+If a TMUX station becomes unresponsive, you can detach from the station using `CTRL+B D`, then run this script to restart it.  
+
+**Note:** Any programs currently running on that station will be terminated when it is restarted.
+
+## Usage
+
+```bash
+./restart_station.sh <session_number>
+```
+
