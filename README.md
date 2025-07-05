@@ -55,3 +55,18 @@ The status can be one of the following:
 ./check_station.sh <station_number>
 ```
 
+---
+
+# `clear_dhcp.sh`
+
+This script clears all DHCP leases on the DHCP server running on the L10 server.  
+**Note:** This script must be run as `root`.
+
+This is useful if systems are receiving incorrect or inconsistent IP addresses.
+
+## Usage
+
+```bash
+sudo ./clear_dhcp.sh
+
+
