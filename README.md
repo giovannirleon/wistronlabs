@@ -106,6 +106,10 @@ If a TMUX session for the station does not already exist, the script creates one
 
 This session appears as a green bar at the bottom of your terminal, labeled with `[stn_#]` on the left.
 
+### Tips
+- To detach from the station session: press `CTRL+B D`
+- To enter *copy mode* (to scroll through history and copy text): press `CTRL+B [`
+
 ## Usage
 
 ```bash
