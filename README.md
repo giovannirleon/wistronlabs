@@ -147,4 +147,21 @@ This is useful for getting a quick CLI view of which stations are active.
 ./list_stations.sh
 ```
 
+---
 
+# `restart_pxe_services.sh`
+
+If the system starts behaving unexpectedly (e.g., IP addresses not being assigned, PXE OS not loading), it may be due to one or more PXE-related services on the L10 server being in a non-working state.  
+
+This script restarts the following services to restore PXE functionality:
+1. TFTP Server
+2. DHCP Server
+3. HTTP Server
+
+**Note:** This script must be run as the `root` user.
+
+## Usage
+
+```bash
+sudo ./restart_pxe_services.sh
+```
