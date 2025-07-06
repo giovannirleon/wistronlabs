@@ -208,14 +208,22 @@ You will also need to scan the following, as found on the system label:
 Once the system boots, a second TMUX session is automatically created between the L10 server and the Gaines system under test.  
 This session appears as a second green bar at the bottom of your terminal, labeled with the `[SERVICE TAG]` on the left.
 
+If you add the `-o` flag to the end of the command, the script will display a module selection menu after scanning the system information.  
+You can then choose which specific module(s) you would like to run.
+
 **Note:** This script must be run inside a TMUX session.  
 To join a TMUX session, use [`join_station.sh`](#join_stationsh).
 
 ## Usage
 
 ```bash
-./l10_test.sh
+./l10_test.sh [-o]
 ```
+
+### Options
+
+- `-o` — Prompt to select which module(s) to run.
+## Usage
 
 ---
 
