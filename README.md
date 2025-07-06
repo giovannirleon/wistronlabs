@@ -41,14 +41,14 @@ http://[location].wistronlabs.com
 ```
 
 #### Station Statuses
-![Image of Stations]
+![Stations Screenshot](https://github.com/giovannirleon/wistronlabs/blob/main/station_statuses.jpg)
 
 - **RED** — No activity on the station for the day.
 - **GREEN** — Activity detected, but no L10 test currently running.
 - **YELLOW** — An L10 test is currently running on the station.
 
 #### Logs
-![Image of Logs]
+![Logs Screenshot](https://github.com/giovannirleon/wistronlabs/blob/main/logs.jpg)
 
 Clicking on a service tag in the logs section provides:
 - `output.log` — A copy of the on-screen output from the L10 test.
