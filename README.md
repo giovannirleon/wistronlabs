@@ -1,4 +1,78 @@
 
+# Getting Started
+
+## 1. Install Tailscale
+
+Tailscale is the VPN we use to remotely connect to the different L10 servers in various locations.
+
+To install Tailscale, visit:  
+👉 [https://tailscale.com/download](https://tailscale.com/download)
+
+Once installed, contact **giovanni_leon@wistron.com** to request login credentials.
+
+---
+
+## 2. Know Your Location
+
+Once Tailscale is installed and the *Wistron L10 Labs VPN* is active, you can reach each lab by visiting:  
+```
+[location].wistronlabs.com
+```
+
+### Current locations:
+- `tss` — TSS in Georgetown, TX
+- `frk` — Dell in Franklin, MA
+
+---
+
+## 3. Access Your Location
+
+You can access your location in one of two ways:
+
+### Web Portal
+
+Each location provides a web page where you can:
+- View the current status of test stations.
+- Download logs from previously completed tests.
+
+Access the web portal via:  
+```
+http://[location].wistronlabs.com
+```
+
+#### Station Statuses
+![Image of Stations]
+
+- **RED** — No activity on the station for the day.
+- **GREEN** — Activity detected, but no L10 test currently running.
+- **YELLOW** — An L10 test is currently running on the station.
+
+#### Logs
+![Image of Logs]
+
+Clicking on a service tag in the logs section provides:
+- `output.log` — A copy of the on-screen output from the L10 test.
+- `LOG-[DATE]-[Time].tgz` — The compressed log files generated after the L10 test completes.
+
+---
+
+### Terminal
+
+Running and managing L10 tests is primarily done through the terminal.  
+You can use any terminal client you prefer, such as:
+- **MobaXterm**
+- **TeraTerm**
+- Built-in terminal
+
+To access the L10 server terminal, SSH into it:
+```bash
+ssh falab@[location].wistronlabs.com
+```
+
+For the SSH password, please contact **giovanni_leon@wistron.com**.
+
+---
+
 # `bios_serial.sh`
 
 This script connects to the system’s **BIOS serial console** using *Serial over LAN (SoL)* via the BMC, removing the need to physically connect to the BIOS serial USB port on the front of the system.  
