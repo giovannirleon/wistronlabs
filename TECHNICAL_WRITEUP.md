@@ -72,7 +72,7 @@ The automated method is now the preferred approach for running L10 tests, ensuri
 
 # Technical Details
 
-![Automated L10 Test Process Diagram](https://github.com/giovannirleon/wistronlabs/blob/main/system_diagram.jpg)
+![Automated L10 Test Process Diagram](https://github.com/giovannirleon/wistronlabs/blob/main/media/system_diagram.jpg)
 
 Understanding how the automated process works is key to verifying it’s functioning properly. Below is a step-by-step breakdown of what the script does behind the scenes:
 
