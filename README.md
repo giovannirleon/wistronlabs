@@ -204,6 +204,7 @@ You will also need to scan the following, as found on the system label:
 - BMC MAC address
 - HOST MAC address
 - Service Tag
+- Configuration Number
 
 If you add the `-o` flag to the end of the command, the script will display a module selection menu after scanning the system information.  
 You can then choose which specific module(s) you would like to run.
