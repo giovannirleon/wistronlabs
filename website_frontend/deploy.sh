@@ -18,7 +18,7 @@ else
 fi
 
 echo "🧹 Removing all tracked and untracked files from $BUILD_BRANCH..."
-git rm -rf .
+git rm -rf . || true
 git clean -fdx
 
 echo "📂 Adding $BUILD_DIR to branch..."
