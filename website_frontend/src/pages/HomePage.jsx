@@ -29,7 +29,10 @@ function HomePage() {
     // fetch downloads once
     const fetchDownloads = async () => {
       try {
-        const link = "http://html.tss.wistronlabs.com/l10_logs/"; //is "/l10_logs/"
+        const link =
+          import.meta.env.MODE === "development"
+            ? "http://html.tss.wistronlabs.com/l10_logs/" // is "/l10_logs/" in development
+            : "/10_logs/"; // is "/l10_logs/" in production
         const res = await fetch(link);
         const text = await res.text();
         const parser = new DOMParser();
