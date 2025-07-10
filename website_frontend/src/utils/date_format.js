@@ -1,8 +1,12 @@
-function formatDateHumanReadable(rawDate) {
+export function formatDateHumanReadable(rawDate) {
   if (!rawDate) return "";
 
-  const utcISO = rawDate.replace(" ", "T") + ":00Z";
-  const date = new Date(utcISO);
+  const date = new Date(rawDate);
+
+  if (isNaN(date.getTime())) {
+    console.warn(`Invalid date string: ${rawDate}`);
+    return "";
+  }
 
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");

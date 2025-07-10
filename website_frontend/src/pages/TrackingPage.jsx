@@ -2,32 +2,7 @@ import React, { useState, useEffect } from "react";
 import SearchContainer from "../components/SearchContainer";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
 
-//import { formatDateHumanReadable } from "../utils/date_format.js"; // Assuming you have a utility function for date formatting
-
-export function formatDateHumanReadable(rawDate) {
-  if (!rawDate) return "";
-
-  const date = new Date(rawDate);
-
-  if (isNaN(date.getTime())) {
-    console.warn(`Invalid date string: ${rawDate}`);
-    return "";
-  }
-
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const year = date.getFullYear();
-
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const ampm = hours >= 12 ? "PM" : "AM";
-
-  hours = hours % 12;
-  hours = hours === 0 ? 12 : hours;
-  const hoursStr = String(hours).padStart(2, "0");
-
-  return `${month}/${day}/${year} ${hoursStr}:${minutes} ${ampm}`;
-}
+import { formatDateHumanReadable } from "../utils/date_format.js"; // Assuming you have a utility function for date formatting
 
 function TrackingPage() {
   const [systems, setSystems] = useState([]);
@@ -118,7 +93,14 @@ function TrackingPage() {
       );
       if (!res.ok) throw new Error("Failed to fetch locations");
       const data = await res.json();
-      setHistory(data);
+
+      // Convert changed_at to human-readable format
+      const fixedLocalDateData = data.map((entry) => ({
+        ...entry,
+        changed_at: formatDateHumanReadable(entry.changed_at),
+      }));
+
+      setHistory(fixedLocalDateData);
     } catch (err) {
       console.error("Error fetching history", err);
     }
@@ -147,9 +129,6 @@ function TrackingPage() {
 
     return false;
   });
-
-  // if (loading) return <p>Loading systems…</p>;
-  // if (error) return <p>Error: {error}</p>;
 
   return (
     <>
@@ -292,7 +271,7 @@ function TrackingPage() {
                     const issue = formData.get("issue")?.trim();
                     const note = formData.get("note")?.trim() || null;
 
-                    if (!service_tag || !issue) {
+                    if (!service_tag || !issue || !note) {
                       setToast({
                         message: "Please fill in all required fields properly.",
                         type: "error",
@@ -312,39 +291,102 @@ function TrackingPage() {
                       note,
                     };
 
-                    try {
-                      const res = await fetch(
-                        "http://tss.wistronlabs.com:4000/api/v1/systems",
-                        {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(payload),
+                    let moveInactivetoActive = false;
+                    resolvedSystems.forEach((sys) => {
+                      if (sys.service_tag === service_tag) {
+                        const isActive = [1, 2, 3, 4, 5].includes(
+                          sys.resolved_location_id
+                        );
+                        if (!isActive) {
+                          moveInactivetoActive = true;
+                          console.log("already exists in Inactive");
+                          setToast({
+                            message: `Service tag ${service_tag} already exists, moving back to processed`,
+                            type: "success",
+                          });
+                          setTimeout(
+                            () => setToast({ message: "", type: "success" }),
+                            3000
+                          );
                         }
-                      );
-                      if (!res.ok) throw new Error("Failed to create system");
+                      }
+                    });
 
-                      setShowModal(false);
-                      setToast({
-                        message: "System created successfully!",
-                        type: "success",
-                      });
-                      setTimeout(
-                        () => setToast({ message: "", type: "success" }),
-                        3000
-                      );
+                    if (moveInactivetoActive) {
+                      const jsonRes = {
+                        to_location_id: 1,
+                        note: "Moving back to processed from Inactive",
+                      };
+                      try {
+                        const res = await fetch(
+                          `http://tss.wistronlabs.com:4000/api/v1/systems/${service_tag}/location`,
+                          {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(jsonRes),
+                          }
+                        );
+                        if (!res.ok)
+                          throw new Error("Failed to update system location");
 
-                      await fetchSystems();
-                      setTimeout(() => setToastMessage(""), 3000);
-                    } catch (err) {
-                      console.error(err);
-                      setToast({
-                        message: "Error creating system",
-                        type: "error",
-                      });
-                      setTimeout(
-                        () => setToast({ message: "", type: "success" }),
-                        3000
-                      );
+                        setShowModal(false);
+                        setToast({
+                          message: `Service tag ${service_tag} moved back to processed!`,
+                          type: "success",
+                        });
+                        setTimeout(
+                          () => setToast({ message: "", type: "success" }),
+                          3000
+                        );
+
+                        await fetchSystems();
+                        setTimeout(() => setToastMessage(""), 3000);
+                      } catch (err) {
+                        console.error(err);
+                        setToast({
+                          message: "Error updating system location",
+                          type: "error",
+                        });
+                        setTimeout(
+                          () => setToast({ message: "", type: "success" }),
+                          3000
+                        );
+                      }
+                    } else {
+                      try {
+                        const res = await fetch(
+                          "http://tss.wistronlabs.com:4000/api/v1/systems",
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(payload),
+                          }
+                        );
+                        if (!res.ok) throw new Error("Failed to create system");
+
+                        setShowModal(false);
+                        setToast({
+                          message: "System created successfully!",
+                          type: "success",
+                        });
+                        setTimeout(
+                          () => setToast({ message: "", type: "success" }),
+                          3000
+                        );
+
+                        await fetchSystems();
+                        setTimeout(() => setToastMessage(""), 3000);
+                      } catch (err) {
+                        console.error(err);
+                        setToast({
+                          message: "Error creating system",
+                          type: "error",
+                        });
+                        setTimeout(
+                          () => setToast({ message: "", type: "success" }),
+                          3000
+                        );
+                      }
                     }
                   } else {
                     const csvText = formData.get("bulk_csv")?.trim();

@@ -9,38 +9,48 @@ import {
   CartesianGrid,
 } from "recharts";
 
+// Helper to format Date → MM/DD/YY
+function formatDateMMDDYY(date) {
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${mm}/${dd}/${yy}`;
+}
+
 function SystemsCreatedChart({ systems, history, locations }) {
-  // find active locations by name
+  console.log(history);
+
   const activeLocationNames = locations
     .filter((loc) => [1, 2, 3, 4, 5].includes(loc.id))
-    .map((loc) => loc.name);
+    .map((loc) => loc.name.trim().toLowerCase());
 
   const createdByDay = systems.reduce((acc, sys) => {
-    const dateStr = sys.date_created?.split(" ")[0]; // MM/DD/YYYY
+    const dateStr = sys.date_created?.split(" ")[0];
     if (!dateStr) return acc;
 
-    const [month, day, year] = dateStr.split("/");
-    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(
-      2,
-      "0"
-    )}`;
+    // Parse and normalize
+    const dateObj = new Date(dateStr);
+    if (isNaN(dateObj)) return acc;
 
-    acc[normalized] = (acc[normalized] || 0) + 1;
+    const formatted = formatDateMMDDYY(dateObj);
+    acc[formatted] = (acc[formatted] || 0) + 1;
     return acc;
   }, {});
 
   const inactiveByDay = history.reduce((acc, entry) => {
-    const dateStr = entry.changed_at?.split("T")[0];
+    const dateStr = entry.changed_at?.split(" ")[0];
     if (!dateStr) return acc;
 
-    const toLoc = entry.to_location?.trim().toLowerCase();
+    const dateObj = new Date(dateStr);
+    if (isNaN(dateObj)) return acc;
 
-    const isActive = activeLocationNames.some(
-      (active) => active.trim().toLowerCase() === toLoc
-    );
+    const formatted = formatDateMMDDYY(dateObj);
+
+    const toLoc = entry.to_location?.trim().toLowerCase();
+    const isActive = activeLocationNames.includes(toLoc);
 
     if (!isActive) {
-      acc[dateStr] = (acc[dateStr] || 0) + 1;
+      acc[formatted] = (acc[formatted] || 0) + 1;
     }
 
     return acc;
@@ -55,7 +65,6 @@ function SystemsCreatedChart({ systems, history, locations }) {
     (a, b) => new Date(a) - new Date(b)
   );
 
-  // get only the last 30 dates
   const last30Dates = sortedDates.slice(-30);
 
   const chartData = last30Dates.map((date) => ({
@@ -66,16 +75,13 @@ function SystemsCreatedChart({ systems, history, locations }) {
 
   return (
     <div className="bg-white shadow rounded p-4">
-      <h2 className="text-xl font-semibold mb-4">Systems Created Per Day</h2>
+      <h2 className="text-xl font-semibold mb-4">Daily Metrics</h2>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-          <YAxis
-            interval={0} // 👈 show every tick
-            allowDecimals={false} // 👈 integers only
-          />
+          <YAxis interval={0} allowDecimals={false} />
           <Tooltip />
           <Line
             type="monotone"
@@ -88,7 +94,7 @@ function SystemsCreatedChart({ systems, history, locations }) {
           <Line
             type="monotone"
             dataKey="inactive"
-            name="Moved to Inactive"
+            name="Resolved"
             stroke="#ef4444"
             strokeWidth={2}
             dot={{ r: 4 }}

@@ -1,4 +1,64 @@
 @import "tailwindcss";
+.flowchart {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.node {
+  padding: 8px 12px;
+  background: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.arrow-horizontal {
+  width: 40px;
+  height: 2px;
+  background: black;
+}
+
+.arrow-horizontal.thick {
+  height: 4px;
+}
+
+.arrow-down {
+  width: 2px;
+  height: 40px;
+  background: black;
+  grid-column: 2;
+}
+
+.arrow-up {
+  width: 2px;
+  height: 40px;
+  background: black;
+  align-self: end;
+  grid-column: 2;
+}
+
+.arrow-down-right {
+  width: 30px;
+  height: 2px;
+  background: black;
+  position: relative;
+}
+
+.arrow-down-right::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 30px;
+  width: 2px;
+  height: 40px;
+  background: black;
+}
 
 /* :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
