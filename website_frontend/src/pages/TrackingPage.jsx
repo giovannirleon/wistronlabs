@@ -170,7 +170,7 @@ function TrackingPage() {
             />
 
             {/* Filters */}
-            <div className="flex flex-wrap justify-end gap-4">
+            <div className="flex flex-wrap justify-end gap-4 mb-2 mt-4">
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -215,8 +215,18 @@ function TrackingPage() {
                 service_tag: "text-blue-600 font-medium",
                 date_last_modified: "text-gray-500 text-sm",
                 date_created: "text-gray-500 text-sm",
-                issue:
-                  "inline-block bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-xs font-medium",
+                //issue: { type: "pill", color: "bg-green-100 text-green-800" },
+                location: (val) =>
+                  val === "Sent to L11" ||
+                  val === "RMA CID" ||
+                  val === "RMA VID" ||
+                  val === "RMA PID"
+                    ? { type: "pill", color: "bg-green-100 text-green-800" }
+                    : val === "Processed" ||
+                      val === "In Debug - Wistron" ||
+                      val === "In L10"
+                    ? { type: "pill", color: "bg-red-100 text-red-800" }
+                    : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
               }}
               linkType="internal"
             />
@@ -399,14 +409,14 @@ function TrackingPage() {
                         () => setToast({ message: "", type: "success" }),
                         3000
                       );
-
                       return;
                     }
 
                     const rows = csvText.split("\n");
+
                     for (const line of rows) {
                       const [service_tag, issue, note] = line
-                        .split(",")
+                        .split(/\t|,/)
                         .map((x) => x.trim());
                       if (!service_tag || !issue) {
                         console.warn(`Skipping invalid line: ${line}`);
@@ -420,34 +430,101 @@ function TrackingPage() {
                         note: note || null,
                       };
 
-                      try {
-                        const res = await fetch(
-                          "http://tss.wistronlabs.com:4000/api/v1/systems",
-                          {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(payload),
+                      let moveInactivetoActive = false;
+
+                      resolvedSystems.forEach((sys) => {
+                        if (sys.service_tag === service_tag) {
+                          const isActive = [1, 2, 3, 4, 5].includes(
+                            sys.resolved_location_id
+                          );
+                          if (!isActive) {
+                            moveInactivetoActive = true;
+                            console.log(
+                              `Already exists in Inactive: ${service_tag}`
+                            );
+                            setToast({
+                              message: `Service tag ${service_tag} already exists, moving back to processed`,
+                              type: "success",
+                            });
+                            setTimeout(
+                              () => setToast({ message: "", type: "success" }),
+                              3000
+                            );
                           }
-                        );
-                        if (!res.ok)
-                          throw new Error(`Failed for ${service_tag}`);
-                      } catch (err) {
-                        console.error(err);
-                        setToast({
-                          message: `Error creating system ${service_tag}`,
-                          type: "error",
-                        });
-                        setTimeout(
-                          () => setToast({ message: "", type: "success" }),
-                          3000
-                        );
+                        }
+                      });
+
+                      if (moveInactivetoActive) {
+                        const jsonRes = {
+                          to_location_id: 1,
+                          note: "Moving back to processed from Inactive",
+                        };
+                        try {
+                          const res = await fetch(
+                            `http://tss.wistronlabs.com:4000/api/v1/systems/${service_tag}/location`,
+                            {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(jsonRes),
+                            }
+                          );
+                          if (!res.ok)
+                            throw new Error(`Failed to update ${service_tag}`);
+                          setToast({
+                            message: `Service tag ${service_tag} moved back to processed!`,
+                            type: "success",
+                          });
+                          setTimeout(
+                            () => setToast({ message: "", type: "success" }),
+                            3000
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          setToast({
+                            message: `Error updating ${service_tag}`,
+                            type: "error",
+                          });
+                          setTimeout(
+                            () => setToast({ message: "", type: "success" }),
+                            3000
+                          );
+                        }
+                      } else {
+                        try {
+                          const res = await fetch(
+                            "http://tss.wistronlabs.com:4000/api/v1/systems",
+                            {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(payload),
+                            }
+                          );
+                          if (!res.ok)
+                            throw new Error(`Failed to create ${service_tag}`);
+                          setToast({
+                            message: `System ${service_tag} created successfully!`,
+                            type: "success",
+                          });
+                          setTimeout(
+                            () => setToast({ message: "", type: "success" }),
+                            3000
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          setToast({
+                            message: `Error creating ${service_tag}`,
+                            type: "error",
+                          });
+                          setTimeout(
+                            () => setToast({ message: "", type: "success" }),
+                            3000
+                          );
+                        }
                       }
                     }
 
                     setShowModal(false);
-                    setToastMessage("Bulk systems created!");
                     await fetchSystems();
-                    setTimeout(() => setToastMessage(""), 3000);
                   }
                 }}
               >

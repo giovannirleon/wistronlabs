@@ -5,10 +5,13 @@ import TrackingPage from "./pages/TrackingPage";
 import SystemPage from "./pages/SystemPage";
 import Header from "./components/Header";
 
+import ScrollToTop from "./helpers/ScrollToTop";
+
 function App() {
   return (
     <div className="bg-gray-100 min-h-screen text-gray-800 font-roboto">
       <Header />
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/tracking" element={<TrackingPage />} />

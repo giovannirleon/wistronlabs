@@ -9,6 +9,7 @@ function SystemPage() {
   const { serviceTag } = useParams();
 
   const [history, setHistory] = useState([]);
+  const [system, setSystem] = useState(null); // new
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [locLoading, setLocLoading] = useState(true);
@@ -53,6 +54,20 @@ function SystemPage() {
     }
   };
 
+  const fetchSystem = async () => {
+    try {
+      const res = await fetch(
+        `http://tss.wistronlabs.com:4000/api/v1/systems/${serviceTag}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch system");
+      const data = await res.json();
+      setSystem(data);
+    } catch (err) {
+      console.error(err);
+      setError(err.message);
+    }
+  };
+
   const fetchHistory = async () => {
     setLoading(true);
     try {
@@ -89,6 +104,7 @@ function SystemPage() {
 
   useEffect(() => {
     fetchHistory();
+    fetchSystem();
     fetchLocations();
   }, [serviceTag]);
 
@@ -131,9 +147,17 @@ function SystemPage() {
     <>
       <main className="max-w-4xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-800">
-            Service Tag <span className="text-blue-600">{serviceTag}</span>
-          </h1>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800">
+              Service Tag <span className="text-blue-600">{serviceTag}</span>
+            </h1>
+            {system?.issue && (
+              <span className="inline-block mt-1 px-2 py-1 bg-red-100 text-red-800 text-sm font-bold rounded-full uppercase">
+                {system.issue}
+              </span>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
@@ -235,11 +259,37 @@ function SystemPage() {
             defaultSortBy={"changed_at"}
             defaultSortAsc={true}
             fieldStyles={{
-              changed_at: "text-gray-500 text-sm",
+              to_location: (val) =>
+                val === "Sent to L11" ||
+                val === "RMA CID" ||
+                val === "RMA VID" ||
+                val === "RMA PID"
+                  ? { type: "pill", color: "bg-green-100 text-green-800" }
+                  : val === "Processed" ||
+                    val === "In Debug - Wistron" ||
+                    val === "In L10"
+                  ? { type: "pill", color: "bg-red-100 text-red-800" }
+                  : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
+              from_location: (val) =>
+                val === "Sent to L11" ||
+                val === "RMA CID" ||
+                val === "RMA VID" ||
+                val === "RMA PID"
+                  ? { type: "pill", color: "bg-green-100 text-green-800" }
+                  : val === "Processed" ||
+                    val === "In Debug - Wistron" ||
+                    val === "In L10"
+                  ? { type: "pill", color: "bg-red-100 text-red-800" }
+                  : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
+              note: (val) =>
+                val?.includes("Moving back to processed from Inactive")
+                  ? "font-bold"
+                  : "",
             }}
             linkType="none"
             allowSort={false}
             allowSearch={false}
+            defaultPage="last"
           />
         </div>
 

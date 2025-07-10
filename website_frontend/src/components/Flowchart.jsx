@@ -48,8 +48,22 @@ export default function Flowchart({ currentLocation_id, locations }) {
       direction: "down",
       ids: [2],
     }, // In Debug - Wistron to In Debug - Nvidia
-    { x: 225, y: 145, stemHeight: 20, totalLenth: 40, direction: "up", id: 2 }, // In Debug - Wistron to Pending Parts
-    { x: 325, y: 245, stemHeight: 20, totalLenth: 40, direction: "up", id: 3 }, //In Debug - Nvidia to In Debug - Wistron
+    {
+      x: 225,
+      y: 145,
+      stemHeight: 20,
+      totalLenth: 40,
+      direction: "up",
+      ids: [2],
+    }, // In Debug - Wistron to Pending Parts
+    {
+      x: 325,
+      y: 245,
+      stemHeight: 20,
+      totalLenth: 40,
+      direction: "up",
+      ids: [3],
+    }, //In Debug - Nvidia to In Debug - Wistron
     {
       x: 325,
       y: 105,

@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Before running this script, ensure that Docker and all its subcommands can be executed with sudo without requiring a password.
+# To configure this, add the following line to /etc/sudoers using visudo:
+#
+# yourusername ALL=(ALL) NOPASSWD: /usr/bin/docker *
+
+
 URL="tss.wistronlabs.com"
 USER="falab"
 
