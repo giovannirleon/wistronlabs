@@ -32,7 +32,7 @@ function HomePage() {
         const link =
           import.meta.env.MODE === "development"
             ? "http://html.tss.wistronlabs.com/l10_logs/" // is "/l10_logs/" in development
-            : "http://html.tss.wistronlabs.com/l10_logs/"; // is "/l10_logs/" in production
+            : "https://tss.wistronlabs.com/l10_logs/"; // is "/l10_logs/" in production
         const res = await fetch(link);
         const text = await res.text();
         const parser = new DOMParser();
@@ -83,7 +83,13 @@ function HomePage() {
             const formattedDate = `${month}/${day}/${year}, ${hoursStr}:${minutes}:${seconds} ${ampm}`;
 
             //push entry
-            entries.push({ name, href: link + href, date: formattedDate });
+            entries.push({
+              name,
+              href: link + href,
+              name_title: "File Name",
+              date: formattedDate,
+              date_title: "Date Modified",
+            });
           }
         });
         setDownloads(entries);
@@ -124,8 +130,18 @@ function HomePage() {
 
       {/* Available Downloads */}
       <section className="max-w-[1000px] mx-auto mt-8 bg-white rounded shadow-md p-4">
-        {console.log("Downloads:", downloads)}
-        <SearchContainer data={downloads} title={"Avialable Logs"} />
+        <SearchContainer
+          data={downloads}
+          title={"Available Logs"}
+          displayOrder={["name", "date"]}
+          defaultSortBy={"date"}
+          defaultSortAsc={false}
+          fieldStyles={{
+            name: "text-blue-600 font-medium",
+            date: "text-gray-500 text-sm",
+          }}
+          linkType="external"
+        />
       </section>
     </>
   );

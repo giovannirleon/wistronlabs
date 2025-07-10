@@ -1,24 +1,47 @@
 import React, { useState } from "react";
 import PaginatedItems from "./Paginate";
 
-function SearchContainer({ data, title }) {
-  const [sortBy, setSortBy] = useState("date"); // default sort
-  const [sortAsc, setSortAsc] = useState(false);
+function SearchContainer({
+  data,
+  title,
+  displayOrder,
+  defaultSortBy,
+  defaultSortAsc,
+  fieldStyles,
+  linkType,
+}) {
+  const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
+  const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? false);
+
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredData = data
-    .filter((d) => d.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter((item) =>
+      displayOrder.some((field) =>
+        String(item[field]).toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    )
     .sort((a, b) => {
-      if (sortBy === "name") {
+      const aVal = a[sortBy];
+      const bVal = b[sortBy];
+
+      // Detect dates if possible
+      if (Date.parse(aVal) && Date.parse(bVal)) {
         return sortAsc
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name);
-      } else {
-        return sortAsc
-          ? new Date(a.date) - new Date(b.date)
-          : new Date(b.date) - new Date(a.date);
+          ? new Date(aVal) - new Date(bVal)
+          : new Date(bVal) - new Date(aVal);
       }
+
+      // Fall back to string compare
+      return sortAsc
+        ? String(aVal).localeCompare(String(bVal))
+        : String(bVal).localeCompare(String(aVal));
     });
+
+  function getHeaderLabel(data, field) {
+    const titleField = `${field}_title`;
+    return data[0]?.[titleField] || field;
+  }
 
   return (
     <>
@@ -38,36 +61,48 @@ function SearchContainer({ data, title }) {
           <p className="text-sm text-gray-500">No Data Available</p>
         ) : (
           <div>
-            <div className="flex justify-between items-center bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 mb-2">
-              <button
-                className="text-gray-500 text-sm"
-                onClick={() => {
-                  if (sortBy === "name") {
-                    setSortAsc(!sortAsc);
-                  } else {
-                    setSortBy("name");
-                    setSortAsc(true);
-                  }
-                }}
-              >
-                File Name {sortBy === "name" && (sortAsc ? "▲" : "▼")}
-              </button>
-              <button
-                className="text-gray-500 text-sm"
-                onClick={() => {
-                  if (sortBy === "date") {
-                    setSortAsc(!sortAsc);
-                  } else {
-                    setSortBy("date");
-                    setSortAsc(true);
-                  }
-                }}
-              >
-                Date Modified {sortBy === "date" && (sortAsc ? "▲" : "▼")}
-              </button>
+            {/* Table header */}
+            <div className="flex items-center bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 mb-2">
+              {displayOrder.map((field, fieldIndex) => {
+                const isFirst = fieldIndex === 0;
+                const isLast = fieldIndex === displayOrder.length - 1;
+
+                const alignment = isFirst
+                  ? "text-left"
+                  : isLast
+                  ? "text-right"
+                  : "text-left";
+
+                const headerLabel = getHeaderLabel(data, field);
+
+                return (
+                  <button
+                    key={field}
+                    className={`text-gray-500 text-sm flex-1 ${alignment}`}
+                    onClick={() => {
+                      if (sortBy === field) {
+                        setSortAsc(!sortAsc);
+                      } else {
+                        setSortBy(field);
+                        setSortAsc(true);
+                      }
+                    }}
+                  >
+                    {headerLabel} {sortBy === field && (sortAsc ? "▲" : "▼")}
+                  </button>
+                );
+              })}
             </div>
 
-            <PaginatedItems itemsPerPage={10} items={filteredData} />
+            {/* Paginated body */}
+            <PaginatedItems
+              itemsPerPage={10}
+              items={filteredData}
+              searchTerm={searchTerm}
+              displayOrder={displayOrder} // pass so PaginatedItems can render correct fields
+              fieldStyles={fieldStyles}
+              linkType={linkType}
+            />
           </div>
         )}
       </div>

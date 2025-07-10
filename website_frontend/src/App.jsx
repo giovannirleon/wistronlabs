@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route } from "react-router-dom";
 
-import PaginatedItems from './components/Paginate'
+import PaginatedItems from "./components/Paginate";
 
 import HomePage from "./pages/HomePage";
 import TrackingPage from "./pages/TrackingPage";
+import SystemPage from "./pages/SystemPage";
 import Header from "./components/Header";
 
 function App() {
@@ -12,7 +13,6 @@ function App() {
   const [downloads, setDownloads] = useState([]);
   const [sortBy, setSortBy] = useState("date"); // default sort by name
   const [sortAsc, setSortAsc] = useState(true);
-
 
   useEffect(() => {
     // fetch stations every 10s
@@ -34,7 +34,7 @@ function App() {
     // fetch downloads once
     const fetchDownloads = async () => {
       try {
-        const link = "http://192.168.2.132/l10_logs/" //is "/l10_logs/"
+        const link = "http://192.168.2.132/l10_logs/"; //is "/l10_logs/"
         const res = await fetch(link);
         const text = await res.text();
         const parser = new DOMParser();
@@ -44,23 +44,24 @@ function App() {
         rows.forEach((row, rowIndex) => {
           if (rowIndex >= 3 && rowIndex < rows.length - 1) {
             let rawDate = "";
-            let name = ""
-            let href = ""
-            const cols = row.querySelectorAll("td")
+            let name = "";
+            let href = "";
+            const cols = row.querySelectorAll("td");
             cols.forEach((col, colIndex) => {
-
               // get folder name and href
               if (colIndex == 1) {
-                name = Array.from(col.querySelectorAll("a"))[0].textContent.trim().replace(/\/$/, '');
-                href = Array.from(col.querySelectorAll("a"))[0].getAttribute("href");
+                name = Array.from(col.querySelectorAll("a"))[0]
+                  .textContent.trim()
+                  .replace(/\/$/, "");
+                href = Array.from(col.querySelectorAll("a"))[0].getAttribute(
+                  "href"
+                );
               }
 
               // get raw date data
               if (colIndex == 2) {
                 rawDate = col.textContent.trim();
               }
-
-
             });
 
             // foramt date to human readable
@@ -96,15 +97,15 @@ function App() {
   }, []);
 
   return (
-    < div className="bg-gray-100 min-h-screen text-gray-800 font-roboto" >
+    <div className="bg-gray-100 min-h-screen text-gray-800 font-roboto">
       <Header />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/tracking" element={<TrackingPage />} />
+        <Route path="/:serviceTag" element={<SystemPage />} />
       </Routes>
-    </div >
+    </div>
   );
 }
-
 
 export default App;

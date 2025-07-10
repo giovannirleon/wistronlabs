@@ -1,113 +1,151 @@
-import React, { useEffect, useState } from 'react';
-import ReactPaginate from 'react-paginate';
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
+import ReactPaginate from "react-paginate";
 
-function Items({ currentItems }) {
-    return (
-        <>
-            {currentItems &&
-                currentItems.map((item, index) => (
-                    !item ?
-                        // null items with the same spacing to make the last page the same size as the others
-                        <div
-                            key={index}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`flex justify-between items-center bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 my-1 ${!item ? "invisible" : ""
-                                }`}
-                        >
-                            <span className="text-blue-600 font-medium">
-                                null
-                            </span>
-                            <span className="text-gray-500 text-sm">
-                                null
-                            </span>
-                        </div>
-                        :
-                        <a
-                            key={index}
-                            href={item.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`flex justify-between items-center bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 my-1 ${!item ? "invisible" : ""
-                                }`}
-                        >
-                            <span className="text-blue-600 font-medium">
-                                {item.name}
-                            </span>
-                            <span className="text-gray-500 text-sm">
-                                {item.date}
-                            </span>
-                        </a>
-                ))}
-        </>
-    );
+// Row renderer
+function Items({ currentItems, displayOrder, fieldStyles, linkType }) {
+  return (
+    <>
+      {currentItems &&
+        currentItems.map((item, index) =>
+          !item ? (
+            <div
+              key={index}
+              className="flex justify-between items-center bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 my-1 invisible"
+            >
+              {displayOrder.map((field) => (
+                <span key={field} className="flex-1 text-sm text-gray-400">
+                  null
+                </span>
+              ))}
+            </div>
+          ) : (
+            (() => {
+              const RowContent = (
+                <>
+                  {displayOrder.map((field, fieldIndex) => {
+                    const isFirst = fieldIndex === 0;
+                    const isLast = fieldIndex === displayOrder.length - 1;
+
+                    const alignment = isFirst
+                      ? "text-left"
+                      : isLast
+                      ? "text-right"
+                      : "text-left";
+
+                    return (
+                      <span
+                        key={field}
+                        className={`flex-1 ${alignment} ${
+                          fieldStyles?.[field] || "text-sm"
+                        }`}
+                      >
+                        {item[field] ?? ""}
+                      </span>
+                    );
+                  })}
+                </>
+              );
+
+              if (linkType === "internal") {
+                return (
+                  <Link
+                    key={index}
+                    to={`/${item.service_tag || ""}`}
+                    className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 my-1"
+                  >
+                    {RowContent}
+                  </Link>
+                );
+              }
+
+              if (linkType === "external") {
+                return (
+                  <a
+                    key={index}
+                    href={item.href || "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 hover:bg-blue-50 my-1"
+                  >
+                    {RowContent}
+                  </a>
+                );
+              }
+
+              // default: no link
+              return (
+                <div
+                  key={index}
+                  className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 my-1"
+                >
+                  {RowContent}
+                </div>
+              );
+            })()
+          )
+        )}
+    </>
+  );
 }
 
-function PaginatedItems({ itemsPerPage, items }) {
-    // Here we use item offsets; we could also use page offsets
-    // following the API or data you're working with.
-    const [itemOffset, setItemOffset] = useState(0);
+function PaginatedItems({
+  itemsPerPage,
+  items,
+  searchTerm,
+  displayOrder,
+  fieldStyles,
+  linkType,
+}) {
+  const [itemOffset, setItemOffset] = useState(0);
 
-    // Simulate fetching items from another resources.
-    // (This could be items from props; or items loaded in a local state
-    // from an API endpoint with useEffect and useState)
-    const endOffset = itemOffset + itemsPerPage;
-    console.log(`Loading items from ${itemOffset} to ${endOffset}`);
-    const currentItems = items.slice(itemOffset, endOffset);
-    const pageCount = Math.ceil(items.length / itemsPerPage);
-    // Invoke when user click to request another page.
-    const handlePageClick = (event) => {
-        const newOffset = (event.selected * itemsPerPage) % items.length;
-        console.log(
-            `User requested page number ${event.selected}, which is offset ${newOffset}`
-        );
-        setItemOffset(newOffset);
-    };
+  useEffect(() => {
+    setItemOffset(0); // Reset to first page when items or search term changes
+  }, [searchTerm]);
 
-    // Fill with placeholders if needed
-    const paddedItems = [
-        ...currentItems,
-        ...Array(itemsPerPage - currentItems.length).fill(null),
-    ];
+  const endOffset = itemOffset + itemsPerPage;
+  const currentItems = items.slice(itemOffset, endOffset);
+  const pageCount = Math.ceil(items.length / itemsPerPage);
 
-    return (
-        <>
-            <Items currentItems={paddedItems} />
-            <ReactPaginate
-                breakLabel="..."
-                nextLabel="next >"
-                onPageChange={handlePageClick}
-                pageRangeDisplayed={1} // only show 3 pages at a time in the middle
-                marginPagesDisplayed={2}
-                pageCount={pageCount}
-                previousLabel="< previous"
-                renderOnZeroPageCount={null}
-                // container is the <ul>
-                containerClassName="flex justify-center items-center gap-1 mt-4 text-sm"
+  const handlePageClick = (event) => {
+    const newOffset = (event.selected * itemsPerPage) % items.length;
+    setItemOffset(newOffset);
+  };
 
-                // each <li> element
-                pageClassName=""
-                pageLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+  const paddedItems = [
+    ...currentItems,
+    ...Array(itemsPerPage - currentItems.length).fill(null),
+  ];
 
-                // active page
-                activeLinkClassName="bg-blue-600 text-white border-blue-600"
-
-                // prev/next buttons
-                previousClassName=""
-                nextClassName=""
-                previousLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
-                nextLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
-
-                // ellipsis
-                breakClassName=""
-                breakLinkClassName="px-3 py-1 text-gray-400 cursor-default select-none"
-
-                // disabled prev/next
-                disabledClassName="opacity-50 cursor-not-allowed cursor-default select-none"
-            />
-        </>
-    );
+  return (
+    <>
+      <Items
+        currentItems={paddedItems}
+        displayOrder={displayOrder}
+        fieldStyles={fieldStyles}
+        linkType={linkType}
+      />
+      <ReactPaginate
+        breakLabel="..."
+        nextLabel="next >"
+        onPageChange={handlePageClick}
+        pageRangeDisplayed={1}
+        marginPagesDisplayed={2}
+        pageCount={pageCount}
+        previousLabel="< previous"
+        renderOnZeroPageCount={null}
+        containerClassName="flex justify-center items-center gap-1 mt-4 text-sm"
+        pageLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+        activeLinkClassName="bg-blue-600 text-white border-blue-600"
+        previousLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+        nextLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+        breakLinkClassName="px-3 py-1 text-gray-400 cursor-default select-none"
+        disabledClassName="opacity-50 cursor-not-allowed cursor-default select-none"
+        forcePage={itemOffset / itemsPerPage}
+      />
+    </>
+  );
 }
 
-export default PaginatedItems
+export default PaginatedItems;
