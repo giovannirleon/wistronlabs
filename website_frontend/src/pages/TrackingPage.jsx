@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import SearchContainer from "../components/SearchContainer";
+import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format.js"; // Assuming you have a utility function for date formatting
@@ -145,22 +146,9 @@ function TrackingPage() {
           </button>
         </div>
         {loading ? (
-          <div className="space-y-2">
-            {[...Array(4)].map((_, i) => (
-              <div
-                key={i}
-                className="animate-pulse flex space-x-4 rounded-lg border border-gray-200 p-4"
-              >
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/6"></div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <LoadingSkeleton rows={6} />
         ) : error ? (
-          <div>error</div>
+          <div>Error: Not able to load content </div>
         ) : (
           <div>
             <SystemsCreatedChart
