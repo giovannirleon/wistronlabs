@@ -22,7 +22,9 @@ function TrackingPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://tss.wistronlabs.com:4000/api/v1/systems");
+      const res = await fetch(
+        "https://backend.tss.wistronlabs.com:/api/v1/systems"
+      );
       if (!res.ok) throw new Error("Failed to fetch systems");
       const data = await res.json();
 
@@ -31,7 +33,7 @@ function TrackingPage() {
           const serviceTag = system.service_tag;
           try {
             const historyRes = await fetch(
-              `http://tss.wistronlabs.com:4000/api/v1/systems/${serviceTag}/history`
+              `https://backend.tss.wistronlabs.com:/api/v1/systems/${serviceTag}/history`
             );
             if (!historyRes.ok) throw new Error("History fetch failed");
             const history = await historyRes.json();
@@ -77,7 +79,7 @@ function TrackingPage() {
   const fetchLocations = async () => {
     try {
       const res = await fetch(
-        "http://tss.wistronlabs.com:4000/api/v1/locations"
+        "https://backend.tss.wistronlabs.com:/api/v1/locations"
       );
       if (!res.ok) throw new Error("Failed to fetch locations");
       const data = await res.json();
@@ -90,7 +92,7 @@ function TrackingPage() {
   const fetchHistory = async () => {
     try {
       const res = await fetch(
-        "http://tss.wistronlabs.com:4000/api/v1/systems/history"
+        "https://backend.tss.wistronlabs.com:/api/v1/systems/history"
       );
       if (!res.ok) throw new Error("Failed to fetch locations");
       const data = await res.json();
@@ -265,7 +267,10 @@ function TrackingPage() {
                   const formData = new FormData(e.target);
 
                   if (!bulkMode) {
-                    const service_tag = formData.get("service_tag")?.trim();
+                    const service_tag = formData
+                      .get("service_tag")
+                      ?.trim()
+                      .toUpperCase();
                     const issue = formData.get("issue")?.trim();
                     const note = formData.get("note")?.trim() || null;
 
@@ -317,7 +322,7 @@ function TrackingPage() {
                       };
                       try {
                         const res = await fetch(
-                          `http://tss.wistronlabs.com:4000/api/v1/systems/${service_tag}/location`,
+                          `https://backend.tss.wistronlabs.com:/api/v1/systems/${service_tag}/location`,
                           {
                             method: "PATCH",
                             headers: { "Content-Type": "application/json" },
@@ -353,7 +358,7 @@ function TrackingPage() {
                     } else {
                       try {
                         const res = await fetch(
-                          "http://tss.wistronlabs.com:4000/api/v1/systems",
+                          "https://backend.tss.wistronlabs.com:/api/v1/systems",
                           {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -403,9 +408,11 @@ function TrackingPage() {
                     const rows = csvText.split("\n");
 
                     for (const line of rows) {
-                      const [service_tag, issue, note] = line
+                      const [rawServiceTag, issue, note] = line
                         .split(/\t|,/)
                         .map((x) => x.trim());
+                      const service_tag = rawServiceTag.toUpperCase();
+
                       if (!service_tag || !issue) {
                         console.warn(`Skipping invalid line: ${line}`);
                         continue;
@@ -449,7 +456,7 @@ function TrackingPage() {
                         };
                         try {
                           const res = await fetch(
-                            `http://tss.wistronlabs.com:4000/api/v1/systems/${service_tag}/location`,
+                            `https://backend.tss.wistronlabs.com:/api/v1/systems/${service_tag}/location`,
                             {
                               method: "PATCH",
                               headers: { "Content-Type": "application/json" },
@@ -480,7 +487,7 @@ function TrackingPage() {
                       } else {
                         try {
                           const res = await fetch(
-                            "http://tss.wistronlabs.com:4000/api/v1/systems",
+                            "https://backend.tss.wistronlabs.com:/api/v1/systems",
                             {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },

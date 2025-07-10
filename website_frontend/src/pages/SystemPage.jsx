@@ -58,7 +58,7 @@ function SystemPage() {
   const fetchSystem = async () => {
     try {
       const res = await fetch(
-        `http://tss.wistronlabs.com:4000/api/v1/systems/${serviceTag}`
+        `https://backend.tss.wistronlabs.com:/api/v1/systems/${serviceTag}`
       );
       if (!res.ok) throw new Error("Failed to fetch system");
       const data = await res.json();
@@ -73,7 +73,7 @@ function SystemPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `http://tss.wistronlabs.com:4000/api/v1/systems/${serviceTag}/history`
+        `https://backend.tss.wistronlabs.com:/api/v1/systems/${serviceTag}/history`
       );
       if (!res.ok) throw new Error("Failed to fetch history");
       const data = await res.json();
@@ -90,7 +90,7 @@ function SystemPage() {
     setLocLoading(true);
     try {
       const res = await fetch(
-        `http://tss.wistronlabs.com:4000/api/v1/locations`
+        `https://backend.tss.wistronlabs.com:/api/v1/locations`
       );
       if (!res.ok) throw new Error("Failed to fetch locations");
       const data = await res.json();
@@ -116,7 +116,7 @@ function SystemPage() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `http://tss.wistronlabs.com:4000/api/v1/systems/${serviceTag}/location`,
+        `https://backend.tss.wistronlabs.com:/api/v1/systems/${serviceTag}/location`,
         {
           method: "PATCH",
           headers: {
@@ -340,7 +340,7 @@ function SystemPage() {
                   onClick={async () => {
                     try {
                       const res = await fetch(
-                        `http://tss.wistronlabs.com:4000/api/v1/systems/${serviceTag}`,
+                        `https://backend.tss.wistronlabs.com:/api/v1/systems/${serviceTag}`,
                         { method: "DELETE" }
                       );
                       if (!res.ok) throw new Error("Failed to delete unit");
