@@ -7,6 +7,8 @@ import Header from "./components/Header";
 
 import ScrollToTop from "./helpers/ScrollToTop";
 
+import "./styles/datepicker.css";
+
 function App() {
   return (
     <div className="bg-gray-100 min-h-screen text-gray-800 font-roboto">

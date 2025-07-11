@@ -18,6 +18,15 @@ function formatDateMMDDYY(date) {
 }
 
 function SystemLocationsChart({ history }) {
+  const EXCLUDED_LOCATIONS = ["Sent to L11", "RMA VID", "RMA PID", "RMA CID"];
+  const CHART_COLORS = [
+    "#1f77b4", // blue
+    "#9467bd", // purple
+    "#ff7f0e", // orange
+    "#2ca02c", // green
+    "#d62728", // red
+  ];
+  // Build a sorted list of unique dates in history
   const historyDates = [
     ...new Set(
       history.map((entry) => {
@@ -25,45 +34,29 @@ function SystemLocationsChart({ history }) {
         return dateStr;
       })
     ),
-  ];
+  ].sort((a, b) => new Date(a) - new Date(b));
 
-  historyDates.sort((a, b) => new Date(a) - new Date(b));
-
+  // Build cumulative history by date
   const historyByDate = historyDates.map((date) => {
-    const compDateEndTime = new Date(date); // start of day
-    const compDateStartTime = new Date(date + " 23:59:59"); // end of day
+    const dateEnd = new Date(`${date} 23:59:59`);
 
-    // ✅ Include all history up to and including this day
-    const entriesForDate = history.filter((entry) => {
-      const entryTime = new Date(entry.changed_at);
-      return entryTime <= compDateStartTime;
-    });
-
-    // 🔷 For each service_tag, keep latest change up to this date
     const latestByServiceTag = new Map();
 
-    entriesForDate.forEach((entry) => {
-      const tag = entry.service_tag;
+    history.forEach((entry) => {
       const entryTime = new Date(entry.changed_at);
 
-      if (!latestByServiceTag.has(tag)) {
-        latestByServiceTag.set(tag, entry);
-      } else {
-        const existingEntry = latestByServiceTag.get(tag);
-        const existingTime = new Date(existingEntry.changed_at);
-
-        if (entryTime > existingTime) {
-          latestByServiceTag.set(tag, entry);
+      if (entryTime <= dateEnd) {
+        const existing = latestByServiceTag.get(entry.service_tag);
+        if (!existing || entryTime > new Date(existing.changed_at)) {
+          latestByServiceTag.set(entry.service_tag, entry);
         }
       }
     });
 
-    const latestEntries = Array.from(latestByServiceTag.values());
-
-    // Count how many at each to_location
     const toLocationCounts = {};
-    latestEntries.forEach((entry) => {
+    Array.from(latestByServiceTag.values()).forEach((entry) => {
       const loc = entry.to_location?.trim() || "Unknown";
+      if (EXCLUDED_LOCATIONS.includes(loc)) return;
       toLocationCounts[loc] = (toLocationCounts[loc] || 0) + 1;
     });
 
@@ -73,79 +66,35 @@ function SystemLocationsChart({ history }) {
     };
   });
 
-  const stHistoryByDate = historyDates.map((date) => {
-    const compDateEndTime = new Date(date);
-    const compDateStartTime = new Date(date + " 23:59:59");
+  const last30Dates = historyByDate.slice(-30);
 
-    // Include all history up to and including this day
-    const entriesForDate = history.filter((entry) => {
-      const entryTime = new Date(entry.changed_at);
-      return entryTime <= compDateStartTime;
+  // Collect all unique locations
+  const allLocations = new Set();
+  historyByDate.forEach((day) => {
+    Object.keys(day.toLocationCounts).forEach((loc) => {
+      allLocations.add(loc);
     });
+  });
 
-    // For each service_tag, keep latest change up to this date
-    const latestByServiceTag = new Map();
+  // Build chart data
+  const chartData = last30Dates.map((day) => {
+    const row = { date: day.date, ...day.toLocationCounts };
 
-    entriesForDate.forEach((entry) => {
-      const tag = entry.service_tag;
-      const entryTime = new Date(entry.changed_at);
-
-      if (!latestByServiceTag.has(tag)) {
-        latestByServiceTag.set(tag, entry);
-      } else {
-        const existingEntry = latestByServiceTag.get(tag);
-        const existingTime = new Date(existingEntry.changed_at);
-
-        if (entryTime > existingTime) {
-          latestByServiceTag.set(tag, entry);
-        }
+    // Ensure all known locations are present with at least 0
+    allLocations.forEach((loc) => {
+      if (!(loc in row)) {
+        row[loc] = 0;
       }
     });
 
-    // 🔷 Build snapshot array
-    const snapshot = Array.from(latestByServiceTag.values()).map((entry) => ({
-      service_tag: entry.service_tag,
-      location: entry.to_location?.trim() || "Unknown",
-      last_note: entry.note || "Unknown",
-    }));
-
-    return {
-      date,
-      snapshot,
-    };
-  });
-
-  console.log(stHistoryByDate);
-  const last30Dates = historyByDate.slice(-30);
-
-  const chartData = last30Dates.map((day) => {
-    const counts = {};
-    (day.entries || []).forEach((entry) => {
-      const loc = entry.to_location?.trim() || "Unknown";
-      counts[loc] = (counts[loc] || 0) + 1;
-    });
-
-    return {
-      date: day.date,
-      ...day.toLocationCounts,
-    };
-  });
-
-  const allLocations = new Set();
-
-  chartData.forEach((row) => {
-    Object.keys(row).forEach((key) => {
-      if (key !== "date") allLocations.add(key);
-    });
+    return row;
   });
 
   const locationKeys = Array.from(allLocations);
 
-  console.log("Chart Data:", chartData);
-
   return (
     <div className="bg-white shadow rounded p-4">
-      <h2 className="text-xl font-semibold mb-4">Locations Per Day</h2>
+      <h2 className="text-xl font-semibold mb-4">Active Locations Per Day</h2>
 
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData}>
@@ -161,7 +110,7 @@ function SystemLocationsChart({ history }) {
               name={loc}
               strokeWidth={2}
               dot={{ r: 3 }}
-              stroke={`hsl(${(idx * 40) % 360}, 70%, 50%)`}
+              stroke={CHART_COLORS[idx % CHART_COLORS.length]}
             />
           ))}
         </LineChart>

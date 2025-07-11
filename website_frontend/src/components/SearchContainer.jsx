@@ -12,6 +12,7 @@ function SearchContainer({
   allowSort = true,
   allowSearch = true, // ✅ new prop
   defaultPage = "first", // added: accepts 'first' or 'last'
+  truncate,
 }) {
   const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
   const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? false);
@@ -110,6 +111,7 @@ function SearchContainer({
               fieldStyles={fieldStyles}
               linkType={linkType}
               defaultPage={defaultPage}
+              truncate={truncate}
             />
           </div>
         )}

@@ -4,122 +4,88 @@ import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
 import SystemLocationsChart from "../components/SystemLocationsChart.jsx";
 
-import { formatDateHumanReadable } from "../utils/date_format.js"; // Assuming you have a utility function for date formatting
+import AddSystemModal from "../components/AddSystemModal.jsx";
+import DownloadReportModal from "../components/DownloadReportModal.jsx";
+
+import { formatDateHumanReadable } from "../utils/date_format.js";
+import { downloadCSV } from "../utils/csv.js";
+
+import useConfirm from "../hooks/useConfirm";
+import useToast from "../hooks/useToast";
+
+import {
+  getSystems,
+  getLocations,
+  getSystemHistory,
+  createSystem,
+  moveSystemToProcessed,
+} from "../api/systems";
+
+const ACTIVE_LOCATION_IDS = [1, 2, 3, 4, 5];
+
+const REPORT_CUMULATIVE_LOCATIONS = [
+  "Processed",
+  "In Debug - Wistron",
+  "In L10",
+  "In Debug - Nvidia",
+  "Pending Parts",
+];
+const REPORT_PERDAY_LOCATIONS = [
+  "Sent to L11",
+  "RMA VID",
+  "RMA PID",
+  "RMA CID",
+];
 
 function TrackingPage() {
   const [systems, setSystems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [toast, setToast] = useState({ message: "", type: "success" });
   const [locations, setLocations] = useState([]);
   const [history, setHistory] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
-
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [startDate, setStartDate] = React.useState("");
-  const [endDate, setEndDate] = React.useState("");
-
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [reportDate, setReportDate] = useState("");
   const [showActive, setShowActive] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
 
-  function handleDownloadRange() {
-    if (!startDate || !endDate) {
-      setToast({ message: "Please select start and end dates", type: "error" });
-      setTimeout(() => setToast({ message: "", type: "success" }), 3000);
-      return;
-    }
+  const [reportMode, setReportMode] = useState("perday");
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    const rows = [];
-
-    stHistoryByDate.forEach((day) => {
-      const dayDate = new Date(day.date);
-      if (dayDate >= start && dayDate <= end) {
-        day.snapshot.forEach((entry) => {
-          rows.push({
-            date: day.date,
-            service_tag: entry.service_tag,
-            location: entry.location,
-            last_note: entry.last_note,
-          });
-        });
-      }
-    });
-
-    if (rows.length > 0) {
-      downloadCSV(`snapshot_${startDate}_to_${endDate}.csv`, rows);
-    } else {
-      setToast({ message: "No data in selected range", type: "error" });
-      setTimeout(() => setToast({ message: "", type: "success" }), 3000);
-    }
-  }
-
-  function downloadCSV(filename, rows) {
-    const header = Object.keys(rows[0]).join(",");
-    const csv = [
-      header,
-      ...rows.map((row) =>
-        Object.values(row)
-          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-          .join(",")
-      ),
-    ].join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const fetchSystems = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const res = await fetch(
-        "https://backend.tss.wistronlabs.com:/api/v1/systems"
-      );
-      if (!res.ok) throw new Error("Failed to fetch systems");
-      const data = await res.json();
+      const [systemsData, locationsData, historyData] = await Promise.all([
+        getSystems(),
+        getLocations(),
+        getSystemHistory(),
+      ]);
 
-      const enriched = await Promise.all(
-        data.map(async (system) => {
-          const serviceTag = system.service_tag;
+      const formattedHistory = historyData.map((entry) => ({
+        ...entry,
+        changed_at: formatDateHumanReadable(entry.changed_at),
+      }));
+
+      const enrichedSystems = await Promise.all(
+        systemsData.map(async (system) => {
           try {
-            const historyRes = await fetch(
-              `https://backend.tss.wistronlabs.com:/api/v1/systems/${serviceTag}/history`
+            const res = await fetch(
+              `https://backend.tss.wistronlabs.com:/api/v1/systems/${system.service_tag}/history`
             );
-            if (!historyRes.ok) throw new Error("History fetch failed");
-            const history = await historyRes.json();
-
-            const createdEntry = history.find(
-              (entry) => entry.from_location === null
+            if (!res.ok) throw new Error("History fetch failed");
+            const history = await res.json();
+            const created = history.find((h) => h.from_location === null);
+            const latest = history.reduce((a, b) =>
+              new Date(a.changed_at) > new Date(b.changed_at) ? a : b
             );
-            const latestEntry = history.reduce((latest, entry) =>
-              new Date(entry.changed_at) > new Date(latest.changed_at)
-                ? entry
-                : latest
-            );
-
             return {
               ...system,
-              date_created: createdEntry?.changed_at
-                ? formatDateHumanReadable(createdEntry.changed_at)
+              date_created: created?.changed_at
+                ? formatDateHumanReadable(created.changed_at)
                 : "",
-              date_last_modified: latestEntry?.changed_at
-                ? formatDateHumanReadable(latestEntry.changed_at)
+              date_last_modified: latest?.changed_at
+                ? formatDateHumanReadable(latest.changed_at)
                 : "",
-              service_tag_title: "Service Tag",
-              issue_title: "Issue",
-              location_title: "Location",
-              date_created_title: "Date Created",
-              date_last_modified_title: "Date Last Modified",
             };
           } catch {
             return system;
@@ -127,173 +93,268 @@ function TrackingPage() {
         })
       );
 
-      setSystems(enriched);
-      setLoading(false);
+      setSystems(enrichedSystems);
+      setLocations(locationsData);
+      setHistory(formattedHistory);
     } catch (err) {
-      console.error(err);
       setError(err.message);
+    } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchLocations = async () => {
-    try {
-      const res = await fetch(
-        "https://backend.tss.wistronlabs.com:/api/v1/locations"
-      );
-      if (!res.ok) throw new Error("Failed to fetch locations");
-      const data = await res.json();
-      setLocations(data);
-    } catch (err) {
-      console.error("Error fetching locations", err);
-    }
-  };
-
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch(
-        "https://backend.tss.wistronlabs.com:/api/v1/systems/history"
-      );
-      if (!res.ok) throw new Error("Failed to fetch locations");
-      const data = await res.json();
-
-      // Convert changed_at to human-readable format
-      const fixedLocalDateData = data.map((entry) => ({
-        ...entry,
-        changed_at: formatDateHumanReadable(entry.changed_at),
-      }));
-
-      setHistory(fixedLocalDateData);
-    } catch (err) {
-      console.error("Error fetching history", err);
     }
   };
 
   useEffect(() => {
-    fetchSystems();
-    fetchLocations();
-    fetchHistory();
-    //const interval = setInterval(fetchSystems, 1000);
+    fetchData();
   }, []);
+
+  const { confirm, ConfirmDialog } = useConfirm();
+  const { showToast, Toast } = useToast();
+
+  const resolvedSystems = systems.map((sys) => {
+    const match = locations.find((l) => l.name === sys.location);
+    return { ...sys, resolved_location_id: match?.id || null };
+  });
+
+  const filteredSystems = resolvedSystems.filter((sys) => {
+    const isActive = ACTIVE_LOCATION_IDS.includes(sys.resolved_location_id);
+    return (showActive && isActive) || (showInactive && !isActive);
+  });
+
+  async function addOrUpdateSystem(service_tag, issue, note) {
+    const payload = { service_tag, issue, location_id: 1, note };
+    const inactive = resolvedSystems.find(
+      (sys) =>
+        sys.service_tag === service_tag &&
+        !ACTIVE_LOCATION_IDS.includes(sys.resolved_location_id)
+    );
+
+    try {
+      if (inactive) {
+        const confirmed = await confirm({
+          title: "Re-enter System?",
+          message: `${service_tag} already exists as inactive. Move it back to processed?`,
+          confirmText: "Confirm",
+          cancelText: "Cancel",
+          confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
+          cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
+        });
+        if (!confirmed) {
+          showToast(`Skipped ${service_tag}`, "error", 3000, "top-right");
+          return;
+        }
+
+        await moveSystemToProcessed(service_tag);
+        showToast(
+          `${service_tag} moved back to processed`,
+          "success",
+          3000,
+          "top-right"
+        );
+      } else {
+        await createSystem(payload);
+        showToast(`${service_tag} created`, "success", 3000, "top-right");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast(`Error with ${service_tag}`, "error", 3000, "top-right");
+    }
+  }
+
+  async function handleAddSystemSubmit(e) {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+
+    if (!bulkMode) {
+      const service_tag = formData.get("service_tag")?.trim().toUpperCase();
+      const issue = formData.get("issue")?.trim();
+      const note = formData.get("note")?.trim() || null;
+
+      if (!service_tag || !issue || !note) {
+        showToast(`All fields are required`, "error", 3000, "top-right");
+
+        return;
+      }
+
+      await addOrUpdateSystem(service_tag, issue, note);
+    } else {
+      const csv = formData.get("bulk_csv")?.trim();
+      if (!csv) {
+        showToast(`Enter CSV input`, "error", 3000, "top-right");
+        return;
+      }
+
+      const lines = csv.split("\n");
+      for (const line of lines) {
+        const [rawTag, issue, note] = line.split(/\t|,/).map((s) => s.trim());
+        if (rawTag && issue) {
+          await addOrUpdateSystem(rawTag.toUpperCase(), issue, note || null);
+        }
+      }
+    }
+
+    setShowModal(false);
+    await fetchData();
+    setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+  }
 
   const historyDates = [
     ...new Set(
-      history.map((entry) => {
-        const dateStr = entry.changed_at.split(" ")[0];
-        const isoDate = new Date(dateStr).toISOString().slice(0, 10);
-        return isoDate;
-      })
+      history.map((h) => new Date(h.changed_at).toISOString().slice(0, 10))
     ),
-  ].sort((a, b) => new Date(a) - new Date(b));
+  ].sort();
 
+  // Create a snapshot of the latest state for each service_tag on each date
+  // This will be used for the report download
   const stHistoryByDate = historyDates.map((date) => {
-    const compDateStartTime = new Date(date + "T23:59:59");
+    const latestByTag = new Map();
 
-    const entriesForDate = history.filter((entry) => {
-      const entryTime = new Date(entry.changed_at);
-      return entryTime <= compDateStartTime;
-    });
+    // convert date string to midnight of that day
+    const dateEnd = new Date(date + "T23:59:59.999Z");
 
-    const latestByServiceTag = new Map();
-
-    entriesForDate.forEach((entry) => {
-      const tag = entry.service_tag;
+    history.forEach((entry) => {
       const entryTime = new Date(entry.changed_at);
 
-      if (!latestByServiceTag.has(tag)) {
-        latestByServiceTag.set(tag, entry);
-      } else {
-        const existingEntry = latestByServiceTag.get(tag);
-        const existingTime = new Date(existingEntry.changed_at);
+      // only consider history up to and including this date
+      if (entryTime <= dateEnd) {
+        const existing = latestByTag.get(entry.service_tag);
 
-        if (entryTime > existingTime) {
-          latestByServiceTag.set(tag, entry);
+        if (!existing || entryTime > new Date(existing.changed_at)) {
+          latestByTag.set(entry.service_tag, entry);
         }
       }
     });
 
-    const snapshot = Array.from(latestByServiceTag.values()).map((entry) => ({
+    const snapshot = [...latestByTag.values()].map((entry) => ({
       service_tag: entry.service_tag,
       location: entry.to_location?.trim() || "Unknown",
       last_note: entry.note || "Unknown",
     }));
 
-    return {
-      date,
-      snapshot,
-    };
+    return { date, snapshot };
   });
 
-  const resolvedSystems = systems.map((sys) => {
-    const matched = locations.find((loc) => loc.name === sys.location);
-    return {
-      ...sys,
-      resolved_location_id: matched ? matched.id : null,
-    };
+  // Create a snapshot of what service_tags were worked on each day
+  // This will be used for the report downloay
+  const stWorkedOnByDate = historyDates.map((date) => {
+    // start and end of this day
+    const dateStart = new Date(date + "T00:00:00.000Z");
+    const dateEnd = new Date(date + "T23:59:59.999Z");
+
+    // keep only entries that happened on this specific day
+    const entriesOnThisDate = history.filter((entry) => {
+      const entryTime = new Date(entry.changed_at);
+      return entryTime >= dateStart && entryTime <= dateEnd;
+    });
+
+    // for each service_tag, keep only the latest change on that day
+    const latestByTag = new Map();
+
+    entriesOnThisDate.forEach((entry) => {
+      const existing = latestByTag.get(entry.service_tag);
+
+      if (
+        !existing ||
+        new Date(entry.changed_at) > new Date(existing.changed_at)
+      ) {
+        latestByTag.set(entry.service_tag, entry);
+      }
+    });
+
+    const snapshot = [...latestByTag.values()].map((entry) => ({
+      service_tag: entry.service_tag,
+      location: entry.to_location?.trim() || "Unknown",
+      last_note: entry.note || "Unknown",
+    }));
+
+    return { date, snapshot };
   });
 
-  const filteredSystems = resolvedSystems.filter((sys) => {
-    const isActive = [1, 2, 3, 4, 5].includes(sys.resolved_location_id);
+  function handleDownloadReport() {
+    if (!reportDate) {
+      showToast(`Select a Date`, "error", 3000, "top-right");
+      return;
+    }
 
-    if (showActive && isActive) return true;
-    if (showInactive && !isActive) return true;
+    // report includes:
+    // - the cumulative snapshot of all systems as of the end of the selected day, for specific active locations
+    // - and the list of systems that were moved to resolved locations on that day
+    const matchCumulative = stHistoryByDate.find((d) => d.date === reportDate);
+    let matchPerDay = null;
+    if (reportMode === "cumulative") {
+      matchPerDay = stHistoryByDate.find((d) => d.date === reportDate);
+    } else {
+      matchPerDay = stWorkedOnByDate.find((d) => d.date === reportDate);
+    }
 
-    return false;
-  });
+    const cumulativeRows =
+      matchCumulative?.snapshot.filter((row) =>
+        REPORT_CUMULATIVE_LOCATIONS.includes(row.location)
+      ) || [];
+
+    const perDayRows =
+      matchPerDay?.snapshot.filter((row) =>
+        REPORT_PERDAY_LOCATIONS.includes(row.location)
+      ) || [];
+
+    const combinedRows = [...cumulativeRows, ...perDayRows];
+
+    if (combinedRows.length > 0) {
+      downloadCSV(`snapshot_${reportDate}.csv`, combinedRows);
+    } else {
+      showToast("No data for that date", "error", 3000, "top-right");
+    }
+  }
 
   return (
     <>
+      <ConfirmDialog />
+      <Toast />
       <main className="max-w-6xl mx-auto mt-8 bg-white rounded-xl shadow border border-gray-200 p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex justify-between items-center">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
-
           <button
             onClick={() => setShowModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm"
           >
             + New System
           </button>
         </div>
+
         {loading ? (
           <LoadingSkeleton rows={6} />
         ) : error ? (
-          <div>Error: Not able to load content </div>
+          <div className="text-red-600">{error}</div>
         ) : (
-          <div>
-            <SystemLocationsChart
-              systems={systems}
-              history={history}
-              locations={locations}
-            />
+          <>
+            <SystemLocationsChart history={history} locations={locations} />
             <SystemsCreatedChart
               systems={systems}
               history={history}
               locations={locations}
             />
 
-            {/* Filters */}
-            <div className="flex flex-wrap justify-end gap-4 mb-2 mt-4">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+            <div className="flex justify-end gap-4 mt-4">
+              <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={showActive}
                   onChange={() => {
-                    if (showActive && !showInactive) return;
-                    setShowActive(!showActive);
+                    if (showInactive || !showActive) {
+                      setShowActive(!showActive);
+                    }
                   }}
                   className="accent-blue-600"
                 />
                 Active
               </label>
-
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+              <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={showInactive}
                   onChange={() => {
-                    if (!showActive && showInactive) return;
-                    setShowInactive(!showInactive);
+                    if (showActive || !showInactive) {
+                      setShowInactive(!showInactive);
+                    }
                   }}
                   className="accent-blue-600"
                 />
@@ -301,7 +362,6 @@ function TrackingPage() {
               </label>
             </div>
 
-            {/* Data Table */}
             <SearchContainer
               data={filteredSystems}
               title=""
@@ -316,460 +376,50 @@ function TrackingPage() {
               defaultSortAsc={false}
               fieldStyles={{
                 service_tag: "text-blue-600 font-medium",
-                date_last_modified: "text-gray-500 text-sm",
                 date_created: "text-gray-500 text-sm",
-                //issue: { type: "pill", color: "bg-green-100 text-green-800" },
+                date_last_modified: "text-gray-500 text-sm",
                 location: (val) =>
-                  val === "Sent to L11" ||
-                  val === "RMA CID" ||
-                  val === "RMA VID" ||
-                  val === "RMA PID"
+                  ["Sent to L11", "RMA CID", "RMA VID", "RMA PID"].includes(val)
                     ? { type: "pill", color: "bg-green-100 text-green-800" }
-                    : val === "Processed" ||
-                      val === "In Debug - Wistron" ||
-                      val === "In L10"
+                    : ["Processed", "In Debug - Wistron", "In L10"].includes(
+                        val
+                      )
                     ? { type: "pill", color: "bg-red-100 text-red-800" }
                     : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
               }}
               linkType="internal"
+              truncate={true}
             />
-          </div>
+
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 mt-4"
+            >
+              Download Report
+            </button>
+          </>
         )}
+
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-lg p-8 relative space-y-6">
-              <button
-                onClick={() => setShowModal(false)}
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Add System
-              </h2>
-
-              {/* Bulk toggle */}
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setBulkMode(false)}
-                  className={`px-3 py-1 rounded-lg text-sm shadow-sm ${
-                    !bulkMode
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Single
-                </button>
-                <button
-                  onClick={() => setBulkMode(true)}
-                  className={`px-3 py-1 rounded-lg text-sm shadow-sm ${
-                    bulkMode
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Bulk CSV
-                </button>
-              </div>
-
-              <form
-                className="space-y-4"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.target);
-
-                  if (!bulkMode) {
-                    const service_tag = formData
-                      .get("service_tag")
-                      ?.trim()
-                      .toUpperCase();
-                    const issue = formData.get("issue")?.trim();
-                    const note = formData.get("note")?.trim() || null;
-
-                    if (!service_tag || !issue || !note) {
-                      setToast({
-                        message: "Please fill in all required fields properly.",
-                        type: "error",
-                      });
-                      setTimeout(
-                        () => setToast({ message: "", type: "success" }),
-                        3000
-                      );
-
-                      return;
-                    }
-
-                    const payload = {
-                      service_tag,
-                      issue,
-                      location_id: 1,
-                      note,
-                    };
-
-                    let moveInactivetoActive = false;
-                    resolvedSystems.forEach((sys) => {
-                      if (sys.service_tag === service_tag) {
-                        const isActive = [1, 2, 3, 4, 5].includes(
-                          sys.resolved_location_id
-                        );
-                        if (!isActive) {
-                          moveInactivetoActive = true;
-                          console.log("already exists in Inactive");
-                          setToast({
-                            message: `Service tag ${service_tag} already exists, moving back to processed`,
-                            type: "success",
-                          });
-                          setTimeout(
-                            () => setToast({ message: "", type: "success" }),
-                            3000
-                          );
-                        }
-                      }
-                    });
-
-                    if (moveInactivetoActive) {
-                      const jsonRes = {
-                        to_location_id: 1,
-                        note: "Moving back to processed from Inactive",
-                      };
-                      try {
-                        const res = await fetch(
-                          `https://backend.tss.wistronlabs.com:/api/v1/systems/${service_tag}/location`,
-                          {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(jsonRes),
-                          }
-                        );
-                        if (!res.ok)
-                          throw new Error("Failed to update system location");
-
-                        setShowModal(false);
-                        setToast({
-                          message: `Service tag ${service_tag} moved back to processed!`,
-                          type: "success",
-                        });
-                        setTimeout(
-                          () => setToast({ message: "", type: "success" }),
-                          3000
-                        );
-
-                        await fetchSystems();
-                        setTimeout(() => setToastMessage(""), 3000);
-                      } catch (err) {
-                        console.error(err);
-                        setToast({
-                          message: "Error updating system location",
-                          type: "error",
-                        });
-                        setTimeout(
-                          () => setToast({ message: "", type: "success" }),
-                          3000
-                        );
-                      }
-                    } else {
-                      try {
-                        const res = await fetch(
-                          "https://backend.tss.wistronlabs.com:/api/v1/systems",
-                          {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(payload),
-                          }
-                        );
-                        if (!res.ok) throw new Error("Failed to create system");
-
-                        setShowModal(false);
-                        setToast({
-                          message: "System created successfully!",
-                          type: "success",
-                        });
-                        setTimeout(
-                          () => setToast({ message: "", type: "success" }),
-                          3000
-                        );
-
-                        await fetchSystems();
-                        setTimeout(() => setToastMessage(""), 3000);
-                      } catch (err) {
-                        console.error(err);
-                        setToast({
-                          message: "Error creating system",
-                          type: "error",
-                        });
-                        setTimeout(
-                          () => setToast({ message: "", type: "success" }),
-                          3000
-                        );
-                      }
-                    }
-                  } else {
-                    const csvText = formData.get("bulk_csv")?.trim();
-                    if (!csvText) {
-                      setToast({
-                        message: "Please enter CSV data.",
-                        type: "error",
-                      });
-                      setTimeout(
-                        () => setToast({ message: "", type: "success" }),
-                        3000
-                      );
-                      return;
-                    }
-
-                    const rows = csvText.split("\n");
-
-                    for (const line of rows) {
-                      const [rawServiceTag, issue, note] = line
-                        .split(/\t|,/)
-                        .map((x) => x.trim());
-                      const service_tag = rawServiceTag.toUpperCase();
-
-                      if (!service_tag || !issue) {
-                        console.warn(`Skipping invalid line: ${line}`);
-                        continue;
-                      }
-
-                      const payload = {
-                        service_tag,
-                        issue,
-                        location_id: 1,
-                        note: note || null,
-                      };
-
-                      let moveInactivetoActive = false;
-
-                      resolvedSystems.forEach((sys) => {
-                        if (sys.service_tag === service_tag) {
-                          const isActive = [1, 2, 3, 4, 5].includes(
-                            sys.resolved_location_id
-                          );
-                          if (!isActive) {
-                            moveInactivetoActive = true;
-                            console.log(
-                              `Already exists in Inactive: ${service_tag}`
-                            );
-                            setToast({
-                              message: `Service tag ${service_tag} already exists, moving back to processed`,
-                              type: "success",
-                            });
-                            setTimeout(
-                              () => setToast({ message: "", type: "success" }),
-                              3000
-                            );
-                          }
-                        }
-                      });
-
-                      if (moveInactivetoActive) {
-                        const jsonRes = {
-                          to_location_id: 1,
-                          note: "Moving back to processed from Inactive",
-                        };
-                        try {
-                          const res = await fetch(
-                            `https://backend.tss.wistronlabs.com:/api/v1/systems/${service_tag}/location`,
-                            {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify(jsonRes),
-                            }
-                          );
-                          if (!res.ok)
-                            throw new Error(`Failed to update ${service_tag}`);
-                          setToast({
-                            message: `Service tag ${service_tag} moved back to processed!`,
-                            type: "success",
-                          });
-                          setTimeout(
-                            () => setToast({ message: "", type: "success" }),
-                            3000
-                          );
-                        } catch (err) {
-                          console.error(err);
-                          setToast({
-                            message: `Error updating ${service_tag}`,
-                            type: "error",
-                          });
-                          setTimeout(
-                            () => setToast({ message: "", type: "success" }),
-                            3000
-                          );
-                        }
-                      } else {
-                        try {
-                          const res = await fetch(
-                            "https://backend.tss.wistronlabs.com:/api/v1/systems",
-                            {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify(payload),
-                            }
-                          );
-                          if (!res.ok)
-                            throw new Error(`Failed to create ${service_tag}`);
-                          setToast({
-                            message: `System ${service_tag} created successfully!`,
-                            type: "success",
-                          });
-                          setTimeout(
-                            () => setToast({ message: "", type: "success" }),
-                            3000
-                          );
-                        } catch (err) {
-                          console.error(err);
-                          setToast({
-                            message: `Error creating ${service_tag}`,
-                            type: "error",
-                          });
-                          setTimeout(
-                            () => setToast({ message: "", type: "success" }),
-                            3000
-                          );
-                        }
-                      }
-                    }
-
-                    setShowModal(false);
-                    await fetchSystems();
-                  }
-                }}
-              >
-                {!bulkMode ? (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Service Tag
-                      </label>
-                      <input
-                        type="text"
-                        name="service_tag"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Issue
-                      </label>
-                      <input
-                        type="text"
-                        name="issue"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Note
-                      </label>
-                      <textarea
-                        name="note"
-                        rows="3"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      ></textarea>
-                    </div>
-                  </>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CSV Input (service_tag,issue,note)
-                    </label>
-                    <textarea
-                      name="bulk_csv"
-                      rows="5"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      placeholder={`ABC123,Fails POST intermittently,Initial intake\nDEF456,Does not power on,Initial intake`}
-                      required
-                    ></textarea>
-                  </div>
-                )}
-
-                <div className="flex justify-end space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 shadow-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-                  >
-                    Save
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <AddSystemModal
+            onClose={() => setShowModal(false)}
+            bulkMode={bulkMode}
+            setBulkMode={setBulkMode}
+            onSubmit={handleAddSystemSubmit}
+          />
         )}
-
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 mt-4"
-        >
-          Download Range as CSV
-        </button>
 
         {isModalOpen && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="bg-white p-4 rounded shadow w-80">
-              <h2 className="text-lg font-semibold mb-2">Select Date Range</h2>
-              <label className="block mb-2">
-                Start Date:
-                <input
-                  type="date"
-                  className="border rounded p-1 w-full"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </label>
-              <label className="block mb-2">
-                End Date:
-                <input
-                  type="date"
-                  className="border rounded p-1 w-full"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </label>
-              <div className="flex justify-end space-x-2 mt-4">
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    handleDownloadRange();
-                    setIsModalOpen(false);
-                  }}
-                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          </div>
+          <DownloadReportModal
+            onClose={() => setIsModalOpen(false)}
+            reportDate={reportDate}
+            setReportDate={setReportDate}
+            onDownload={handleDownloadReport}
+            reportMode={reportMode}
+            setReportMode={setReportMode}
+          />
         )}
       </main>
-      {/* Toast */}
-      {toast.message && (
-        <div
-          className={`fixed bottom-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg
-                text-sm font-medium bg-green-600 text-white
-                transition-all duration-300 ${
-                  toast.type === "error" ? "bg-red-600" : "bg-green-600"
-                }`}
-        >
-          {toast.message}
-        </div>
-      )}
     </>
   );
 }

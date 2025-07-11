@@ -9,7 +9,6 @@ import {
   CartesianGrid,
 } from "recharts";
 
-// Helper to format Date → MM/DD/YY
 function formatDateMMDDYY(date) {
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
@@ -17,90 +16,159 @@ function formatDateMMDDYY(date) {
   return `${mm}/${dd}/${yy}`;
 }
 
-function SystemsCreatedChart({ systems, history, locations }) {
-  const activeLocationNames = locations
-    .filter((loc) => [1, 2, 3, 4, 5].includes(loc.id))
-    .map((loc) => loc.name.trim().toLowerCase());
+function SystemLocationsChart({ history }) {
+  const EXCLUDED_LOCATIONS_EOD = [
+    "Pending Parts",
+    "In Debug - Wistron",
+    "In Debug - Nvidia",
+    "In L10",
+  ];
 
-  const createdByDay = systems.reduce((acc, sys) => {
-    const dateStr = sys.date_created?.split(" ")[0];
-    if (!dateStr) return acc;
+  const CHART_COLORS = [
+    "#e63946", // red
+    "#1f77b4", // blue 1
+    "#4e9dd3", // blue 2
+    "#145a86", // blue 3
+    "#6ca0dc", // blue 4
+  ];
 
-    // Parse and normalize
-    const dateObj = new Date(dateStr);
-    if (isNaN(dateObj)) return acc;
+  const KNOWN_LOCATIONS = ["Processed", "RMA PID", "RMA CID", "RMA VID"];
 
-    const formatted = formatDateMMDDYY(dateObj);
-    acc[formatted] = (acc[formatted] || 0) + 1;
-    return acc;
-  }, {});
+  const allLocations = new Set(KNOWN_LOCATIONS);
 
-  const inactiveByDay = history.reduce((acc, entry) => {
-    const dateStr = entry.changed_at?.split(" ")[0];
-    if (!dateStr) return acc;
+  const historyDates = [
+    ...new Set(
+      history.map((entry) =>
+        new Date(entry.changed_at).toISOString().slice(0, 10)
+      )
+    ),
+  ].sort((a, b) => new Date(a) - new Date(b));
 
-    const dateObj = new Date(dateStr);
-    if (isNaN(dateObj)) return acc;
+  const historyByDate = historyDates.map((isoDate) => {
+    const dateStart = new Date(isoDate + "T00:00:00.000Z");
+    const dateEnd = new Date(isoDate + "T23:59:59.999Z");
 
-    const formatted = formatDateMMDDYY(dateObj);
+    const latestByTag = new Map();
 
-    const toLoc = entry.to_location?.trim().toLowerCase();
-    const isActive = activeLocationNames.includes(toLoc);
+    // consider only entries that happened on this specific day
+    history.forEach((entry) => {
+      const entryTime = new Date(entry.changed_at);
+      if (entryTime >= dateStart && entryTime <= dateEnd) {
+        const existing = latestByTag.get(entry.service_tag);
 
-    if (!isActive) {
-      acc[formatted] = (acc[formatted] || 0) + 1;
-    }
+        if (!existing || entryTime > new Date(existing.changed_at)) {
+          latestByTag.set(entry.service_tag, entry);
+        }
+      }
+    });
 
-    return acc;
-  }, {});
+    const locationTotals = {};
+    [...latestByTag.values()].forEach((entry) => {
+      const loc = entry.to_location?.trim() || "Unknown";
+      if (loc === "Processed") return; // skip, handled separately
+      if (EXCLUDED_LOCATIONS_EOD.includes(loc)) return; // skip excluded
+      locationTotals[loc] = (locationTotals[loc] || 0) + 1;
+    });
 
-  const allDates = new Set([
-    ...Object.keys(createdByDay),
-    ...Object.keys(inactiveByDay),
-  ]);
+    return {
+      date: isoDate,
+      toLocationCounts: locationTotals,
+    };
+  });
 
-  const sortedDates = Array.from(allDates).sort(
-    (a, b) => new Date(a) - new Date(b)
-  );
+  // 🔷 historyByDateFirstChange — only first "Processed" change per day
+  const historyByDateFirstChange = historyDates.map((isoDate) => {
+    const dateStart = new Date(isoDate + "T00:00:00.000Z");
+    const dateEnd = new Date(isoDate + "T23:59:59.999Z");
 
-  const last30Dates = sortedDates.slice(-30);
+    const entriesOnThisDay = history.filter((entry) => {
+      const entryTime = new Date(entry.changed_at);
+      return entryTime >= dateStart && entryTime <= dateEnd;
+    });
 
-  const chartData = last30Dates.map((date) => ({
-    date,
-    created: createdByDay[date] || 0,
-    inactive: inactiveByDay[date] || 0,
-  }));
+    const firstChangePerSystem = new Map();
+
+    entriesOnThisDay.forEach((entry) => {
+      const existing = firstChangePerSystem.get(entry.service_tag);
+      const entryTime = new Date(entry.changed_at);
+
+      if (!existing || entryTime < new Date(existing.changed_at)) {
+        firstChangePerSystem.set(entry.service_tag, entry);
+      }
+    });
+
+    const locationTotals = {};
+    [...firstChangePerSystem.values()].forEach((entry) => {
+      const loc = entry.to_location?.trim() || "Unknown";
+      if (loc !== "Processed") return; // only care about Processed
+      locationTotals[loc] = (locationTotals[loc] || 0) + 1;
+    });
+
+    return {
+      date: isoDate,
+      toLocationCounts: locationTotals,
+    };
+  });
+
+  const last30Dates = historyByDate.slice(-30);
+
+  // 🔷 Collect all unique locations (including Processed)
+  // const allLocations = new Set();
+  historyByDate.forEach((day) => {
+    Object.keys(day.toLocationCounts).forEach((loc) => allLocations.add(loc));
+  });
+  historyByDateFirstChange.forEach((day) => {
+    Object.keys(day.toLocationCounts).forEach((loc) => allLocations.add(loc));
+  });
+
+  // 🔷 Combine both datasets per day
+  const chartData = last30Dates.map((day, idx) => {
+    const date = formatDateMMDDYY(new Date(day.date));
+
+    const processedForDay = historyByDateFirstChange.find(
+      (d) => d.date === day.date
+    ) || { toLocationCounts: {} };
+
+    const row = {
+      date,
+      ...day.toLocationCounts,
+      ...processedForDay.toLocationCounts, // overwrites "Processed" if present
+    };
+
+    allLocations.forEach((loc) => {
+      if (!(loc in row)) row[loc] = 0;
+    });
+
+    return row;
+  });
+
+  const locationKeys = Array.from(allLocations);
 
   return (
-    <div className="bg-white shadow rounded p-4 mt-5">
+    <div className="bg-white shadow rounded p-4">
       <h2 className="text-xl font-semibold mb-4">In vs Out</h2>
 
-      <ResponsiveContainer width="100%" height={200}>
+      <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />
           <YAxis interval={0} allowDecimals={false} />
           <Tooltip />
-          <Line
-            type="monotone"
-            dataKey="created"
-            name="Created"
-            stroke="#ef4444"
-            strokeWidth={2}
-            dot={{ r: 4 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="inactive"
-            name="Resolved"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={{ r: 4 }}
-          />
+          {locationKeys.map((loc, idx) => (
+            <Line
+              key={loc}
+              type="monotone"
+              dataKey={loc}
+              name={loc}
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export default SystemsCreatedChart;
+export default SystemLocationsChart;
