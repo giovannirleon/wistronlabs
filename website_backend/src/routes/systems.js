@@ -210,6 +210,52 @@ router.patch("/:service_tag/issue", async (req, res) => {
   res.json({ message: "Issue updated" });
 });
 
+// DELETE /api/v1/systems/:service_tag/history/last
+router.delete("/:service_tag/history/last", async (req, res) => {
+  const { service_tag } = req.params;
+
+  try {
+    // find system
+    const systemResult = await db.query(
+      "SELECT id FROM system WHERE service_tag = $1",
+      [service_tag]
+    );
+
+    if (systemResult.rows.length === 0) {
+      return res.status(404).json({ error: "System not found" });
+    }
+
+    const system_id = systemResult.rows[0].id;
+
+    // find most recent history entry
+    const historyResult = await db.query(
+      `
+      SELECT id FROM system_location_history
+      WHERE system_id = $1
+      ORDER BY changed_at DESC
+      LIMIT 1
+      `,
+      [system_id]
+    );
+
+    if (historyResult.rows.length === 0) {
+      return res.status(404).json({ error: "No history entries found" });
+    }
+
+    const history_id = historyResult.rows[0].id;
+
+    // delete it
+    await db.query("DELETE FROM system_location_history WHERE id = $1", [
+      history_id,
+    ]);
+
+    res.json({ message: "Last history entry deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete last history entry" });
+  }
+});
+
 // DELETE /api/v1/systems/:service_tag
 router.delete("/:service_tag", async (req, res) => {
   const { service_tag } = req.params;

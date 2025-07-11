@@ -34,7 +34,12 @@ function SystemPage() {
         return locations.filter((l) => l.name === "In Debug - Wistron");
       case "In Debug - Wistron":
         return locations.filter((l) =>
-          ["In L10", "Pending Parts", "In Debug - Nvidia"].includes(l.name)
+          [
+            "In L10",
+            "Pending Parts",
+            "In Debug - Nvidia",
+            "In Debug - Wistron",
+          ].includes(l.name)
         );
       case "Pending Parts":
         return locations.filter((l) => l.name === "In Debug - Wistron");
@@ -220,13 +225,13 @@ function SystemPage() {
                 <label className="block text-sm font-medium text-gray-600 mb-1">
                   Note:
                 </label>
-                <input
-                  type="text"
+                <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Required Note"
                   disabled={isSentToL11}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100"
+                  rows={3} // adjust number of visible rows
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100 resize-none"
                 />
               </div>
 

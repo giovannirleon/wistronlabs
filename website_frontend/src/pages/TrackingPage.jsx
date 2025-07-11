@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import SearchContainer from "../components/SearchContainer";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
+import SystemLocationsChart from "../components/SystemLocationsChart.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format.js"; // Assuming you have a utility function for date formatting
 
@@ -15,8 +16,67 @@ function TrackingPage() {
   const [history, setHistory] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
 
+  const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [startDate, setStartDate] = React.useState("");
+  const [endDate, setEndDate] = React.useState("");
+
   const [showActive, setShowActive] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
+
+  function handleDownloadRange() {
+    if (!startDate || !endDate) {
+      setToast({ message: "Please select start and end dates", type: "error" });
+      setTimeout(() => setToast({ message: "", type: "success" }), 3000);
+      return;
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    const rows = [];
+
+    stHistoryByDate.forEach((day) => {
+      const dayDate = new Date(day.date);
+      if (dayDate >= start && dayDate <= end) {
+        day.snapshot.forEach((entry) => {
+          rows.push({
+            date: day.date,
+            service_tag: entry.service_tag,
+            location: entry.location,
+            last_note: entry.last_note,
+          });
+        });
+      }
+    });
+
+    if (rows.length > 0) {
+      downloadCSV(`snapshot_${startDate}_to_${endDate}.csv`, rows);
+    } else {
+      setToast({ message: "No data in selected range", type: "error" });
+      setTimeout(() => setToast({ message: "", type: "success" }), 3000);
+    }
+  }
+
+  function downloadCSV(filename, rows) {
+    const header = Object.keys(rows[0]).join(",");
+    const csv = [
+      header,
+      ...rows.map((row) =>
+        Object.values(row)
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const fetchSystems = async () => {
     setLoading(true);
@@ -116,6 +176,54 @@ function TrackingPage() {
     //const interval = setInterval(fetchSystems, 1000);
   }, []);
 
+  const historyDates = [
+    ...new Set(
+      history.map((entry) => {
+        const dateStr = entry.changed_at.split(" ")[0];
+        const isoDate = new Date(dateStr).toISOString().slice(0, 10);
+        return isoDate;
+      })
+    ),
+  ].sort((a, b) => new Date(a) - new Date(b));
+
+  const stHistoryByDate = historyDates.map((date) => {
+    const compDateStartTime = new Date(date + "T23:59:59");
+
+    const entriesForDate = history.filter((entry) => {
+      const entryTime = new Date(entry.changed_at);
+      return entryTime <= compDateStartTime;
+    });
+
+    const latestByServiceTag = new Map();
+
+    entriesForDate.forEach((entry) => {
+      const tag = entry.service_tag;
+      const entryTime = new Date(entry.changed_at);
+
+      if (!latestByServiceTag.has(tag)) {
+        latestByServiceTag.set(tag, entry);
+      } else {
+        const existingEntry = latestByServiceTag.get(tag);
+        const existingTime = new Date(existingEntry.changed_at);
+
+        if (entryTime > existingTime) {
+          latestByServiceTag.set(tag, entry);
+        }
+      }
+    });
+
+    const snapshot = Array.from(latestByServiceTag.values()).map((entry) => ({
+      service_tag: entry.service_tag,
+      location: entry.to_location?.trim() || "Unknown",
+      last_note: entry.note || "Unknown",
+    }));
+
+    return {
+      date,
+      snapshot,
+    };
+  });
+
   const resolvedSystems = systems.map((sys) => {
     const matched = locations.find((loc) => loc.name === sys.location);
     return {
@@ -153,6 +261,11 @@ function TrackingPage() {
           <div>Error: Not able to load content </div>
         ) : (
           <div>
+            <SystemLocationsChart
+              systems={systems}
+              history={history}
+              locations={locations}
+            />
             <SystemsCreatedChart
               systems={systems}
               history={history}
@@ -591,6 +704,56 @@ function TrackingPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 mt-4"
+        >
+          Download Range as CSV
+        </button>
+
+        {isModalOpen && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white p-4 rounded shadow w-80">
+              <h2 className="text-lg font-semibold mb-2">Select Date Range</h2>
+              <label className="block mb-2">
+                Start Date:
+                <input
+                  type="date"
+                  className="border rounded p-1 w-full"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </label>
+              <label className="block mb-2">
+                End Date:
+                <input
+                  type="date"
+                  className="border rounded p-1 w-full"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </label>
+              <div className="flex justify-end space-x-2 mt-4">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    handleDownloadRange();
+                    setIsModalOpen(false);
+                  }}
+                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Download
+                </button>
+              </div>
             </div>
           </div>
         )}

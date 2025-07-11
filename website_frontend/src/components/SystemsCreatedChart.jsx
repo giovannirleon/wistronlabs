@@ -18,8 +18,6 @@ function formatDateMMDDYY(date) {
 }
 
 function SystemsCreatedChart({ systems, history, locations }) {
-  console.log(history);
-
   const activeLocationNames = locations
     .filter((loc) => [1, 2, 3, 4, 5].includes(loc.id))
     .map((loc) => loc.name.trim().toLowerCase());
@@ -74,10 +72,10 @@ function SystemsCreatedChart({ systems, history, locations }) {
   }));
 
   return (
-    <div className="bg-white shadow rounded p-4">
-      <h2 className="text-xl font-semibold mb-4">Daily Metrics</h2>
+    <div className="bg-white shadow rounded p-4 mt-5">
+      <h2 className="text-xl font-semibold mb-4">In vs Out</h2>
 
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />
@@ -87,7 +85,7 @@ function SystemsCreatedChart({ systems, history, locations }) {
             type="monotone"
             dataKey="created"
             name="Created"
-            stroke="#3b82f6"
+            stroke="#ef4444"
             strokeWidth={2}
             dot={{ r: 4 }}
           />
@@ -95,7 +93,7 @@ function SystemsCreatedChart({ systems, history, locations }) {
             type="monotone"
             dataKey="inactive"
             name="Resolved"
-            stroke="#ef4444"
+            stroke="#3b82f6"
             strokeWidth={2}
             dot={{ r: 4 }}
           />

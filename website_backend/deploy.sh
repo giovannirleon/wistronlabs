@@ -23,13 +23,17 @@ if ! command -v sshpass >/dev/null 2>&1; then
     echo "     sudo apt-get install sshpass"
     echo ""
     echo "   On macOS (with Homebrew):"
-    echo "     brew install hudochenkov/sshpass/sshpass"
+    echo "     brew install hudochenkov/sshpass"
     exit 1
 fi
 
+sshpass -p "$1" ssh $USER@$URL \
+  "docker exec -t website_backend-db-1 pg_dump -U postgres mydb > ~/db_backup_$(date +%Y%m%d_%H%M%S).sql"
+echo "✅ Database backup created successfully on remote server."
+
 echo "🔷 Cleaning up remote server environment: stopping and removing old containers, and removing old backend code…"
 sshpass -p "$1" ssh $USER@$URL \
-  "cd /opt/docker/website_backend; sudo docker compose down -v; cd ..; rm -rf website_backend/;"
+  "cd /opt/docker/website_backend; sudo docker compose down; cd ..; rm -rf website_backend/;"
 
 echo "✅ Remote cleanup complete."
 
@@ -41,7 +45,7 @@ echo "✅ Backend code uploaded successfully."
 
 echo "🔷 Starting new backend containers on remote server with a fresh build…"
 sshpass -p "$1" ssh $USER@$URL \
-  "cd /opt/docker/website_backend; sudo docker compose up --build -d"
+  "cd /opt/docker/website_backend; sudo docker compose up --build -d app"
 
 echo "✅ Deployment complete. The backend is now up and running."
 
