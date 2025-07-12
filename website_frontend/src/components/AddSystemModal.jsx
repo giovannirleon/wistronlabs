@@ -3,6 +3,7 @@ export default function AddSystemModal({
   bulkMode,
   setBulkMode,
   onSubmit,
+  addSystemFormError,
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -46,14 +47,30 @@ export default function AddSystemModal({
               <InputField label="Service Tag" name="service_tag" />
               <InputField label="Issue" name="issue" />
               <TextAreaField label="Note" name="note" />
+              {addSystemFormError ? (
+                <p className="text-red-500 text-sm">All fields are required.</p>
+              ) : (
+                <p className="text-red-500 text-sm invisible">
+                  All fields are required.
+                </p>
+              )}
             </>
           ) : (
-            <TextAreaField
-              label="CSV Input (service_tag,issue,note)"
-              name="bulk_csv"
-              placeholder={`ABC123,Fails POST intermittently,Initial intake\nDEF456,Does not power on,Initial intake`}
-              rows={5}
-            />
+            <>
+              <TextAreaField
+                label="CSV Input (service_tag,issue,note)"
+                name="bulk_csv"
+                placeholder={`ABC123,Fails POST intermittently,Initial intake\nDEF456,Does not power on,Initial intake`}
+                rows={5}
+              />
+              {addSystemFormError ? (
+                <p className="text-red-500 text-sm">All fields are required.</p>
+              ) : (
+                <p className="text-red-500 text-sm invisible">
+                  All fields are required.
+                </p>
+              )}
+            </>
           )}
 
           <div className="flex justify-end space-x-2">
@@ -86,7 +103,6 @@ const InputField = ({ label, name }) => (
       type="text"
       name={name}
       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      required
     />
   </div>
 );

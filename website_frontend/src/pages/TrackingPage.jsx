@@ -4,6 +4,9 @@ import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
 import SystemLocationsChart from "../components/SystemLocationsChart.jsx";
 
+import { pdf } from "@react-pdf/renderer";
+import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
+
 import AddSystemModal from "../components/AddSystemModal.jsx";
 import DownloadReportModal from "../components/DownloadReportModal.jsx";
 
@@ -49,6 +52,7 @@ function TrackingPage() {
   const [reportDate, setReportDate] = useState("");
   const [showActive, setShowActive] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
+  const [addSystemFormError, setAddSystemFormError] = useState(false);
 
   const [reportMode, setReportMode] = useState("perday");
 
@@ -107,6 +111,8 @@ function TrackingPage() {
     fetchData();
   }, []);
 
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
 
@@ -154,9 +160,12 @@ function TrackingPage() {
         await createSystem(payload);
         showToast(`${service_tag} created`, "success", 3000, "top-right");
       }
+
+      return true;
     } catch (err) {
       console.error(err);
       showToast(`Error with ${service_tag}`, "error", 3000, "top-right");
+      return false;
     }
   }
 
@@ -170,31 +179,87 @@ function TrackingPage() {
       const note = formData.get("note")?.trim() || null;
 
       if (!service_tag || !issue || !note) {
-        showToast(`All fields are required`, "error", 3000, "top-right");
-
+        setAddSystemFormError(true);
         return;
       }
 
-      await addOrUpdateSystem(service_tag, issue, note);
+      setAddSystemFormError(false);
+
+      // Add system first
+      const ok = await addOrUpdateSystem(service_tag, issue, note);
+
+      // Generate and open PDF
+
+      if (ok) {
+        await delay(500);
+        try {
+          const blob = await pdf(
+            <SystemPDFLabel
+              systems={[
+                {
+                  service_tag: service_tag,
+                  url: `https://tss.wistronlabs.com/${service_tag}`,
+                },
+              ]}
+            />
+          ).toBlob();
+
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank");
+        } catch (err) {
+          console.error("Failed to generate PDF", err);
+        }
+      }
+
+      setShowModal(false);
+      await fetchData();
+      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
     } else {
       const csv = formData.get("bulk_csv")?.trim();
       if (!csv) {
-        showToast(`Enter CSV input`, "error", 3000, "top-right");
+        setAddSystemFormError(true);
         return;
       }
+
+      setAddSystemFormError(false);
+
+      const systemsPDF = [];
+      let ok = false;
 
       const lines = csv.split("\n");
       for (const line of lines) {
         const [rawTag, issue, note] = line.split(/\t|,/).map((s) => s.trim());
-        if (rawTag && issue) {
-          await addOrUpdateSystem(rawTag.toUpperCase(), issue, note || null);
+        if (!rawTag || !issue) {
+          console.warn(`Skipping invalid line: ${line}`);
+          continue;
+        }
+
+        ok = await addOrUpdateSystem(rawTag.toUpperCase(), issue, note || null);
+
+        systemsPDF.push({
+          service_tag: rawTag.toUpperCase(),
+          url: `https://tss.wistronlabs.com/${rawTag.toUpperCase()}`,
+        });
+      }
+
+      if (systemsPDF.length > 0 && ok) {
+        await delay(500);
+        try {
+          const blob = await pdf(
+            <SystemPDFLabel systems={systemsPDF} />
+          ).toBlob();
+
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank");
+        } catch (err) {
+          console.error("Failed to generate PDF", err);
         }
       }
-    }
 
-    setShowModal(false);
-    await fetchData();
-    setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+      setShowModal(false);
+      await fetchData();
+      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+    }
   }
 
   const historyDates = [
@@ -313,7 +378,10 @@ function TrackingPage() {
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              setAddSystemFormError(false);
+              setShowModal(true);
+            }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm"
           >
             + New System
@@ -406,6 +474,7 @@ function TrackingPage() {
             bulkMode={bulkMode}
             setBulkMode={setBulkMode}
             onSubmit={handleAddSystemSubmit}
+            addSystemFormError={addSystemFormError}
           />
         )}
 

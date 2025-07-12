@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Select from "react-select";
+
 import Flowchart from "../components/Flowchart";
 import { useParams } from "react-router-dom";
 import SearchContainer from "../components/SearchContainer";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
+
+import { pdf } from "@react-pdf/renderer";
+import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
+
+import Station from "../components/Station.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format";
 import { allowedNextLocations } from "../helpers/NextAllowedLocations.jsx";
@@ -15,6 +22,7 @@ import {
   deleteSystem,
   updateSystemLocation,
   deleteLastHistoryEntry,
+  getStations,
 } from "../api/apis.js";
 
 import useConfirm from "../hooks/useConfirm";
@@ -26,6 +34,8 @@ function SystemPage() {
   const [history, setHistory] = useState([]);
   const [system, setSystem] = useState(null); // new
   const [locations, setLocations] = useState([]);
+  const [stations, setStations] = useState([]); // new
+
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState(null);
@@ -33,6 +43,7 @@ function SystemPage() {
 
   const [note, setNote] = useState("");
   const [toLocationId, setToLocationId] = useState("");
+  const [selectedStation, setSelectedStation] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const currentLocation = history[0]?.to_location || ""; // most recent location name
@@ -46,11 +57,14 @@ function SystemPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [systemsData, locationsData, historyData] = await Promise.all([
-        getSystem(serviceTag),
-        getLocations(),
-        getSystemHistory(serviceTag),
-      ]);
+      const [systemsData, locationsData, historyData, stationData] =
+        await Promise.all([
+          getSystem(serviceTag),
+          getLocations(),
+          getSystemHistory(serviceTag),
+          getStations(),
+        ]);
+      setStations(stationData);
       setSystem(systemsData);
       setLocations(locationsData);
       setHistory(historyData);
@@ -158,7 +172,39 @@ function SystemPage() {
     }
   };
 
-  console.log("History:", history);
+  const handlePrint = async () => {
+    const blob = await pdf(
+      <SystemPDFLabel
+        systems={[
+          {
+            service_tag: system.service_tag,
+            url: `https://tss.wistronlabs.com/${system.service_tag}`,
+          },
+        ]} // pass as array
+      />
+    ).toBlob();
+    const url = URL.createObjectURL(blob);
+    window.open(url);
+  };
+
+  // Fetch stations every second
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const updatedStations = await getStations();
+        setStations(updatedStations);
+      } catch (err) {
+        console.error("Failed to fetch stations:", err);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const selectedStationObj = stations.find(
+    (station) => station.station === selectedStation
+  );
+
   return (
     <>
       <ConfirmDialog />
@@ -191,14 +237,22 @@ function SystemPage() {
                   </span>
                 )}
               </div>
-
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
-              >
-                Delete Unit
-              </button>
+              <div>
+                <button
+                  type="button"
+                  className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow mr-2"
+                  onClick={handlePrint}
+                >
+                  Print Label
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
+                >
+                  Delete Unit
+                </button>
+              </div>
             </div>
 
             <div className="w-full overflow-x-auto">
@@ -237,11 +291,11 @@ function SystemPage() {
                         disabled={isSentToL11}
                         onClick={() => setToLocationId(loc.id)}
                         className={`px-4 py-2 rounded-lg shadow text-sm font-medium border
-          ${
-            toLocationId === loc.id
-              ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
-          }
+                  ${
+                    toLocationId === loc.id
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+                  }
           ${isSentToL11 ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         {loc.name}
@@ -266,6 +320,77 @@ function SystemPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     Please select a location above.
                   </p>
+                )}
+
+                {toLocationId === 5 && (
+                  <div className="mt-5 flex gap-4">
+                    {/* Table on the left */}
+                    <div className="w-md">
+                      <table className="w-full bg-white rounded shadow-sm overflow-hidden border-collapse">
+                        <thead>
+                          <tr>
+                            <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                              Station
+                            </th>
+                            <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                              Status
+                            </th>
+                            <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                              Service Tag
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <Station
+                            stationInfo={
+                              selectedStationObj || {
+                                station: "Stn #",
+                                status: 0,
+                                message: "Please select a station",
+                              }
+                            }
+                            serviceTag={
+                              selectedStationObj ? system.service_tag : "None"
+                            }
+                          />
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Dropdown on the right */}
+                    <div className="w-55">
+                      <label
+                        htmlFor="extra-options"
+                        className="block text-sm font-medium text-gray-700 mb-1"
+                      >
+                        Select a Station
+                      </label>
+                      <Select
+                        instanceId="extra-options"
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        isClearable
+                        isSearchable
+                        placeholder="Select a station"
+                        value={
+                          stations
+                            .map((station) => ({
+                              value: station.station,
+                              label: `Station ${station.station}`,
+                            }))
+                            .find((opt) => opt.value === selectedStation) ||
+                          null
+                        }
+                        onChange={(option) =>
+                          setSelectedStation(option ? option.value : "")
+                        }
+                        options={stations.map((station) => ({
+                          value: station.station,
+                          label: station.station,
+                        }))}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -306,7 +431,6 @@ function SystemPage() {
                 </p>
               )}
             </form>
-
             <div>
               <h1 className="text-3xl font-bold text-gray-800">
                 Location History

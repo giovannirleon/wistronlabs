@@ -1,4 +1,8 @@
 const BASE_URL = "https://backend.tss.wistronlabs.com:/api/v1";
+const BASE_URL_STATIONS =
+  import.meta.env.MODE === "development"
+    ? "http://html.tss.wistronlabs.com" // is "/l10_logs/" in development
+    : "https://tss.wistronlabs.com"; // is "/l10_logs/" in production
 
 /**
  * Utility to wrap fetch and throw on error
@@ -139,4 +143,20 @@ export async function updateLocation(tag, body) {
 
 export function getSystemHistory(tag) {
   return fetchJSON(`/systems/${tag}/history`);
+}
+
+/**
+ * Get current station status
+ */
+export async function getStations() {
+  const timestamp = Date.now();
+  const res = await fetch(
+    `${BASE_URL_STATIONS}/station_status.json?${timestamp}`
+  );
+  if (!res.ok) {
+    const msg = `Failed to fetch stations: ${res.status} ${res.statusText}`;
+    console.error(msg);
+    throw new Error(msg);
+  }
+  return res.json();
 }

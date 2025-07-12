@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import SearchContainer from "../components/SearchContainer";
 
+import { getStations } from "../api/apis";
+
 import Rack from "../components/Rack";
 import Table from "../components/Table";
 
@@ -10,17 +12,22 @@ function HomePage() {
   const [stations, setStations] = useState([]);
   const [downloads, setDownloads] = useState([]);
 
+  const baseUrl =
+    import.meta.env.MODE === "development"
+      ? "http://html.tss.wistronlabs.com" // is "/l10_logs/" in development
+      : "https://tss.wistronlabs.com"; // is "/l10_logs/" in production
+
+  const fetchStations = async () => {
+    try {
+      const data = await getStations();
+      setStations(data);
+    } catch (err) {
+      console.error("Failed to fetch stations:", err);
+    }
+  };
+
   useEffect(() => {
     // fetch stations every 1s
-    const fetchStations = async () => {
-      try {
-        const res = await fetch("/station_status.json?" + Date.now());
-        const data = await res.json();
-        setStations(data);
-      } catch (err) {
-        console.error("Failed to fetch stations:", err);
-      }
-    };
     fetchStations();
     const interval = setInterval(fetchStations, 1000);
     return () => clearInterval(interval);
@@ -30,10 +37,7 @@ function HomePage() {
     // fetch downloads once
     const fetchDownloads = async () => {
       try {
-        const link =
-          import.meta.env.MODE === "development"
-            ? "http://html.tss.wistronlabs.com/l10_logs/" // is "/l10_logs/" in development
-            : "https://tss.wistronlabs.com/l10_logs/"; // is "/l10_logs/" in production
+        const link = `${baseUrl}/l10_logs/`;
         const res = await fetch(link);
         const text = await res.text();
         const parser = new DOMParser();

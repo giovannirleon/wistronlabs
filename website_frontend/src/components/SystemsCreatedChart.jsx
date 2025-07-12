@@ -10,11 +10,8 @@ import {
 } from "recharts";
 
 function formatDateMMDDYY(date) {
-  console.log("Formatting date:", date);
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
-
-  console.log("Formatting day:", dd);
   const yy = String(date.getFullYear()).slice(-2);
   return `${mm}/${dd}/${yy}`;
 }
@@ -126,7 +123,6 @@ function SystemLocationsChart({ history }) {
 
   // 🔷 Combine both datasets per day
   const chartData = last30Dates.map((day, idx) => {
-    console.log("Processing day pre fromatter function:", day.date);
     const date = day.date; //formatDateMMDDYY(new Date(day.date));
     const processedForDay = historyByDateFirstChange.find(
       (d) => d.date === day.date
@@ -151,7 +147,7 @@ function SystemLocationsChart({ history }) {
     <div className="bg-white shadow rounded p-4">
       <h2 className="text-xl font-semibold mb-4">In vs Out</h2>
 
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />

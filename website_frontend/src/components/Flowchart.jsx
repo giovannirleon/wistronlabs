@@ -14,7 +14,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
   const states = locations
     .map((loc) => {
       const layout = layoutMap.find((l) => l.id === loc.id);
-      if (!layout) return null; // skip if no layout
+      if (!layout) return null;
       return {
         ...loc,
         x: layout.x,
@@ -31,7 +31,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "right",
       ids: [1, 5],
-    }, // Processed to In Debug - Wistron
+    },
     {
       x: 355,
       y: 175,
@@ -39,7 +39,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "right",
       ids: [2],
-    }, // In Debug - Wistron to In L10
+    },
     {
       x: 225,
       y: 205,
@@ -47,7 +47,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "down",
       ids: [2],
-    }, // In Debug - Wistron to In Debug - Nvidia
+    },
     {
       x: 225,
       y: 145,
@@ -55,7 +55,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "up",
       ids: [2],
-    }, // In Debug - Wistron to Pending Parts
+    },
     {
       x: 325,
       y: 245,
@@ -63,7 +63,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "up",
       ids: [3],
-    }, //In Debug - Nvidia to In Debug - Wistron
+    },
     {
       x: 325,
       y: 105,
@@ -71,8 +71,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "down",
       ids: [4],
-    }, // Pending Parts to In Debug - Wistron
-
+    },
     {
       x: 555,
       y: 25,
@@ -80,7 +79,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "right",
       ids: [5],
-    }, // In L10 to Sent to L11
+    },
     {
       x: 555,
       y: 125,
@@ -88,7 +87,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "right",
       ids: [5],
-    }, // In L10 to RMA-VID
+    },
     {
       x: 555,
       y: 225,
@@ -96,7 +95,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "right",
       ids: [5],
-    }, // In L10 to RMA-PID
+    },
     {
       x: 555,
       y: 325,
@@ -104,45 +103,14 @@ export default function Flowchart({ currentLocation_id, locations }) {
       totalLenth: 40,
       direction: "right",
       ids: [5],
-    }, // In L10 to RMA-CID
+    },
   ];
 
   const rects = [
-    {
-      // from in l10 to complete vertical lines for arrows
-      x: 552,
-      y: 165,
-      width: 4,
-      height: 20,
-      direction: "horizontal",
-      ids: [5],
-    },
-    {
-      x: 555,
-      y: 25,
-      width: 295,
-      height: 15,
-      direction: "vertical",
-      ids: [5],
-    },
-
-    // from in l10 to in debug wistron lines for arrows
-    {
-      x: 465,
-      y: 205,
-      width: 125,
-      height: 15,
-      direction: "vertical",
-      ids: [5],
-    },
-    {
-      x: 155,
-      y: 180,
-      width: 140,
-      height: 15,
-      direction: "vertical",
-      ids: [5],
-    },
+    { x: 552, y: 165, width: 4, height: 20, direction: "horizontal", ids: [5] },
+    { x: 555, y: 25, width: 295, height: 15, direction: "vertical", ids: [5] },
+    { x: 465, y: 205, width: 125, height: 15, direction: "vertical", ids: [5] },
+    { x: 155, y: 180, width: 140, height: 15, direction: "vertical", ids: [5] },
     {
       x: 155,
       y: 315,
@@ -154,13 +122,13 @@ export default function Flowchart({ currentLocation_id, locations }) {
   ];
 
   const getFill = (id) => {
-    if (id === currentLocation_id) return "#3b82f6"; // blue-600
-    return "#f9fafb"; // gray-50
+    if (id === currentLocation_id) return "url(#activeGradient)";
+    return "#f9fafb";
   };
 
   const getTextColor = (id) => {
     if (id === currentLocation_id) return "#fff";
-    return "#111827"; // gray-900
+    return "#111827";
   };
 
   return (
@@ -170,8 +138,24 @@ export default function Flowchart({ currentLocation_id, locations }) {
       preserveAspectRatio="xMinYMin meet"
       xmlns="http://www.w3.org/2000/svg"
     >
+      <defs>
+        <linearGradient id="activeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#2563eb" />
+          <stop offset="100%" stopColor="#1d4ed8" />
+        </linearGradient>
+        <filter id="boxShadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow
+            dx="1"
+            dy="1"
+            stdDeviation="1"
+            floodColor="#000"
+            floodOpacity="0.2"
+          />
+        </filter>
+      </defs>
+
       {/* Render states */}
-      {states.map((state, i) => (
+      {states.map((state) => (
         <g key={state.id}>
           <rect
             x={state.x}
@@ -180,21 +164,24 @@ export default function Flowchart({ currentLocation_id, locations }) {
             height="50"
             fill={getFill(state.id)}
             stroke="#d1d5db"
-            rx="6"
+            rx="8"
+            ry="8"
+            filter={state.id === currentLocation_id ? "url(#boxShadow)" : ""}
           />
           <text
             x={state.x + 75}
             y={state.y + 28}
             textAnchor="middle"
-            fontSize="12"
+            fontSize="13"
             fill={getTextColor(state.id)}
-            fontWeight="500"
+            fontWeight="600"
           >
             {state.name}
           </text>
         </g>
       ))}
 
+      {/* Render rects */}
       {rects.map((rect, idx) => {
         const baseX = rect.x;
         const baseY = rect.y;
@@ -207,7 +194,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
         }
 
         const isActive = rect.ids?.includes(currentLocation_id);
-        const fill = isActive ? "#bfdbfe" : "#9ca3af"; // light blue if active
+        const fill = isActive ? "#bfdbfe" : "#9ca3af";
 
         return (
           <rect
@@ -221,9 +208,10 @@ export default function Flowchart({ currentLocation_id, locations }) {
         );
       })}
 
+      {/* Render arrows */}
       {arrows.map((arrow, idx) => {
         const stemThickness = arrow.stemHeight ?? 20;
-        const totalLength = arrow.totalLength ?? 40;
+        const totalLength = arrow.totalLenth ?? 40;
         const direction = arrow.direction ?? "right";
 
         const headLength = totalLength * 0.4;
@@ -236,7 +224,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
         const cy = arrow.y;
 
         const isActive = arrow.ids?.includes(currentLocation_id);
-        const fill = isActive ? "#bfdbfe" : "#9ca3af"; // light blue if active
+        const fill = isActive ? "#bfdbfe" : "#9ca3af";
 
         let stemX = cx;
         let stemY = cy;
@@ -253,10 +241,10 @@ export default function Flowchart({ currentLocation_id, locations }) {
           const headBaseX = cx + stemLength;
 
           points = `
-      ${headBaseX},${cy - headHeight / 2}
-      ${headBaseX + headLength},${cy}
-      ${headBaseX},${cy + headHeight / 2}
-    `;
+            ${headBaseX},${cy - headHeight / 2}
+            ${headBaseX + headLength},${cy}
+            ${headBaseX},${cy + headHeight / 2}
+          `;
         } else if (direction === "left") {
           stemX = cx - stemLength - 1;
           stemY = cy - stemThickness / 2;
@@ -266,10 +254,10 @@ export default function Flowchart({ currentLocation_id, locations }) {
           const headBaseX = cx - stemLength;
 
           points = `
-      ${headBaseX},${cy - headHeight / 2}
-      ${headBaseX - headLength},${cy}
-      ${headBaseX},${cy + headHeight / 2}
-    `;
+            ${headBaseX},${cy - headHeight / 2}
+            ${headBaseX - headLength},${cy}
+            ${headBaseX},${cy + headHeight / 2}
+          `;
         } else if (direction === "down") {
           stemX = cx - stemThickness / 2;
           stemY = cy;
@@ -279,10 +267,10 @@ export default function Flowchart({ currentLocation_id, locations }) {
           const headBaseY = cy + stemLength;
 
           points = `
-      ${cx - headHeight / 2},${headBaseY}
-      ${cx},${headBaseY + headLength}
-      ${cx + headHeight / 2},${headBaseY}
-    `;
+            ${cx - headHeight / 2},${headBaseY}
+            ${cx},${headBaseY + headLength}
+            ${cx + headHeight / 2},${headBaseY}
+          `;
         } else if (direction === "up") {
           stemX = cx - stemThickness / 2;
           stemY = cy - stemLength - 1;
@@ -292,10 +280,10 @@ export default function Flowchart({ currentLocation_id, locations }) {
           const headBaseY = cy - stemLength;
 
           points = `
-      ${cx - headHeight / 2},${headBaseY}
-      ${cx},${headBaseY - headLength}
-      ${cx + headHeight / 2},${headBaseY}
-    `;
+            ${cx - headHeight / 2},${headBaseY}
+            ${cx},${headBaseY - headLength}
+            ${cx + headHeight / 2},${headBaseY}
+          `;
         }
 
         return (
