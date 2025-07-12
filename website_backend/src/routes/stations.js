@@ -14,13 +14,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET one station by ID
-router.get("/:id", async (req, res) => {
-  const id = req.params.id;
+// GET one station by station_name
+router.get("/:station_name", async (req, res) => {
+  const station_name = req.params.station_name;
   try {
-    const { rows } = await db.query("SELECT * FROM station WHERE id = $1", [
-      id,
-    ]);
+    const { rows } = await db.query(
+      "SELECT * FROM station WHERE station_name = $1",
+      [station_name]
+    );
     if (rows.length === 0) {
       return res.status(404).json({ error: "Station not found" });
     }
@@ -31,23 +32,22 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// PATCH one station by ID
-router.patch("/:id", async (req, res) => {
-  const id = req.params.id;
-  const { station_name, system_id, status, message } = req.body;
+// PATCH one station by station_name
+router.patch("/:station_name", async (req, res) => {
+  const station_name = req.params.station_name;
+  const { system_id, status, message } = req.body;
 
   try {
     const { rowCount } = await db.query(
       `
       UPDATE station
       SET
-        station_name = COALESCE($1, station_name),
-        system_id = COALESCE($2, system_id),
-        status = COALESCE($3, status),
-        message = COALESCE($4, message)
-      WHERE id = $5
+        system_id = COALESCE($1, system_id),
+        status = COALESCE($2, status),
+        message = COALESCE($3, message)
+      WHERE station_name = $4
       `,
-      [station_name, system_id, status, message, id]
+      [system_id, status, message, station_name]
     );
 
     if (rowCount === 0) {
@@ -61,13 +61,14 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-// DELETE one station by ID
-router.delete("/:id", async (req, res) => {
-  const id = req.params.id;
+// DELETE one station by station_name
+router.delete("/:station_name", async (req, res) => {
+  const station_name = req.params.station_name;
   try {
-    const { rowCount } = await db.query("DELETE FROM station WHERE id = $1", [
-      id,
-    ]);
+    const { rowCount } = await db.query(
+      "DELETE FROM station WHERE station_name = $1",
+      [station_name]
+    );
     if (rowCount === 0) {
       return res.status(404).json({ error: "Station not found" });
     }
@@ -93,12 +94,7 @@ router.post("/", async (req, res) => {
       VALUES ($1, $2, $3, $4)
       RETURNING *
       `,
-      [
-        station_name,
-        system_id || null,
-        typeof status === "number" ? status : 0,
-        message || "",
-      ]
+      [station_name, system_id || null, status || 0, message || ""]
     );
 
     res.status(201).json(result.rows[0]);

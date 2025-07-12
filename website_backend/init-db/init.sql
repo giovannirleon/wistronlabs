@@ -38,7 +38,7 @@ CREATE TABLE system_location_history (
 
 CREATE TABLE station ( 
     id SERIAL PRIMARY KEY,
-    station_name VARCHAR(255) NOT NULL,
+    station_name VARCHAR(255) NOT NULL UNIQUE,
     system_id INTEGER REFERENCES system(id),
     status INTEGER DEFAULT 0,
     message VARCHAR(255) DEFAULT ''
