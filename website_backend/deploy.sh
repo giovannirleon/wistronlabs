@@ -11,6 +11,19 @@
 URL="tss.wistronlabs.com"
 USER="falab"
 
+
+echo "🔷 Checking for unstaged or uncommitted changes…"
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "❌ Error: You have unstaged or uncommitted changes."
+    echo ""
+    git status -s
+    echo "Please commit or stash your changes before running this script."
+    exit 1
+fi
+
+echo "✅ Working tree is clean."
+
+
 if [[ -z "$1" ]]; then
     echo "❌ Error: Missing password argument."
     echo "Usage: ./deploy <ssh_password>"
