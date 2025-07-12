@@ -1,6 +1,9 @@
 # Use official Node.js image
 FROM node:20
 
+# set timezone to Central Time (Chicago)
+ENV TZ=America/Chicago
+
 # Set working directory
 WORKDIR /usr/src/app
 

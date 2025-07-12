@@ -167,7 +167,16 @@ function SystemPage() {
         {loading ? (
           <LoadingSkeleton rows={6} />
         ) : error ? (
-          <div>Error: Not able to load content</div>
+          <>
+            {" "}
+            <h1 className="text-3xl font-bold text-gray-800 justify-center mb-4">
+              Error 404:{" "}
+              <span className="text-blue-600">
+                {serviceTag} does not exist :(
+              </span>
+            </h1>
+            <LoadingSkeleton rows={6} />
+          </>
         ) : (
           <>
             <div className="flex items-center justify-between">

@@ -26,6 +26,7 @@ function SystemLocationsChart({ history }) {
     "#2ca02c", // green
     "#d62728", // red
   ];
+
   // Build a sorted list of unique dates in history
   const historyDates = [
     ...new Set(

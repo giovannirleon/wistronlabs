@@ -1,5 +1,7 @@
 #!/bin/bash
 
+##version 2.0 with non destructive database backup
+
 # Before running this script, ensure that Docker and all its subcommands can be executed with sudo without requiring a password.
 # To configure this, add the following line to /etc/sudoers using visudo:
 #

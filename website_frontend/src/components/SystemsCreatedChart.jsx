@@ -10,8 +10,11 @@ import {
 } from "recharts";
 
 function formatDateMMDDYY(date) {
+  console.log("Formatting date:", date);
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
+
+  console.log("Formatting day:", dd);
   const yy = String(date.getFullYear()).slice(-2);
   return `${mm}/${dd}/${yy}`;
 }
@@ -38,15 +41,16 @@ function SystemLocationsChart({ history }) {
 
   const historyDates = [
     ...new Set(
-      history.map((entry) =>
-        new Date(entry.changed_at).toISOString().slice(0, 10)
-      )
+      history.map((entry) => {
+        const dateStr = formatDateMMDDYY(new Date(entry.changed_at));
+        return dateStr;
+      })
     ),
   ].sort((a, b) => new Date(a) - new Date(b));
 
-  const historyByDate = historyDates.map((isoDate) => {
-    const dateStart = new Date(isoDate + "T00:00:00.000Z");
-    const dateEnd = new Date(isoDate + "T23:59:59.999Z");
+  const historyByDate = historyDates.map((date) => {
+    const dateStart = new Date(`${date} 00:00:00`);
+    const dateEnd = new Date(`${date} 23:59:59`);
 
     const latestByTag = new Map();
 
@@ -71,16 +75,15 @@ function SystemLocationsChart({ history }) {
     });
 
     return {
-      date: isoDate,
+      date: date,
       toLocationCounts: locationTotals,
     };
   });
 
   // 🔷 historyByDateFirstChange — only first "Processed" change per day
-  const historyByDateFirstChange = historyDates.map((isoDate) => {
-    const dateStart = new Date(isoDate + "T00:00:00.000Z");
-    const dateEnd = new Date(isoDate + "T23:59:59.999Z");
-
+  const historyByDateFirstChange = historyDates.map((date) => {
+    const dateStart = new Date(`${date} 00:00:00`);
+    const dateEnd = new Date(`${date} 23:59:59`);
     const entriesOnThisDay = history.filter((entry) => {
       const entryTime = new Date(entry.changed_at);
       return entryTime >= dateStart && entryTime <= dateEnd;
@@ -105,7 +108,7 @@ function SystemLocationsChart({ history }) {
     });
 
     return {
-      date: isoDate,
+      date: date,
       toLocationCounts: locationTotals,
     };
   });
@@ -123,8 +126,8 @@ function SystemLocationsChart({ history }) {
 
   // 🔷 Combine both datasets per day
   const chartData = last30Dates.map((day, idx) => {
-    const date = formatDateMMDDYY(new Date(day.date));
-
+    console.log("Processing day pre fromatter function:", day.date);
+    const date = day.date; //formatDateMMDDYY(new Date(day.date));
     const processedForDay = historyByDateFirstChange.find(
       (d) => d.date === day.date
     ) || { toLocationCounts: {} };
