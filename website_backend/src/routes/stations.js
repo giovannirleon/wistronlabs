@@ -76,4 +76,29 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// POST /api/stations
+router.post("/", async (req, res) => {
+  const { station_name, system_id } = req.body;
+
+  if (!station_name) {
+    return res.status(400).json({ error: "station_name is required" });
+  }
+
+  try {
+    const result = await db.query(
+      `
+      INSERT INTO station (station_name, system_id)
+      VALUES ($1, $2)
+      RETURNING *
+      `,
+      [station_name, system_id || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 module.exports = router;
