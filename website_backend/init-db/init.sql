@@ -39,7 +39,9 @@ CREATE TABLE system_location_history (
 CREATE TABLE station ( 
     id SERIAL PRIMARY KEY,
     station_name VARCHAR(255) NOT NULL,
-    system_id INTEGER REFERENCES system(id)
+    system_id INTEGER REFERENCES system(id),
+    status INTEGER DEFAULT 0,
+    message VARCHAR(255) DEFAULT ''
 );
 
 -- 📄 Index for faster queries on history

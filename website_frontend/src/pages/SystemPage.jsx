@@ -358,7 +358,7 @@ function SystemPage() {
                     </div>
 
                     {/* Dropdown on the right */}
-                    <div className="w-55">
+                    <div className="w-40">
                       <label
                         htmlFor="extra-options"
                         className="block text-sm font-medium text-gray-700 mb-1"
@@ -376,7 +376,7 @@ function SystemPage() {
                           stations
                             .map((station) => ({
                               value: station.station,
-                              label: `Station ${station.station}`,
+                              label: station.station,
                             }))
                             .find((opt) => opt.value === selectedStation) ||
                           null
