@@ -20,10 +20,12 @@ app.use(
 const systemsRouter = require("./routes/systems");
 const locationsRouter = require("./routes/locations");
 const serverRouter = require("./routes/server");
+const stationsRouter = require("./routes/server");
 
 app.use("/api/v1/systems", systemsRouter);
 app.use("/api/v1/locations", locationsRouter);
 app.use("/api/v1/server", serverRouter);
+app.use("/api/v1/stations", stationsRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

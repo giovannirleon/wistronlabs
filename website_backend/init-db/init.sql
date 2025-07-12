@@ -36,6 +36,12 @@ CREATE TABLE system_location_history (
     changed_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE station ( 
+    id SERIAL PRIMARY KEY,
+    station_name VARCHAR(255) NOT NULL,
+    system_id INTEGER REFERENCES system(id)
+);
+
 -- 📄 Index for faster queries on history
 CREATE INDEX idx_system_location_history_system_id ON system_location_history(system_id);
 
