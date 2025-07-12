@@ -10,9 +10,12 @@ function SearchContainer({
   fieldStyles,
   linkType,
   allowSort = true,
-  allowSearch = true, // ✅ new prop
+  allowSearch = true, // added: allows disabling search
   defaultPage = "first", // added: accepts 'first' or 'last'
   truncate,
+  onAction = null,
+  actionButtonClass,
+  actionButtonVisibleIf,
 }) {
   const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
   const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? false);
@@ -66,7 +69,7 @@ function SearchContainer({
         ) : (
           <div>
             {/* Table header */}
-            <div className="flex items-center bg-white border border-gray-300 rounded px-4 py-2  mb-2">
+            <div className="flex items-center bg-white border border-gray-300 rounded px-4 py-2 mb-2">
               {displayOrder.map((field, fieldIndex) => {
                 const isFirst = fieldIndex === 0;
                 const isLast = fieldIndex === displayOrder.length - 1;
@@ -96,10 +99,21 @@ function SearchContainer({
                       }
                     }}
                   >
-                    {headerLabel} {sortBy === field && (sortAsc ? "▲" : "▼")}
+                    {headerLabel}{" "}
+                    {allowSort && sortBy === field && (sortAsc ? "▲" : "▼")}
                   </button>
                 );
               })}
+
+              {/* Optional empty header cell for action button */}
+              {onAction && (
+                <span
+                  className={`text-gray-500 text-sm w-4 text-right`}
+                  aria-hidden
+                >
+                  {/* could also put text like "Action" */}
+                </span>
+              )}
             </div>
 
             {/* Paginated body */}
@@ -112,6 +126,9 @@ function SearchContainer({
               linkType={linkType}
               defaultPage={defaultPage}
               truncate={truncate}
+              onAction={onAction} // Pass down the onAction prop
+              actionButtonClass={actionButtonClass}
+              actionButtonVisibleIf={actionButtonVisibleIf}
             />
           </div>
         )}

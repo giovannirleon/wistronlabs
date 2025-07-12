@@ -16,10 +16,10 @@ import useToast from "../hooks/useToast";
 import {
   getSystems,
   getLocations,
-  getSystemHistory,
+  getHistory,
   createSystem,
   moveSystemToProcessed,
-} from "../api/systems";
+} from "../api/apis.js";
 
 const ACTIVE_LOCATION_IDS = [1, 2, 3, 4, 5];
 
@@ -58,7 +58,7 @@ function TrackingPage() {
       const [systemsData, locationsData, historyData] = await Promise.all([
         getSystems(),
         getLocations(),
-        getSystemHistory(),
+        getHistory(),
       ]);
 
       const formattedHistory = historyData.map((entry) => ({

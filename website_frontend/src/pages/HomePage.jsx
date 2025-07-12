@@ -123,7 +123,7 @@ function HomePage() {
             name: "text-blue-600 font-medium",
             date: "text-gray-500 text-sm",
           }}
-          linkType="none"
+          linkType="external"
         />
       </section>
     </>

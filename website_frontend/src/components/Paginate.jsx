@@ -8,6 +8,10 @@ function Items({
   fieldStyles,
   linkType,
   truncate,
+  onAction,
+  actionButtonClass,
+  actionButtonVisibleIf,
+  hasActionColumn,
 }) {
   return (
     <>
@@ -19,38 +23,12 @@ function Items({
           return (
             <div key={index} className={commonClasses + " invisible"}>
               {displayOrder.map((field, fieldIndex) => {
-                const isFirst = fieldIndex === 0;
-                const isLast = fieldIndex === displayOrder.length - 1;
-
-                const alignment = isFirst
-                  ? "text-left"
-                  : isLast
-                  ? "text-right"
-                  : "text-left";
-
-                let content = null;
-                let classes = ""; // "text-sm text-transparent"; // invisible text still takes up space
-
-                if (typeof fieldStyles?.[field] === "function") {
-                  const styleResult = fieldStyles[field](null);
-
-                  if (styleResult?.type === "pill") {
-                    content = (
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium opacity-0 ${
-                          styleResult.color || "bg-gray-200 text-gray-700"
-                        }`}
-                      >
-                        filler
-                      </span>
-                    );
-                    classes = "";
-                  } else if (typeof styleResult === "string") {
-                    classes += ` ${styleResult}`;
-                  }
-                } else if (typeof fieldStyles?.[field] === "string") {
-                  classes += ` ${fieldStyles[field]}`;
-                }
+                const alignment =
+                  fieldIndex === 0
+                    ? "text-left"
+                    : fieldIndex === displayOrder.length - 1
+                    ? "text-right"
+                    : "text-left";
 
                 const truncateClasses = truncate
                   ? "truncate overflow-hidden text-ellipsis whitespace-nowrap"
@@ -59,35 +37,39 @@ function Items({
                 return (
                   <span
                     key={field}
-                    className={`flex-1 ${alignment} ${classes} ${truncateClasses}`}
+                    className={`flex-1 ${alignment} ${truncateClasses}`}
                   >
-                    {content || "filler"}
+                    filler
                   </span>
                 );
               })}
+              {hasActionColumn && (
+                <button
+                  type="button"
+                  className={`${actionButtonClass} invisible`}
+                  aria-hidden
+                >
+                  ×
+                </button>
+              )}
             </div>
           );
         }
 
-        // populated row
         const RowContent = displayOrder.map((field, fieldIndex) => {
-          const isFirst = fieldIndex === 0;
-          const isLast = fieldIndex === displayOrder.length - 1;
-
-          const alignment = isFirst
-            ? "text-left"
-            : isLast
-            ? "text-right"
-            : "text-left";
+          const alignment =
+            fieldIndex === 0
+              ? "text-left"
+              : fieldIndex === displayOrder.length - 1
+              ? "text-right"
+              : "text-left";
 
           const value = item[field];
-
           let content = value ?? "";
           let classes = "text-sm";
 
           if (typeof fieldStyles?.[field] === "function") {
             const styleResult = fieldStyles[field](value);
-
             if (styleResult?.type === "pill") {
               content = (
                 <span
@@ -120,36 +102,59 @@ function Items({
           );
         });
 
-        if (linkType === "internal") {
-          return (
-            <Link
-              key={index}
-              to={`/${item.service_tag || ""}`}
-              className={commonClasses + " hover:bg-blue-50"}
-            >
-              {RowContent}
-            </Link>
-          );
-        }
+        const isButtonVisible =
+          onAction &&
+          (!actionButtonVisibleIf ||
+            item[actionButtonVisibleIf.field] === actionButtonVisibleIf.equals);
 
-        if (linkType === "external") {
-          return (
-            <a
-              key={index}
-              href={item.href || "#"}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={commonClasses + " hover:bg-blue-50"}
-            >
-              {RowContent}
-            </a>
-          );
-        }
+        const ActionButton = hasActionColumn ? (
+          <button
+            type="button"
+            className={`${actionButtonClass} ${
+              isButtonVisible ? "" : "invisible"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isButtonVisible) onAction?.(item);
+            }}
+            aria-label="Action"
+            title="Action"
+          >
+            ×
+          </button>
+        ) : null;
+
+        const Wrapper = ({ children }) => {
+          if (linkType === "internal") {
+            return (
+              <Link
+                to={`/${item.service_tag || ""}`}
+                className={commonClasses + " hover:bg-blue-50"}
+              >
+                {children}
+              </Link>
+            );
+          }
+          if (linkType === "external") {
+            return (
+              <a
+                href={item.href || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={commonClasses + " hover:bg-blue-50"}
+              >
+                {children}
+              </a>
+            );
+          }
+          return <div className={commonClasses}>{children}</div>;
+        };
 
         return (
-          <div key={index} className={commonClasses}>
+          <Wrapper key={index}>
             {RowContent}
-          </div>
+            {ActionButton}
+          </Wrapper>
         );
       })}
     </>
@@ -165,7 +170,19 @@ export default function PaginatedItems({
   linkType,
   defaultPage = "first",
   truncate = false, // ⬅️ new optional prop
+  onAction = null, // ⬅️ new optional prop
+  actionButtonClass = "",
+  actionButtonVisibleIf = null, // ⬅️ new optional prop
 }) {
+  const hasActionColumn =
+    !!onAction &&
+    (actionButtonVisibleIf === null ||
+      items.some(
+        (item) =>
+          item &&
+          item[actionButtonVisibleIf.field] === actionButtonVisibleIf.equals
+      ));
+
   const pageCount = Math.ceil(items.length / itemsPerPage);
 
   const getInitialOffset = () =>
@@ -198,6 +215,10 @@ export default function PaginatedItems({
         fieldStyles={fieldStyles}
         linkType={linkType}
         truncate={truncate} // ⬅️ pass down
+        onAction={onAction} // ⬅️ pass down
+        actionButtonClass={actionButtonClass}
+        actionButtonVisibleIf={actionButtonVisibleIf}
+        hasActionColumn={hasActionColumn}
       />
       <ReactPaginate
         breakLabel="…"

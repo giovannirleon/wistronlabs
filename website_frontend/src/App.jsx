@@ -12,8 +12,8 @@ import "./styles/datepicker.css";
 function App() {
   return (
     <div className="bg-gray-100 min-h-screen text-gray-800 font-roboto">
-      <Header />
       <ScrollToTop />
+      <Header />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/tracking" element={<TrackingPage />} />
