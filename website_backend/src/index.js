@@ -20,7 +20,7 @@ app.use(
 const systemsRouter = require("./routes/systems");
 const locationsRouter = require("./routes/locations");
 const serverRouter = require("./routes/server");
-const stationsRouter = require("./routes/server");
+const stationsRouter = require("./routes/stations");
 
 app.use("/api/v1/systems", systemsRouter);
 app.use("/api/v1/locations", locationsRouter);
