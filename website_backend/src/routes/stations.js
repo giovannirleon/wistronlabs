@@ -6,7 +6,14 @@ const router = express.Router();
 // GET all stations
 router.get("/", async (req, res) => {
   try {
-    const { rows } = await db.query("SELECT * FROM station ORDER BY id ASC");
+    const { rows } = await db.query(`
+      SELECT s.id, s.station_name, s.status, s.message,
+             s.system_id,
+             sys.service_tag AS system_service_tag
+      FROM station s
+      LEFT JOIN system sys ON s.system_id = sys.id
+      ORDER BY s.id ASC
+    `);
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -19,9 +26,17 @@ router.get("/:station_name", async (req, res) => {
   const station_name = req.params.station_name;
   try {
     const { rows } = await db.query(
-      "SELECT * FROM station WHERE station_name = $1",
+      `
+      SELECT s.id, s.station_name, s.status, s.message,
+             s.system_id,
+             sys.service_tag AS system_service_tag
+      FROM station s
+      LEFT JOIN system sys ON s.system_id = sys.id
+      WHERE s.station_name = $1
+    `,
       [station_name]
     );
+
     if (rows.length === 0) {
       return res.status(404).json({ error: "Station not found" });
     }

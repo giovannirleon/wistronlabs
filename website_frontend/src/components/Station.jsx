@@ -19,7 +19,9 @@ function Station({ stationInfo, serviceTag = "None", link = false }) {
 
   return (
     <tr key={stationInfo.station}>
-      <td className="p-3 border-b border-gray-200">{stationInfo.station}</td>
+      <td className="p-3 border-b border-gray-200">
+        Station {stationInfo.station_name}
+      </td>
       <td className="p-3 border-b border-gray-200">
         {renderStatus(stationInfo.status, stationInfo.message)}
       </td>

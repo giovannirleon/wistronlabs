@@ -128,14 +128,11 @@ export async function getLocations() {
 }
 
 export async function updateLocation(tag, body) {
-  const res = await fetch(
-    `https://backend.tss.wistronlabs.com:/api/v1/systems/${tag}/location`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
+  const res = await fetch(`${BASE_URL}/systems/${tag}/location`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error("Failed to update location");
 }
 
@@ -145,16 +142,74 @@ export function getSystemHistory(tag) {
   return fetchJSON(`/systems/${tag}/history`);
 }
 
+// station API calls -------------------------------
+
 /**
- * Get current station status
+ * Get all stations
  */
 export async function getStations() {
-  const timestamp = Date.now();
+  return fetchJSON("/stations");
+}
+
+/**
+ * Get a single station by name
+ * @param {string} stationName
+ */
+export async function getStation(stationName) {
+  return fetchJSON(`/stations/${encodeURIComponent(stationName)}`);
+}
+
+/**
+ * Create a new station
+ * @param {{station_name: string, system_id?: number, status?: number, message?: string}} payload
+ */
+export async function createStation(payload) {
+  const res = await fetch(`${BASE_URL}/stations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const msg = `Failed to create station: ${res.status} ${res.statusText}`;
+    console.error(msg);
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+/**
+ * Update (PATCH) a station by name
+ * @param {string} stationName
+ * @param {{station_name?: string, system_id?: number|null, status?: number, message?: string}} payload
+ */
+export async function updateStation(stationName, payload) {
   const res = await fetch(
-    `${BASE_URL_STATIONS}/station_status.json?${timestamp}`
+    `${BASE_URL}/stations/${encodeURIComponent(stationName)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
   );
   if (!res.ok) {
-    const msg = `Failed to fetch stations: ${res.status} ${res.statusText}`;
+    const msg = `Failed to update station ${stationName}: ${res.status} ${res.statusText}`;
+    console.error(msg);
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+/**
+ * Delete a station by name
+ * @param {string} stationName
+ */
+export async function deleteStation(stationName) {
+  const res = await fetch(
+    `${BASE_URL}/stations/${encodeURIComponent(stationName)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    const msg = `Failed to delete station ${stationName}: ${res.status} ${res.statusText}`;
     console.error(msg);
     throw new Error(msg);
   }

@@ -202,7 +202,7 @@ function SystemPage() {
   }, []);
 
   const selectedStationObj = stations.find(
-    (station) => station.station === selectedStation
+    (station) => station.station_name === selectedStation
   );
 
   return (
@@ -358,7 +358,7 @@ function SystemPage() {
                     </div>
 
                     {/* Dropdown on the right */}
-                    <div className="w-40">
+                    <div className="w-50">
                       <label
                         htmlFor="extra-options"
                         className="block text-sm font-medium text-gray-700 mb-1"
@@ -375,8 +375,8 @@ function SystemPage() {
                         value={
                           stations
                             .map((station) => ({
-                              value: station.station,
-                              label: station.station,
+                              value: station.station_name,
+                              label: "Station " + station.station_name,
                             }))
                             .find((opt) => opt.value === selectedStation) ||
                           null
@@ -385,8 +385,8 @@ function SystemPage() {
                           setSelectedStation(option ? option.value : "")
                         }
                         options={stations.map((station) => ({
-                          value: station.station,
-                          label: station.station,
+                          value: station.station_name,
+                          label: "Station " + station.station_name,
                         }))}
                       />
                     </div>
