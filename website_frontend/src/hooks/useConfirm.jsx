@@ -40,24 +40,24 @@ export default function useConfirm() {
   const ConfirmDialog = () =>
     isOpen ? (
       <div
-        className="fixed inset-0 flex items-center justify-center bg-black/50"
-        style={{ zIndex: 9999 }} // <<< highest z-index
+        className="fixed inset-0 flex items-center justify-center bg-black/50 px-2"
+        style={{ zIndex: 9999 }}
       >
-        <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-lg p-8 relative space-y-6">
-          <h2 className="text-lg font-semibold text-gray-800">
+        <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full sm:max-w-md p-4 sm:p-6 space-y-4 sm:space-y-6 mx-2">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
             {config.title}
           </h2>
-          <p className="text-gray-700">{config.message}</p>
-          <div className="flex justify-end gap-2">
+          <p className="text-gray-700 text-sm sm:text-base">{config.message}</p>
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               onClick={handleCancel}
-              className={`px-3 py-1 text-sm rounded ${config.cancelClass}`}
+              className={`px-3 py-1.5 text-sm rounded ${config.cancelClass}`}
             >
               {config.cancelText}
             </button>
             <button
               onClick={handleConfirm}
-              className={`px-3 py-1 text-sm rounded ${config.confirmClass}`}
+              className={`px-3 py-1.5 text-sm rounded ${config.confirmClass}`}
             >
               {config.confirmText}
             </button>

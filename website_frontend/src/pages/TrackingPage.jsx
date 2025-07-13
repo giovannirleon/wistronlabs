@@ -398,7 +398,7 @@ function TrackingPage() {
       <ConfirmDialog />
       <Toast />
       <main className="max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
           <button
             onClick={() => {
