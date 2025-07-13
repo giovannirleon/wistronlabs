@@ -21,7 +21,7 @@ const systemsRouter = require("./routes/systems");
 const locationsRouter = require("./routes/locations");
 const serverRouter = require("./routes/server");
 const stationsRouter = require("./routes/stations");
-const authRouter = require("./routes/auth");
+const { router: authRouter } = require("./routes/auth");
 
 app.use("/api/v1/systems", systemsRouter);
 app.use("/api/v1/locations", locationsRouter);
