@@ -23,6 +23,7 @@ import {
   updateSystemLocation,
   deleteLastHistoryEntry,
   getStations,
+  updateStation,
 } from "../api/apis.js";
 
 import useConfirm from "../hooks/useConfirm";
@@ -53,6 +54,10 @@ function SystemPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
   const navigate = useNavigate();
+
+  const selectedStationObj = stations.find(
+    (station) => station.station_name === selectedStation
+  );
 
   const fetchData = async () => {
     setLoading(true);
@@ -160,6 +165,12 @@ function SystemPage() {
         note,
       });
 
+      if (selectedStationObj && toLocationId === 5) {
+        await updateStation(selectedStationObj.station_name, {
+          system_id: system.id,
+        });
+      }
+
       setNote("");
       setToLocationId("");
       showToast("Updated System Location", "success", 3000, "bottom-right");
@@ -201,10 +212,8 @@ function SystemPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const selectedStationObj = stations.find(
-    (station) => station.station_name === selectedStation
-  );
-
+  console.log(selectedStationObj);
+  console.log(system.location);
   return (
     <>
       <ConfirmDialog />
@@ -322,7 +331,7 @@ function SystemPage() {
                   </p>
                 )}
 
-                {toLocationId === 5 && (
+                {(toLocationId === 5 || system?.location === "In L10") && (
                   <div className="mt-5 flex gap-4">
                     {/* Table on the left */}
                     <div className="w-md">
@@ -349,9 +358,6 @@ function SystemPage() {
                                 message: "Please select a station",
                               }
                             }
-                            serviceTag={
-                              selectedStationObj ? system.service_tag : "None"
-                            }
                           />
                         </tbody>
                       </table>
@@ -365,30 +371,38 @@ function SystemPage() {
                       >
                         Select a Station
                       </label>
-                      <Select
-                        instanceId="extra-options"
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        isClearable
-                        isSearchable
-                        placeholder="Select a station"
-                        value={
-                          stations
-                            .map((station) => ({
-                              value: station.station_name,
-                              label: "Station " + station.station_name,
-                            }))
-                            .find((opt) => opt.value === selectedStation) ||
-                          null
+                      <div
+                        className={
+                          system?.location === "In L10"
+                            ? "opacity-50 pointer-events-none"
+                            : ""
                         }
-                        onChange={(option) =>
-                          setSelectedStation(option ? option.value : "")
-                        }
-                        options={stations.map((station) => ({
-                          value: station.station_name,
-                          label: "Station " + station.station_name,
-                        }))}
-                      />
+                      >
+                        <Select
+                          instanceId="extra-options"
+                          className="react-select-container"
+                          classNamePrefix="react-select"
+                          isClearable
+                          isSearchable
+                          placeholder="Select a station"
+                          value={
+                            stations
+                              .map((station) => ({
+                                value: station.station_name,
+                                label: "Station " + station.station_name,
+                              }))
+                              .find((opt) => opt.value === selectedStation) ||
+                            null
+                          }
+                          onChange={(option) =>
+                            setSelectedStation(option ? option.value : "")
+                          }
+                          options={stations.map((station) => ({
+                            value: station.station_name,
+                            label: "Station " + station.station_name,
+                          }))}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
