@@ -10,13 +10,13 @@ function Rack({ stations, rackNumber, link }) {
         <table className="w-full bg-white rounded shadow-sm overflow-hidden border-collapse">
           <thead>
             <tr>
-              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3 text-left">
                 Station
               </th>
-              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3 text-middle">
                 Status
               </th>
-              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3 text-right">
                 Service Tag
               </th>
             </tr>
@@ -38,10 +38,10 @@ function Rack({ stations, rackNumber, link }) {
               className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3"
               key={"switches"}
             >
-              <td className="p-3 border-b border-gray-200">
-                NVlink Switches(18 - 26)
-              </td>
               <td className="p-3 border-b border-gray-200"></td>
+              <td className="p-3 border-b border-gray-200 text-center">
+                NVlink Switches
+              </td>
               <td className="p-3 border-b border-gray-200"></td>
             </tr>
             {stations

@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 
 function Station({ stationInfo, link = false }) {
   const renderStatus = (status, message) => {
-    const base = "inline-block px-2 py-1 rounded-full text-xs font-medium";
+    const base =
+      "inline-block px-2 py-1 rounded-full text-xs font-medium text-center";
     if (status === 0)
       return (
         <span className={`${base} bg-yellow-100 text-yellow-800`}>
@@ -19,24 +20,26 @@ function Station({ stationInfo, link = false }) {
 
   return (
     <tr key={stationInfo.station}>
-      <td className="p-3 border-b border-gray-200">
+      <td className="p-3 border-b border-gray-200 text-left">
         Station {stationInfo.station_name}
       </td>
-      <td className="p-3 border-b border-gray-200">
+      <td className="p-3 border-b border-gray-200 text-center">
         {renderStatus(stationInfo.status, stationInfo.message)}
       </td>
       <td className="p-3 border-b border-gray-200">
         {stationInfo.system_service_tag === null ? (
-          <p className="text-green-500">Available</p>
+          <p className="text-grey-800 text-right">Available</p>
         ) : link ? (
           <Link
-            to={`/systems/${stationInfo.system_service_tag}`}
-            className="text-blue-600 hover:underline"
+            to={`/${stationInfo.system_service_tag}`}
+            className="text-blue-600 hover:underline text-right"
           >
             {stationInfo.system_service_tag}
           </Link>
         ) : (
-          <p className="text-gray-500">{stationInfo.system_service_tag}</p>
+          <p className="text-gray-500 text-right">
+            {stationInfo.system_service_tag}
+          </p>
         )}
       </td>
     </tr>

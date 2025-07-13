@@ -9,13 +9,13 @@ function Table({ stations, stationNumbers, tableNumber, link }) {
         <table className="w-full bg-white rounded shadow-sm overflow-hidden border-collapse">
           <thead>
             <tr>
-              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3 text-left">
                 Station
               </th>
-              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3 text-middle">
                 Status
               </th>
-              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3 text-right">
                 Service Tag
               </th>
             </tr>

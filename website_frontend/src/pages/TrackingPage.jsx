@@ -82,6 +82,8 @@ function TrackingPage() {
             const latest = history.reduce((a, b) =>
               new Date(a.changed_at) > new Date(b.changed_at) ? a : b
             );
+
+            console.log(created.changed_at);
             return {
               ...system,
               date_created: created?.changed_at
@@ -90,6 +92,11 @@ function TrackingPage() {
               date_last_modified: latest?.changed_at
                 ? formatDateHumanReadable(latest.changed_at)
                 : "",
+              service_tag_title: "Service Tag",
+              issue_title: "Issue",
+              location_title: "Location",
+              date_created_title: "Date Created",
+              date_last_modified_title: "Last Modified",
             };
           } catch {
             return system;
@@ -374,7 +381,7 @@ function TrackingPage() {
     <>
       <ConfirmDialog />
       <Toast />
-      <main className="max-w-6xl mx-auto mt-8 bg-white rounded-xl shadow border border-gray-200 p-6 space-y-6">
+      <main className="max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
           <button

@@ -102,14 +102,14 @@ function SystemPage() {
     }
 
     try {
-      await deleteSystem(serviceTag);
+      if (selectedStationObj && system?.location === "In L10") {
+        await updateStation(selectedStationObj.station_name, {
+          system_id: null, // clear system_id when moving out of L10
+        });
+        setSelectedStation(""); // reset selected station after deletion
+      }
 
-      // if (selectedStationObj && system?.location === "In L10") {
-      //   await updateStation(selectedStationObj.station_name, {
-      //     system_id: null, // clear system_id when moving out of L10
-      //   });
-      //   setSelectedStation(""); // reset selected station after deletion
-      // }
+      await deleteSystem(serviceTag);
 
       showToast("Unit deleted successfully", "success", 3000, "bottom-right");
       navigate("/tracking"); // redirect to tracking page
@@ -363,7 +363,7 @@ function SystemPage() {
                 {(toLocationId === 5 || system?.location === "In L10") && (
                   <div className="mt-5 flex gap-4">
                     {/* Table on the left */}
-                    <div className="w-md">
+                    <div className="w-3/5">
                       <table className="w-full bg-white rounded shadow-sm overflow-hidden border-collapse">
                         <thead>
                           <tr>
