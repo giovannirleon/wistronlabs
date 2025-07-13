@@ -1,7 +1,7 @@
 import { useState, useContext } from "react";
-import axios from "axios";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { loginUser, registerUser, forgotPassword } from "../api/authApi";
 
 export default function Auth({ defaultMode = "login" }) {
   const { login } = useContext(AuthContext);
@@ -28,11 +28,8 @@ export default function Auth({ defaultMode = "login" }) {
 
     try {
       if (mode === "login") {
-        const res = await axios.post("/api/v1/auth/login", {
-          username,
-          password,
-        });
-        login(res.data.token);
+        const data = await loginUser(username, password);
+        login(data.token);
         navigate("/");
       }
 
@@ -41,14 +38,14 @@ export default function Auth({ defaultMode = "login" }) {
           setMessage("Passwords do not match");
           return;
         }
-        await axios.post("/api/v1/auth/register", { username, password });
+        await registerUser(username, password);
         setMessage("Registration successful. Please log in.");
         setMode("login");
         resetFields();
       }
 
       if (mode === "forgot") {
-        await axios.post("/api/v1/auth/forgot-password", { email });
+        await forgotPassword(email);
         setMessage(
           "If this email exists, password reset instructions have been sent."
         );
