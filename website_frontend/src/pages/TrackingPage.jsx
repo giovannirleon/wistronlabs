@@ -268,14 +268,26 @@ function TrackingPage() {
     }
   }
 
-  const historyDates = [
-    ...new Set(
-      history.map((h) => {
-        console.log(h.changed_at);
-        return new Date(h.changed_at).toISOString().slice(0, 10);
-      })
-    ),
-  ].sort();
+  const earliestDate = history
+    .map((h) => new Date(h.changed_at))
+    .reduce((min, d) => (d < min ? d : min), new Date());
+
+  earliestDate.setHours(0, 0, 0, 0);
+
+  function getDateRange(fromDate, toDate) {
+    const dates = [];
+    const current = new Date(fromDate);
+    while (current <= toDate) {
+      dates.push(current.toISOString().slice(0, 10));
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const historyDates = getDateRange(earliestDate, today);
 
   // Create a snapshot of the latest state for each service_tag on each date
   // This will be used for the report download
