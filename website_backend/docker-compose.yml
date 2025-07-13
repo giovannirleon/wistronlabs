@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16
@@ -23,8 +21,10 @@ services:
     depends_on:
       - db
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgres://postgres:example@db:5432/mydb
-    command: npm run dev
+      JWT_SECRET: IcouPjosfsXUqssouBJrCTY8rNg0KOupeckKFyek0eI=
+    command: npm start
 
 volumes:
   db-data:
