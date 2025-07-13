@@ -8,7 +8,7 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: ["*", "https://tss.wistronlabs.com"],
+    origin: ["*"], //"https://tss.wistronlabs.com"],
   })
 );
 
