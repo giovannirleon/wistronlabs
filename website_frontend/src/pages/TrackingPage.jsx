@@ -83,7 +83,6 @@ function TrackingPage() {
               new Date(a.changed_at) > new Date(b.changed_at) ? a : b
             );
 
-            console.log(created.changed_at);
             return {
               ...system,
               date_created: created?.changed_at
@@ -271,10 +270,10 @@ function TrackingPage() {
 
   const historyDates = [
     ...new Set(
-      history
-        .map((h) => new Date(h.changed_at))
-        .filter((date) => !isNaN(date)) // keep only valid dates
-        .map((date) => date.toISOString().slice(0, 10))
+      history.map((h) => {
+        console.log(h.changed_at);
+        return new Date(h.changed_at).toISOString().slice(0, 10);
+      })
     ),
   ].sort();
 

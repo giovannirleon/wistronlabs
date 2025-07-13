@@ -33,7 +33,7 @@ const styles = StyleSheet.create({
     left: 7,
     top: 10,
     width: 80, // slight reduction to avoid overlap
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: "Helvetica", // modern sans-serif look
     fontWeight: "bold",
     letterSpacing: 0.5,

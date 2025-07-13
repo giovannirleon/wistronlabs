@@ -9,7 +9,6 @@ import {
   CartesianGrid,
 } from "recharts";
 
-// Helper to format Date → MM/DD/YY
 function formatDateMMDDYY(date) {
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
@@ -17,78 +16,76 @@ function formatDateMMDDYY(date) {
   return `${mm}/${dd}/${yy}`;
 }
 
+function getLastNDates(n) {
+  const dates = [];
+  const today = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    dates.push(formatDateMMDDYY(d));
+  }
+  return dates;
+}
+
 function SystemLocationsChart({ history }) {
   const EXCLUDED_LOCATIONS = ["Sent to L11", "RMA VID", "RMA PID", "RMA CID"];
-  const CHART_COLORS = [
-    "#1f77b4", // blue
-    "#9467bd", // purple
-    "#ff7f0e", // orange
-    "#2ca02c", // green
-    "#d62728", // red
-  ];
+  const CHART_COLORS = ["#1f77b4", "#9467bd", "#ff7f0e", "#2ca02c", "#d62728"];
 
-  // Build a sorted list of unique dates in history
-  const historyDates = [
-    ...new Set(
-      history.map((entry) => {
-        const dateStr = formatDateMMDDYY(new Date(entry.changed_at));
-        return dateStr;
-      })
-    ),
-  ].sort((a, b) => new Date(a) - new Date(b));
+  const fullDateRange = getLastNDates(7);
 
-  // Build cumulative history by date
-  const historyByDate = historyDates.map((date) => {
+  const allLocations = new Set();
+
+  // Precompute latest-by-service_tag
+  const latestByServiceTag = new Map();
+
+  history
+    .slice()
+    .sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at))
+    .forEach((entry) => {
+      latestByServiceTag.set(entry.service_tag, entry);
+    });
+
+  const chartData = [];
+  let previousCounts = {};
+
+  fullDateRange.forEach((date) => {
     const dateEnd = new Date(`${date} 23:59:59`);
 
-    const latestByServiceTag = new Map();
+    // Recompute latest as of this date
+    const latestForDay = new Map();
 
     history.forEach((entry) => {
       const entryTime = new Date(entry.changed_at);
-
       if (entryTime <= dateEnd) {
-        const existing = latestByServiceTag.get(entry.service_tag);
+        const existing = latestForDay.get(entry.service_tag);
         if (!existing || entryTime > new Date(existing.changed_at)) {
-          latestByServiceTag.set(entry.service_tag, entry);
+          latestForDay.set(entry.service_tag, entry);
         }
       }
     });
 
-    const toLocationCounts = {};
-    Array.from(latestByServiceTag.values()).forEach((entry) => {
+    const countsForDay = {};
+    latestForDay.forEach((entry) => {
       const loc = entry.to_location?.trim() || "Unknown";
       if (EXCLUDED_LOCATIONS.includes(loc)) return;
-      toLocationCounts[loc] = (toLocationCounts[loc] || 0) + 1;
-    });
-
-    return {
-      date,
-      toLocationCounts,
-    };
-  });
-
-  const last30Dates = historyByDate.slice(-30);
-
-  // Collect all unique locations
-  const allLocations = new Set();
-  historyByDate.forEach((day) => {
-    Object.keys(day.toLocationCounts).forEach((loc) => {
+      countsForDay[loc] = (countsForDay[loc] || 0) + 1;
       allLocations.add(loc);
     });
-  });
 
-  // Build chart data
-  const chartData = last30Dates.map((day) => {
-    const row = { date: day.date, ...day.toLocationCounts };
+    // If no counts for today, use previous day’s
+    const finalCounts =
+      Object.keys(countsForDay).length > 0
+        ? countsForDay
+        : { ...previousCounts };
 
-    // Ensure all known locations are present with at least 0
-    allLocations.forEach((loc) => {
-      if (!(loc in row)) {
-        row[loc] = 0;
-      }
+    chartData.push({
+      date,
+      ...Object.fromEntries(
+        Array.from(allLocations).map((loc) => [loc, finalCounts[loc] || 0])
+      ),
     });
 
-    return row;
+    previousCounts = finalCounts;
   });
 
   const locationKeys = Array.from(allLocations);

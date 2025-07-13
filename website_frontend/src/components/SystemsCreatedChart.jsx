@@ -16,6 +16,17 @@ function formatDateMMDDYY(date) {
   return `${mm}/${dd}/${yy}`;
 }
 
+function getLastNDates(n) {
+  const dates = [];
+  const today = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    dates.push(formatDateMMDDYY(d));
+  }
+  return dates;
+}
+
 function SystemLocationsChart({ history }) {
   const EXCLUDED_LOCATIONS_EOD = [
     "Pending Parts",
@@ -24,120 +35,85 @@ function SystemLocationsChart({ history }) {
     "In L10",
   ];
 
-  const CHART_COLORS = [
-    "#e63946", // red
-    "#1f77b4", // blue 1
-    "#4e9dd3", // blue 2
-    "#145a86", // blue 3
-    "#6ca0dc", // blue 4
-  ];
+  const CHART_COLORS = ["#e63946", "#1f77b4", "#4e9dd3", "#145a86", "#6ca0dc"];
 
   const KNOWN_LOCATIONS = ["Processed", "RMA PID", "RMA CID", "RMA VID"];
-
   const allLocations = new Set(KNOWN_LOCATIONS);
 
-  const historyDates = [
-    ...new Set(
-      history.map((entry) => {
-        const dateStr = formatDateMMDDYY(new Date(entry.changed_at));
-        return dateStr;
-      })
-    ),
-  ].sort((a, b) => new Date(a) - new Date(b));
+  const fullDateRange = getLastNDates(7);
 
-  const historyByDate = historyDates.map((date) => {
+  const historyByDateMap = new Map();
+  const historyByDateFirstChangeMap = new Map();
+
+  fullDateRange.forEach((date) => {
     const dateStart = new Date(`${date} 00:00:00`);
     const dateEnd = new Date(`${date} 23:59:59`);
 
     const latestByTag = new Map();
+    const firstChangeByTag = new Map();
 
-    // consider only entries that happened on this specific day
     history.forEach((entry) => {
       const entryTime = new Date(entry.changed_at);
       if (entryTime >= dateStart && entryTime <= dateEnd) {
-        const existing = latestByTag.get(entry.service_tag);
+        const existingLatest = latestByTag.get(entry.service_tag);
+        const existingFirst = firstChangeByTag.get(entry.service_tag);
 
-        if (!existing || entryTime > new Date(existing.changed_at)) {
+        if (
+          !existingLatest ||
+          entryTime > new Date(existingLatest.changed_at)
+        ) {
           latestByTag.set(entry.service_tag, entry);
+        }
+
+        if (!existingFirst || entryTime < new Date(existingFirst.changed_at)) {
+          firstChangeByTag.set(entry.service_tag, entry);
         }
       }
     });
 
-    const locationTotals = {};
+    const latestCounts = {};
     [...latestByTag.values()].forEach((entry) => {
       const loc = entry.to_location?.trim() || "Unknown";
-      if (loc === "Processed") return; // skip, handled separately
-      if (EXCLUDED_LOCATIONS_EOD.includes(loc)) return; // skip excluded
-      locationTotals[loc] = (locationTotals[loc] || 0) + 1;
+      if (loc === "Processed") return;
+      if (EXCLUDED_LOCATIONS_EOD.includes(loc)) return;
+      latestCounts[loc] = (latestCounts[loc] || 0) + 1;
     });
 
-    return {
-      date: date,
-      toLocationCounts: locationTotals,
-    };
-  });
-
-  // 🔷 historyByDateFirstChange — only first "Processed" change per day
-  const historyByDateFirstChange = historyDates.map((date) => {
-    const dateStart = new Date(`${date} 00:00:00`);
-    const dateEnd = new Date(`${date} 23:59:59`);
-    const entriesOnThisDay = history.filter((entry) => {
-      const entryTime = new Date(entry.changed_at);
-      return entryTime >= dateStart && entryTime <= dateEnd;
-    });
-
-    const firstChangePerSystem = new Map();
-
-    entriesOnThisDay.forEach((entry) => {
-      const existing = firstChangePerSystem.get(entry.service_tag);
-      const entryTime = new Date(entry.changed_at);
-
-      if (!existing || entryTime < new Date(existing.changed_at)) {
-        firstChangePerSystem.set(entry.service_tag, entry);
-      }
-    });
-
-    const locationTotals = {};
-    [...firstChangePerSystem.values()].forEach((entry) => {
+    const processedCounts = {};
+    [...firstChangeByTag.values()].forEach((entry) => {
       const loc = entry.to_location?.trim() || "Unknown";
-      if (loc !== "Processed") return; // only care about Processed
-      locationTotals[loc] = (locationTotals[loc] || 0) + 1;
+      if (loc !== "Processed") return;
+      processedCounts[loc] = (processedCounts[loc] || 0) + 1;
     });
 
-    return {
-      date: date,
-      toLocationCounts: locationTotals,
-    };
+    historyByDateMap.set(date, latestCounts);
+    historyByDateFirstChangeMap.set(date, processedCounts);
+
+    Object.keys(latestCounts).forEach((loc) => allLocations.add(loc));
+    Object.keys(processedCounts).forEach((loc) => allLocations.add(loc));
   });
 
-  const last30Dates = historyByDate.slice(-30);
+  const last7Dates = fullDateRange.map((date) => {
+    const latestForDay = historyByDateMap.get(date) || {};
+    const processedForDay = historyByDateFirstChangeMap.get(date) || {};
 
-  // 🔷 Collect all unique locations (including Processed)
-  // const allLocations = new Set();
-  historyByDate.forEach((day) => {
-    Object.keys(day.toLocationCounts).forEach((loc) => allLocations.add(loc));
-  });
-  historyByDateFirstChange.forEach((day) => {
-    Object.keys(day.toLocationCounts).forEach((loc) => allLocations.add(loc));
-  });
-
-  // 🔷 Combine both datasets per day
-  const chartData = last30Dates.map((day, idx) => {
-    const date = day.date; //formatDateMMDDYY(new Date(day.date));
-    const processedForDay = historyByDateFirstChange.find(
-      (d) => d.date === day.date
-    ) || { toLocationCounts: {} };
-
-    const row = {
-      date,
-      ...day.toLocationCounts,
-      ...processedForDay.toLocationCounts, // overwrites "Processed" if present
-    };
+    const combinedCounts = {};
 
     allLocations.forEach((loc) => {
-      if (!(loc in row)) row[loc] = 0;
+      combinedCounts[loc] = latestForDay[loc] || processedForDay[loc] || 0;
     });
 
+    return {
+      date,
+      toLocationCounts: combinedCounts,
+    };
+  });
+
+  const chartData = last7Dates.map((day) => {
+    const row = { date: day.date };
+    allLocations.forEach((loc) => {
+      row[loc] = day.toLocationCounts[loc];
+    });
     return row;
   });
 
