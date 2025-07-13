@@ -1,16 +1,8 @@
 import React, { useEffect, useState } from "react";
 import SearchContainer from "../components/SearchContainer";
 
-import {
-  getSystem,
-  getLocations,
-  getSystemHistory,
-  deleteSystem,
-  updateSystemLocation,
-  deleteLastHistoryEntry,
-  getStations,
-  updateStation,
-} from "../api/apis.js";
+import { getStations } from "../api/apis.js";
+import useIsMobile from "../hooks/useIsMobile.jsx";
 
 import Rack from "../components/Rack";
 import Table from "../components/Table";
@@ -21,6 +13,8 @@ function HomePage() {
   const [stations, setStations] = useState([]);
   const [downloads, setDownloads] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  const isMobile = useIsMobile();
 
   const baseUrl =
     import.meta.env.MODE === "development"
@@ -138,7 +132,6 @@ function HomePage() {
           </div>
         </div>
       </main>
-
       {/* Available Downloads */}
       <section className="max-w-[1000px] mx-auto mt-8 bg-white rounded shadow-md p-4">
         <SearchContainer
@@ -152,6 +145,7 @@ function HomePage() {
             date: "text-gray-500 text-sm",
           }}
           linkType="external"
+          visibleFields={isMobile ? ["name", "date"] : ["name", "date"]}
         />
       </section>
     </>

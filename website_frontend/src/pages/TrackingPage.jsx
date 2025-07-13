@@ -15,6 +15,7 @@ import { downloadCSV } from "../utils/csv.js";
 
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast";
+import useIsMobile from "../hooks/useIsMobile.jsx";
 
 import {
   getSystems,
@@ -94,8 +95,8 @@ function TrackingPage() {
               service_tag_title: "Service Tag",
               issue_title: "Issue",
               location_title: "Location",
-              date_created_title: "Date Created",
-              date_last_modified_title: "Last Modified",
+              date_created_title: "Created",
+              date_last_modified_title: "Modified",
             };
           } catch {
             return system;
@@ -121,6 +122,7 @@ function TrackingPage() {
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
+  const isMobile = useIsMobile();
 
   const resolvedSystems = systems.map((sys) => {
     const match = locations.find((l) => l.name === sys.location);
@@ -478,6 +480,17 @@ function TrackingPage() {
               }}
               linkType="internal"
               truncate={true}
+              visibleFields={
+                isMobile
+                  ? ["service_tag", "issue", "location"]
+                  : [
+                      "service_tag",
+                      "issue",
+                      "location",
+                      "date_created",
+                      "date_last_modified",
+                    ]
+              }
             />
 
             <button

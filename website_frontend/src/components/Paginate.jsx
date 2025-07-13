@@ -5,6 +5,7 @@ import ReactPaginate from "react-paginate";
 function Items({
   currentItems,
   displayOrder,
+  visibleFields = [],
   fieldStyles,
   linkType,
   truncate,
@@ -13,6 +14,10 @@ function Items({
   actionButtonVisibleIf,
   hasActionColumn,
 }) {
+  const filteredDisplayOrder = visibleFields
+    ? displayOrder.filter((field) => visibleFields.includes(field))
+    : displayOrder;
+
   return (
     <>
       {currentItems.map((item, index) => {
@@ -22,7 +27,7 @@ function Items({
         if (!item) {
           return (
             <div key={index} className={commonClasses + " invisible"}>
-              {displayOrder.map((field, fieldIndex) => {
+              {filteredDisplayOrder.map((field, fieldIndex) => {
                 const alignment =
                   fieldIndex === 0
                     ? "text-left"
@@ -56,7 +61,7 @@ function Items({
           );
         }
 
-        const RowContent = displayOrder.map((field, fieldIndex) => {
+        const RowContent = filteredDisplayOrder.map((field, fieldIndex) => {
           const alignment =
             fieldIndex === 0
               ? "text-left"
@@ -166,6 +171,7 @@ export default function PaginatedItems({
   items,
   searchTerm,
   displayOrder,
+  visibleFields = [],
   fieldStyles,
   linkType,
   defaultPage = "first",
@@ -212,6 +218,7 @@ export default function PaginatedItems({
       <Items
         currentItems={paddedItems}
         displayOrder={displayOrder}
+        visibleFields={visibleFields} // ⬅️ pass down
         fieldStyles={fieldStyles}
         linkType={linkType}
         truncate={truncate} // ⬅️ pass down
@@ -222,21 +229,23 @@ export default function PaginatedItems({
       />
       <ReactPaginate
         breakLabel="…"
-        nextLabel="next >"
+        nextLabel={<span className="hidden sm:inline">next &gt;</span> || ">"}
+        previousLabel={
+          <span className="hidden sm:inline">&lt; previous</span> || "<"
+        }
         onPageChange={handlePageClick}
         pageRangeDisplayed={1}
-        marginPagesDisplayed={2}
+        marginPagesDisplayed={1} // fewer page numbers for mobile
         pageCount={pageCount}
-        previousLabel="< previous"
         renderOnZeroPageCount={null}
-        containerClassName="flex justify-center items-center gap-1 mt-4 text-sm"
-        pageLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
-        activeLinkClassName="bg-blue-600 text-white border-blue-600"
-        previousLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
-        nextLinkClassName="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
-        breakLinkClassName="px-3 py-1 text-gray-400 cursor-default select-none"
-        disabledClassName="opacity-50 cursor-not-allowed cursor-default select-none"
         forcePage={Math.floor(itemOffset / itemsPerPage)}
+        containerClassName="flex flex-wrap justify-center items-center gap-1 mt-4 text-xs sm:text-sm"
+        pageLinkClassName="px-2 sm:px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+        activeLinkClassName="bg-blue-600 text-white border-blue-600"
+        previousLinkClassName="px-2 sm:px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+        nextLinkClassName="px-2 sm:px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer select-none"
+        breakLinkClassName="px-2 sm:px-3 py-1 text-gray-400 cursor-default select-none"
+        disabledClassName="opacity-50 cursor-not-allowed cursor-default select-none"
       />
     </>
   );

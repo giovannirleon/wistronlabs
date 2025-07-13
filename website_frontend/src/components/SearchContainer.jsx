@@ -8,6 +8,7 @@ function SearchContainer({
   defaultSortBy,
   defaultSortAsc,
   fieldStyles,
+  visibleFields,
   linkType,
   allowSort = true,
   allowSearch = true, // added: allows disabling search
@@ -20,6 +21,10 @@ function SearchContainer({
   const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
   const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? false);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const filteredDisplayOrder = visibleFields
+    ? displayOrder.filter((field) => visibleFields.includes(field))
+    : displayOrder;
 
   const filteredData = data
     .filter((item) => {
@@ -70,7 +75,7 @@ function SearchContainer({
           <div>
             {/* Table header */}
             <div className="flex items-center bg-white border border-gray-300 rounded px-4 py-2 mb-2">
-              {displayOrder.map((field, fieldIndex) => {
+              {filteredDisplayOrder.map((field, fieldIndex) => {
                 const isFirst = fieldIndex === 0;
                 const isLast = fieldIndex === displayOrder.length - 1;
 
@@ -122,6 +127,7 @@ function SearchContainer({
               items={filteredData}
               searchTerm={searchTerm}
               displayOrder={displayOrder}
+              visibleFields={visibleFields}
               fieldStyles={fieldStyles}
               linkType={linkType}
               defaultPage={defaultPage}

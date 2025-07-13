@@ -28,6 +28,7 @@ import {
 
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast.jsx";
+import useIsMobile from "../hooks/useIsMobile.jsx";
 
 function SystemPage() {
   const { serviceTag } = useParams();
@@ -53,6 +54,7 @@ function SystemPage() {
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
 
   const fetchData = async () => {
@@ -267,26 +269,29 @@ function SystemPage() {
           </>
         ) : (
           <>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
                   Service Tag{" "}
                   <span className="text-blue-600">{serviceTag}</span>
                 </h1>
+
                 {system?.issue && (
-                  <span className="inline-block mt-1 px-2 py-1 bg-red-100 text-red-800 text-sm font-bold rounded-full uppercase">
+                  <span className="inline-block mt-1 px-2 py-1 bg-red-100 text-red-800 text-xs sm:text-sm font-bold rounded-full uppercase">
                     {system.issue}
                   </span>
                 )}
               </div>
-              <div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   type="button"
-                  className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow mr-2"
+                  className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
                   onClick={handlePrint}
                 >
                   Print Label
                 </button>
+
                 <button
                   type="button"
                   onClick={handleDelete}
@@ -485,8 +490,8 @@ function SystemPage() {
               <SearchContainer
                 data={history.map((entry) => ({
                   ...entry,
-                  from_location_title: "From Location",
-                  to_location_title: "To Location",
+                  from_location_title: "From",
+                  to_location_title: "To",
                   note_title: "Note",
                   changed_at_title: "Updated At",
                   changed_at: formatDateHumanReadable(entry.changed_at),
@@ -498,6 +503,11 @@ function SystemPage() {
                   "note",
                   "changed_at",
                 ]}
+                visibleFields={
+                  isMobile
+                    ? ["from_location", "to_location", "note", "changed_at"]
+                    : ["from_location", "to_location", "note", "changed_at"]
+                }
                 defaultSortBy={"changed_at"}
                 defaultSortAsc={true}
                 fieldStyles={{
@@ -538,6 +548,7 @@ function SystemPage() {
                 allowSort={false}
                 allowSearch={false}
                 defaultPage="last"
+                truncate={isMobile ?? true}
                 onAction={handleDeleteLastHistoryEntry}
                 actionButtonClass={
                   "ml-2 text-xs text-grey-200 hover:text-red-400"
