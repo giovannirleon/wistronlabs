@@ -8,7 +8,12 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: ["*"], //"https://tss.wistronlabs.com"],
+    origin: [
+      "http://localhost:5174",
+      "http://tss.wistronlabs.com",
+      "http://localhost:5173",
+      "https://tss.wistronlabs.com",
+    ],
   })
 );
 
