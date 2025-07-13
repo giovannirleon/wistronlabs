@@ -174,7 +174,11 @@ function SystemPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!toLocationId || note.trim() === "") {
+    if (
+      !toLocationId ||
+      note.trim() === "" ||
+      (toLocationId === 5 && !selectedStation)
+    ) {
       setFormError(true);
       return;
     }
