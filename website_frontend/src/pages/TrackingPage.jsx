@@ -271,7 +271,10 @@ function TrackingPage() {
 
   const historyDates = [
     ...new Set(
-      history.map((h) => new Date(h.changed_at).toISOString().slice(0, 10))
+      history
+        .map((h) => new Date(h.changed_at))
+        .filter((date) => !isNaN(date)) // keep only valid dates
+        .map((date) => date.toISOString().slice(0, 10))
     ),
   ].sort();
 
