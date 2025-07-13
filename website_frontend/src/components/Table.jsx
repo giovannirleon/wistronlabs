@@ -1,6 +1,7 @@
 import Station from "./Station";
 
-function Table({ stations, stationNumbers, tableNumber }) {
+function Table({ stations, stationNumbers, tableNumber, link }) {
+  console.log(stations);
   return (
     <>
       <h2 className="text-xl font-medium mb-4">Debug Table {tableNumber}</h2>
@@ -14,17 +15,20 @@ function Table({ stations, stationNumbers, tableNumber }) {
               <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
                 Status
               </th>
+              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                Service Tag
+              </th>
             </tr>
           </thead>
           <tbody>
             {stations
               .filter((s) =>
                 stationNumbers.includes(
-                  parseInt(s.station.match(/\d+/)?.[0] || 0)
+                  parseInt(s.station_name.match(/\d+/)?.[0] || 0)
                 )
               )
               .map((s) => (
-                <Station stationInfo={s} />
+                <Station stationInfo={s} link={link} />
               ))}
           </tbody>
         </table>

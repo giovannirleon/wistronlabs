@@ -47,25 +47,79 @@ router.get("/history", async (req, res) => {
   }
 });
 
-// GET /api/v1/systems/:service_tag
-router.get("/:service_tag", async (req, res) => {
+// DELETE /api/v1/systems/:service_tag/history/last
+router.delete("/:service_tag/history/last", async (req, res) => {
   const { service_tag } = req.params;
 
-  const result = await db.query(
-    `
-    SELECT s.id, s.service_tag, s.issue, l.name AS location
-    FROM system s
-    JOIN location l ON s.location_id = l.id
-    WHERE s.service_tag = $1
-  `,
-    [service_tag]
-  );
+  try {
+    const systemResult = await db.query(
+      "SELECT id, location_id FROM system WHERE service_tag = $1",
+      [service_tag]
+    );
 
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "System not found" });
+    if (systemResult.rows.length === 0) {
+      return res.status(404).json({ error: "System not found" });
+    }
+
+    const { id: system_id, location_id: currentLocation } =
+      systemResult.rows[0];
+
+    const historyResult = await db.query(
+      `
+      SELECT id, to_location_id
+      FROM system_location_history
+      WHERE system_id = $1
+      ORDER BY changed_at DESC
+      LIMIT 1
+      `,
+      [system_id]
+    );
+
+    if (historyResult.rows.length === 0) {
+      return res.status(404).json({ error: "No history entries found" });
+    }
+
+    const { id: history_id, to_location_id: latestToLocation } =
+      historyResult.rows[0];
+
+    await db.query("DELETE FROM system_location_history WHERE id = $1", [
+      history_id,
+    ]);
+
+    if (currentLocation === latestToLocation) {
+      const prevHistory = await db.query(
+        `
+        SELECT to_location_id
+        FROM system_location_history
+        WHERE system_id = $1
+        ORDER BY changed_at DESC
+        LIMIT 1
+        `,
+        [system_id]
+      );
+
+      const rollbackLocation =
+        prevHistory.rows.length > 0 ? prevHistory.rows[0].to_location_id : null;
+
+      await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
+        rollbackLocation,
+        system_id,
+      ]);
+
+      return res.json({
+        message: "Last history entry deleted and system location rolled back",
+        new_location_id: rollbackLocation,
+      });
+    }
+
+    res.json({
+      message:
+        "Last history entry deleted (no system.location rollback needed)",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete last history entry" });
   }
-
-  res.json(result.rows[0]);
 });
 
 // GET /api/v1/systems/:service_tag/history
@@ -96,6 +150,27 @@ router.get("/:service_tag/history", async (req, res) => {
   );
 
   res.json(result.rows);
+});
+
+// GET /api/v1/systems/:service_tag
+router.get("/:service_tag", async (req, res) => {
+  const { service_tag } = req.params;
+
+  const result = await db.query(
+    `
+    SELECT s.id, s.service_tag, s.issue, l.name AS location
+    FROM system s
+    JOIN location l ON s.location_id = l.id
+    WHERE s.service_tag = $1
+  `,
+    [service_tag]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "System not found" });
+  }
+
+  res.json(result.rows[0]);
 });
 
 // POST /api/v1/systems
@@ -208,84 +283,6 @@ router.patch("/:service_tag/issue", async (req, res) => {
   }
 
   res.json({ message: "Issue updated" });
-});
-
-router.delete("/:service_tag/history/last", async (req, res) => {
-  const { service_tag } = req.params;
-
-  try {
-    // get system ID and current location_id
-    const systemResult = await db.query(
-      "SELECT id, location_id FROM system WHERE service_tag = $1",
-      [service_tag]
-    );
-
-    if (systemResult.rows.length === 0) {
-      return res.status(404).json({ error: "System not found" });
-    }
-
-    const { id: system_id, location_id: currentLocation } =
-      systemResult.rows[0];
-
-    // get latest history entry
-    const historyResult = await db.query(
-      `
-      SELECT id, to_location_id
-      FROM system_location_history
-      WHERE system_id = $1
-      ORDER BY changed_at DESC
-      LIMIT 1
-      `,
-      [system_id]
-    );
-
-    if (historyResult.rows.length === 0) {
-      return res.status(404).json({ error: "No history entries found" });
-    }
-
-    const { id: history_id, to_location_id: latestToLocation } =
-      historyResult.rows[0];
-
-    // delete that history entry
-    await db.query("DELETE FROM system_location_history WHERE id = $1", [
-      history_id,
-    ]);
-
-    // only roll back if it was the source of system.location_id
-    if (currentLocation === latestToLocation) {
-      const prevHistory = await db.query(
-        `
-        SELECT to_location_id
-        FROM system_location_history
-        WHERE system_id = $1
-        ORDER BY changed_at DESC
-        LIMIT 1
-        `,
-        [system_id]
-      );
-
-      const rollbackLocation =
-        prevHistory.rows.length > 0 ? prevHistory.rows[0].to_location_id : null;
-
-      await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
-        rollbackLocation,
-        system_id,
-      ]);
-
-      return res.json({
-        message: "Last history entry deleted and system location rolled back",
-        new_location_id: rollbackLocation,
-      });
-    }
-
-    res.json({
-      message:
-        "Last history entry deleted (no system.location rollback needed)",
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to delete last history entry" });
-  }
 });
 
 // DELETE /api/v1/systems/:service_tag

@@ -104,6 +104,13 @@ function SystemPage() {
     try {
       await deleteSystem(serviceTag);
 
+      // if (selectedStationObj && system?.location === "In L10") {
+      //   await updateStation(selectedStationObj.station_name, {
+      //     system_id: null, // clear system_id when moving out of L10
+      //   });
+      //   setSelectedStation(""); // reset selected station after deletion
+      // }
+
       showToast("Unit deleted successfully", "success", 3000, "bottom-right");
       navigate("/tracking"); // redirect to tracking page
     } catch (err) {
@@ -234,9 +241,8 @@ function SystemPage() {
 
     return () => clearInterval(interval);
   }, []);
-  console.log(system?.location);
+
   console.log(selectedStationObj);
-  console.log(system);
   return (
     <>
       <ConfirmDialog />

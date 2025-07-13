@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from "react";
 import SearchContainer from "../components/SearchContainer";
 
-import { getStations } from "../api/apis";
+import {
+  getSystem,
+  getLocations,
+  getSystemHistory,
+  deleteSystem,
+  updateSystemLocation,
+  deleteLastHistoryEntry,
+  getStations,
+  updateStation,
+} from "../api/apis.js";
 
 import Rack from "../components/Rack";
 import Table from "../components/Table";
@@ -11,6 +20,7 @@ import { formatDateHumanReadable } from "../utils/date_format";
 function HomePage() {
   const [stations, setStations] = useState([]);
   const [downloads, setDownloads] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const baseUrl =
     import.meta.env.MODE === "development"
@@ -26,9 +36,21 @@ function HomePage() {
     }
   };
 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [stationData] = await Promise.all([getStations()]);
+      setStations(stationData);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     // fetch stations every 1s
-    fetchStations();
+    fetchData();
     const interval = setInterval(fetchStations, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -100,17 +122,19 @@ function HomePage() {
               stations={stations}
               stationNumbers={[1, 2]}
               tableNumber={1}
+              link={true}
             />
             <Table
               stations={stations}
               stationNumbers={[3, 4]}
               tableNumber={2}
+              link={true}
             />
           </div>
 
           {/* Right Column */}
           <div className="flex flex-col w-full">
-            <Rack stations={stations} rackNumber={1} />
+            <Rack stations={stations} rackNumber={1} link={true} />
           </div>
         </div>
       </main>
