@@ -12,6 +12,7 @@ import DownloadReportModal from "../components/DownloadReportModal.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format.js";
 import { downloadCSV } from "../utils/csv.js";
+import { delay } from "../utils/delay.js";
 
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast";
@@ -117,8 +118,6 @@ function TrackingPage() {
   useEffect(() => {
     fetchData();
   }, []);
-
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();

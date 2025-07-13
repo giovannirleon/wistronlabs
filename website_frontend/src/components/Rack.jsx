@@ -31,8 +31,8 @@ function Rack({ stations, rackNumber, link }) {
                     stationsPlace + 36
               )
               .reverse()
-              .map((s) => (
-                <Station stationInfo={s} link={link} />
+              .map((s, index) => (
+                <Station key={index} stationInfo={s} link={link} />
               ))}
             <tr
               className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3"
@@ -53,8 +53,8 @@ function Rack({ stations, rackNumber, link }) {
                     stationsPlace + 17
               )
               .reverse()
-              .map((s) => (
-                <Station stationInfo={s} link={link} />
+              .map((s, index) => (
+                <Station key={index} stationInfo={s} link={link} />
               ))}
           </tbody>
         </table>

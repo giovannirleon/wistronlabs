@@ -1,10 +1,14 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
+import { Navigate } from "react-router-dom";
+
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { loginUser, registerUser, forgotPassword } from "../api/authApi";
+import { set } from "date-fns";
+import { delay } from "../utils/delay";
 
 export default function Auth({ defaultMode = "login" }) {
-  const { login } = useContext(AuthContext);
+  const { login, token } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const [mode, setMode] = useState(defaultMode);
@@ -13,6 +17,9 @@ export default function Auth({ defaultMode = "login" }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+
+  const [redirectToUser, setRedirectToUser] = useState(false);
+  const [hasJustLoggedIn, setHasJustLoggedIn] = useState(false);
 
   const resetFields = () => {
     setUsername("");
@@ -30,6 +37,7 @@ export default function Auth({ defaultMode = "login" }) {
       if (mode === "login") {
         const data = await loginUser(username, password);
         login(data.token);
+        setHasJustLoggedIn(true);
         navigate("/");
       }
 
@@ -56,91 +64,133 @@ export default function Auth({ defaultMode = "login" }) {
     }
   };
 
+  useEffect(() => {
+    if (token && !hasJustLoggedIn) {
+      setRedirectToUser(true);
+      delay(2000).then(() => {
+        navigate("/user");
+      });
+    }
+  }, [token, navigate, hasJustLoggedIn]);
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
-      <div className="w-full max-w-md bg-white shadow-md rounded-xl p-8">
-        <h1 className="text-2xl font-bold text-center text-gray-800 mb-6">
-          {mode === "login" && "Sign In"}
-          {mode === "register" && "Create Account"}
-          {mode === "forgot" && "Reset Password"}
-        </h1>
-
-        {/* Tabs */}
-        <div className="flex justify-center space-x-2 mb-6">
-          {["login", "register", "forgot"].map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-lg transition ${
-                mode === m
-                  ? "bg-blue-600 text-white shadow"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
+    <div className="flex justify-center items-start min-h-[calc(100vh-60px)]">
+      <div className="w-full max-w-md bg-white shadow rounded-xl p-6 mt-20 sm:p-8">
+        {redirectToUser ? (
+          <div className="flex flex-col items-center justify-center space-y-4 py-12">
+            <svg
+              className="animate-spin h-10 w-10 text-blue-600"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
             >
-              {m === "login" && "Login"}
-              {m === "register" && "Register"}
-              {m === "forgot" && "Forgot"}
-            </button>
-          ))}
-        </div>
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v8H4z"
+              ></path>
+            </svg>
+            <p className="text-gray-700 text-center">
+              You’re already logged in.
+              <br />
+              Redirecting to your{" "}
+              <span className="text-blue-600 font-medium">User page</span>…
+            </p>
+          </div>
+        ) : (
+          <>
+            <h1 className="text-xl sm:text-2xl font-bold text-center text-gray-800 mb-4 sm:mb-6">
+              {mode === "login" && "Sign In"}
+              {mode === "register" && "Create Account"}
+              {mode === "forgot" && "Reset Password"}
+            </h1>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode !== "forgot" && (
-            <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              required
-            />
-          )}
+            {/* Tabs */}
+            <div className="flex justify-center space-x-2 mb-4 sm:mb-6">
+              {["login", "register", "forgot"].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-lg transition ${
+                    mode === m
+                      ? "bg-blue-600 text-white shadow"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {m === "login" && "Login"}
+                  {m === "register" && "Register"}
+                  {m === "forgot" && "Forgot"}
+                </button>
+              ))}
+            </div>
 
-          {(mode === "login" || mode === "register") && (
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              required
-            />
-          )}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode !== "forgot" && (
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
+                />
+              )}
 
-          {mode === "register" && (
-            <input
-              type="password"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              required
-            />
-          )}
+              {(mode === "login" || mode === "register") && (
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
+                />
+              )}
 
-          {mode === "forgot" && (
-            <input
-              type="email"
-              placeholder="Email Address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              required
-            />
-          )}
+              {mode === "register" && (
+                <input
+                  type="password"
+                  placeholder="Confirm Password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
+                />
+              )}
 
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg shadow transition"
-          >
-            {mode === "login" && "Login"}
-            {mode === "register" && "Register"}
-            {mode === "forgot" && "Send Reset Link"}
-          </button>
-        </form>
+              {mode === "forgot" && (
+                <input
+                  type="email"
+                  placeholder="Email Address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
+                />
+              )}
 
-        {message && (
-          <p className="mt-4 text-center text-sm text-red-600">{message}</p>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg shadow transition"
+              >
+                {mode === "login" && "Login"}
+                {mode === "register" && "Register"}
+                {mode === "forgot" && "Send Reset Link"}
+              </button>
+            </form>
+
+            {message && (
+              <p className="mt-4 text-center text-sm text-red-600">{message}</p>
+            )}
+          </>
         )}
       </div>
     </div>

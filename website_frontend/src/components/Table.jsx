@@ -1,7 +1,6 @@
 import Station from "./Station";
 
 function Table({ stations, stationNumbers, tableNumber, link }) {
-  console.log(stations);
   return (
     <>
       <h2 className="text-xl font-medium mb-4">Debug Table {tableNumber}</h2>
@@ -27,8 +26,8 @@ function Table({ stations, stationNumbers, tableNumber, link }) {
                   parseInt(s.station_name.match(/\d+/)?.[0] || 0)
                 )
               )
-              .map((s) => (
-                <Station stationInfo={s} link={link} />
+              .map((s, index) => (
+                <Station key={index} stationInfo={s} link={link} />
               ))}
           </tbody>
         </table>

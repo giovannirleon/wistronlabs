@@ -24,6 +24,10 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:example@db:5432/mydb
       JWT_SECRET: IcouPjosfsXUqssouBJrCTY8rNg0KOupeckKFyek0eI=
+      SMTP_USER: wistron.tailscale@gmail.com
+      SMTP_PASS: yuiq eina xodz aezs
+      FRONTEND_URL: https://tss.wistronlabs.com
+
     command: npm start
 
 volumes:

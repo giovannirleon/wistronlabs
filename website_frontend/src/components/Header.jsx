@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
 import { Link, useLocation } from "react-router-dom";
 
 function Header() {
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const { token } = useContext(AuthContext);
 
   const linkBase =
     "text-slate-300 text-base md:text-sm font-medium border border-white/20 px-4 py-2 md:px-3 md:py-1 rounded hover:bg-white/10 hover:text-white";
@@ -37,6 +40,21 @@ function Header() {
         >
           Tracking
         </Link>
+        {token ? (
+          <Link
+            to="/user"
+            className={`${linkBase} ${pathname === "/user" ? active : ""}`}
+          >
+            Account
+          </Link>
+        ) : (
+          <Link
+            to="/auth"
+            className={`${linkBase} ${pathname === "/auth" ? active : ""}`}
+          >
+            Log In
+          </Link>
+        )}
         <a
           href="https://github.com/giovannirleon/wistronlabs"
           target="_blank"
@@ -72,6 +90,21 @@ function Header() {
           >
             Tracking
           </Link>
+          {token ? (
+            <Link
+              to="/user"
+              className={`${linkBase} ${pathname === "/user" ? active : ""}`}
+            >
+              Account
+            </Link>
+          ) : (
+            <Link
+              to="/auth"
+              className={`${linkBase} ${pathname === "/auth" ? active : ""}`}
+            >
+              Log In
+            </Link>
+          )}
           <a
             href="https://github.com/giovannirleon/wistronlabs"
             target="_blank"
