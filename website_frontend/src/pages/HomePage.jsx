@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import SearchContainer from "../components/SearchContainer";
+import { AuthContext } from "../context/AuthContext";
 
 import { getStations } from "../api/apis.js";
 import useIsMobile from "../hooks/useIsMobile.jsx";
