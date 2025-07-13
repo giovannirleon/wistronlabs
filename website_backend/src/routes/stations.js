@@ -52,18 +52,37 @@ router.patch("/:station_name", async (req, res) => {
   const station_name = req.params.station_name;
   const { system_id, status, message } = req.body;
 
+  const updates = [];
+  const values = [];
+  let idx = 1;
+
+  if ("system_id" in req.body) {
+    updates.push(`system_id = $${idx++}`);
+    values.push(system_id);
+  }
+  if ("status" in req.body) {
+    updates.push(`status = $${idx++}`);
+    values.push(status);
+  }
+  if ("message" in req.body) {
+    updates.push(`message = $${idx++}`);
+    values.push(message);
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: "No fields provided to update" });
+  }
+
+  values.push(station_name);
+
+  const sql = `
+    UPDATE station
+    SET ${updates.join(", ")}
+    WHERE station_name = $${idx}
+  `;
+
   try {
-    const { rowCount } = await db.query(
-      `
-      UPDATE station
-      SET
-        system_id = COALESCE($1, system_id),
-        status = COALESCE($2, status),
-        message = COALESCE($3, message)
-      WHERE station_name = $4
-      `,
-      [system_id, status, message, station_name]
-    );
+    const { rowCount } = await db.query(sql, values);
 
     if (rowCount === 0) {
       return res.status(404).json({ error: "Station not found" });

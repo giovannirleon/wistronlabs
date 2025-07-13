@@ -55,10 +55,6 @@ function SystemPage() {
   const { showToast, Toast } = useToast();
   const navigate = useNavigate();
 
-  const selectedStationObj = stations.find(
-    (station) => station.station_name === selectedStation
-  );
-
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -79,6 +75,17 @@ function SystemPage() {
       setLoading(false);
     }
   };
+
+  let selectedStationObj = null;
+  if (system?.location === "In L10") {
+    selectedStationObj = stations.find(
+      (station) => station.system_service_tag === system.service_tag
+    );
+  } else {
+    selectedStationObj = stations.find(
+      (station) => station.station_name === selectedStation
+    );
+  }
 
   const handleDelete = async () => {
     const confirmed = await confirm({
@@ -171,6 +178,15 @@ function SystemPage() {
         });
       }
 
+      console.log(system.location);
+      console.log(selectedStationObj);
+      if (selectedStationObj && system?.location === "In L10") {
+        console.log("Clearing system_id for station");
+        await updateStation(selectedStationObj.station_name, {
+          system_id: null, // clear system_id when moving out of L10
+        });
+      }
+
       setNote("");
       setToLocationId("");
       showToast("Updated System Location", "success", 3000, "bottom-right");
@@ -212,8 +228,6 @@ function SystemPage() {
     return () => clearInterval(interval);
   }, []);
 
-  console.log(selectedStationObj);
-  console.log(system.location);
   return (
     <>
       <ConfirmDialog />
