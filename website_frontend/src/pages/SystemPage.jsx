@@ -137,6 +137,15 @@ function SystemPage() {
     }
     try {
       await deleteLastHistoryEntry(serviceTag);
+
+      // If the last entry was "In L10", clear the system_id in the station as well
+      if (selectedStationObj && system?.location === "In L10") {
+        await updateStation(selectedStationObj.station_name, {
+          system_id: null, // clear system_id when moving out of L10
+        });
+        setSelectedStation(""); // reset selected station after deletion
+      }
+
       showToast("Last location entry deleted", "success", 3000, "bottom-right");
       fetchData(); // reload history after deletion
       // Optionally, you can also update the state directly if needed
@@ -178,10 +187,7 @@ function SystemPage() {
         });
       }
 
-      console.log(system.location);
-      console.log(selectedStationObj);
       if (selectedStationObj && system?.location === "In L10") {
-        console.log("Clearing system_id for station");
         await updateStation(selectedStationObj.station_name, {
           system_id: null, // clear system_id when moving out of L10
         });
@@ -189,6 +195,7 @@ function SystemPage() {
 
       setNote("");
       setToLocationId("");
+      setSelectedStation("");
       showToast("Updated System Location", "success", 3000, "bottom-right");
       await fetchData(); // reload updated history
     } catch (err) {
@@ -227,7 +234,9 @@ function SystemPage() {
 
     return () => clearInterval(interval);
   }, []);
-
+  console.log(system?.location);
+  console.log(selectedStationObj);
+  console.log(system);
   return (
     <>
       <ConfirmDialog />
