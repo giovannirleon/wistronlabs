@@ -122,7 +122,7 @@ function SystemPage() {
       navigate("/tracking"); // redirect to tracking page
     } catch (err) {
       console.error(err);
-
+      console.log("Error deleting unit:", err);
       showToast("Error deleting unit", "error", 3000, "bottom-right");
     }
   };
@@ -165,7 +165,7 @@ function SystemPage() {
       // Optionally, you can also update the state directly if needed
       //setHistory((prev) => prev.slice(0, -1)); // remove last entry from state
     } catch (err) {
-      console.error(err);
+      console.error(err.response);
       showToast(
         "Error deleting last location entry",
         "error",
@@ -252,9 +252,6 @@ function SystemPage() {
 
     return () => clearInterval(interval);
   }, []);
-
-  console.log(selectedStationObj);
-  console.log("SystemPage render", serviceTag, history);
 
   return (
     <>

@@ -94,6 +94,7 @@ function Header() {
             <Link
               to="/user"
               className={`${linkBase} ${pathname === "/user" ? active : ""}`}
+              onClick={() => setMenuOpen(false)}
             >
               Account
             </Link>
@@ -101,6 +102,7 @@ function Header() {
             <Link
               to="/auth"
               className={`${linkBase} ${pathname === "/auth" ? active : ""}`}
+              onClick={() => setMenuOpen(false)}
             >
               Log In
             </Link>
