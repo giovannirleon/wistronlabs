@@ -249,6 +249,32 @@ router.post("/", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/v1/systems/:service_tag - get single system
+router.get("/:service_tag", async (req, res) => {
+  const { service_tag } = req.params;
+
+  try {
+    const result = await db.query(
+      `
+      SELECT s.id, s.service_tag, s.issue, l.name AS location
+      FROM system s
+      JOIN location l ON s.location_id = l.id
+      WHERE s.service_tag = $1
+      `,
+      [service_tag]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "System not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch system" });
+  }
+});
+
 // PATCH /api/v1/systems/:service_tag/location
 router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
