@@ -118,6 +118,7 @@ router.get("/history/:id", async (req, res) => {
 });
 
 // DELETE /api/v1/systems/:service_tag/history/last
+// DELETE /api/v1/systems/:service_tag/history/last
 router.delete(
   "/:service_tag/history/last",
   authenticateToken,
@@ -125,6 +126,7 @@ router.delete(
     const { service_tag } = req.params;
 
     try {
+      // 1️⃣ Find system by service_tag
       const systemResult = await db.query(
         "SELECT id FROM system WHERE service_tag = $1",
         [service_tag]
@@ -136,13 +138,14 @@ router.delete(
 
       const system_id = systemResult.rows[0].id;
 
+      // 2️⃣ Get all history entries for this system, ordered newest to oldest
       const historyResult = await db.query(
         `
-        SELECT id, moved_by
-        FROM system_location_history
-        WHERE system_id = $1
-        ORDER BY changed_at DESC
-        `,
+      SELECT id, moved_by
+      FROM system_location_history
+      WHERE system_id = $1
+      ORDER BY changed_at DESC
+      `,
         [system_id]
       );
 
@@ -156,10 +159,19 @@ router.delete(
           .json({ error: "Cannot delete the first history entry" });
       }
 
-      const { id: history_id, moved_by } = historyResult[0];
+      const { id: history_id, moved_by } = historyResult.rows[0];
 
-      const deletedUserId = await getDeletedUserId();
+      // 3️⃣ Get deleted_user id
+      const deletedUserIdResult = await db.query(
+        `SELECT id FROM users WHERE username = 'deleted_user@example.com'`
+      );
+      const deletedUserId = deletedUserIdResult.rows[0]?.id;
 
+      if (!deletedUserId) {
+        return res.status(500).json({ error: "Deleted user not configured" });
+      }
+
+      // 4️⃣ Check authorization: must be the mover OR deleted_user OR admin
       if (moved_by !== deletedUserId && moved_by !== req.user.userId) {
         return res.status(403).json({
           error:
@@ -167,11 +179,37 @@ router.delete(
         });
       }
 
+      // 5️⃣ Delete the latest history entry
       await db.query("DELETE FROM system_location_history WHERE id = $1", [
         history_id,
       ]);
 
-      res.json({ message: "Last history entry deleted" });
+      // 6️⃣ Roll back system.location_id to the new latest history entry
+      const latestRemaining = await db.query(
+        `
+      SELECT to_location_id
+      FROM system_location_history
+      WHERE system_id = $1
+      ORDER BY changed_at DESC
+      LIMIT 1
+      `,
+        [system_id]
+      );
+
+      const rollbackLocation =
+        latestRemaining.rows.length > 0
+          ? latestRemaining.rows[0].to_location_id
+          : null;
+
+      await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
+        rollbackLocation,
+        system_id,
+      ]);
+
+      res.json({
+        message: "Last history entry deleted, system location rolled back",
+        new_location_id: rollbackLocation,
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Failed to delete last history entry" });

@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useContext, useState, useEffect } from "react";
 import SearchContainer from "../components/SearchContainer";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
 import SystemLocationsChart from "../components/SystemLocationsChart.jsx";
+import { AuthContext } from "../context/AuthContext.jsx";
 
 import { pdf } from "@react-pdf/renderer";
 import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
 
 import AddSystemModal from "../components/AddSystemModal.jsx";
 import DownloadReportModal from "../components/DownloadReportModal.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format.js";
 import { downloadCSV } from "../utils/csv.js";
@@ -17,14 +19,7 @@ import { delay } from "../utils/delay.js";
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast";
 import useIsMobile from "../hooks/useIsMobile.jsx";
-
-import {
-  getSystems,
-  getLocations,
-  getHistory,
-  createSystem,
-  moveSystemToProcessed,
-} from "../api/apis.js";
+import useApi from "../hooks/useApi.jsx";
 
 const ACTIVE_LOCATION_IDS = [1, 2, 3, 4, 5];
 
@@ -57,6 +52,16 @@ function TrackingPage() {
   const [addSystemFormError, setAddSystemFormError] = useState(false);
 
   const [reportMode, setReportMode] = useState("perday");
+
+  const { token } = useContext(AuthContext);
+
+  const {
+    getSystems,
+    getLocations,
+    getHistory,
+    createSystem,
+    moveSystemToProcessed,
+  } = useApi();
 
   const fetchData = async () => {
     setLoading(true);
@@ -399,15 +404,23 @@ function TrackingPage() {
       <main className="max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
-          <button
-            onClick={() => {
-              setAddSystemFormError(false);
-              setShowModal(true);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm"
+          <Tooltip
+            text="Please log in to add a unit"
+            position="botom"
+            show={!token == true}
           >
-            + New System
-          </button>
+            <button
+              onClick={() => {
+                setAddSystemFormError(false);
+                setShowModal(true);
+              }}
+              className={`bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-s ${
+                !token ? "opacity-30 pointer-events-none" : ""
+              }`}
+            >
+              + New System
+            </button>
+          </Tooltip>
         </div>
 
         {loading ? (

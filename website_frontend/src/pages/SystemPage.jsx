@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "react-select";
 
@@ -6,25 +6,18 @@ import Flowchart from "../components/Flowchart";
 import { useParams } from "react-router-dom";
 import SearchContainer from "../components/SearchContainer";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
+import { AuthContext } from "../context/AuthContext.jsx";
 
 import { pdf } from "@react-pdf/renderer";
 import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
 
 import Station from "../components/Station.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format";
 import { allowedNextLocations } from "../helpers/NextAllowedLocations.jsx";
 
-import {
-  getSystem,
-  getLocations,
-  getSystemHistory,
-  deleteSystem,
-  updateSystemLocation,
-  deleteLastHistoryEntry,
-  getStations,
-  updateStation,
-} from "../api/apis.js";
+import useApi from "../hooks/useApi";
 
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast.jsx";
@@ -51,6 +44,19 @@ function SystemPage() {
   const currentLocation = history[0]?.to_location || ""; // most recent location name
 
   const isSentToL11 = currentLocation === "Sent to L11";
+
+  const { token } = useContext(AuthContext);
+
+  const {
+    getSystem,
+    getLocations,
+    getSystemHistory,
+    deleteSystem,
+    updateSystemLocation,
+    deleteLastHistoryEntry,
+    getStations,
+    updateStation,
+  } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
@@ -292,14 +298,21 @@ function SystemPage() {
                 >
                   Print Label
                 </button>
-
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
+                <Tooltip
+                  text="Please log in to delete a unit"
+                  position="botom"
+                  show={!token == true}
                 >
-                  Delete Unit
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    className={`bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow ${
+                      !token ? "opacity-30 pointer-events-none" : ""
+                    }`}
+                  >
+                    Delete Unit
+                  </button>
+                </Tooltip>
               </div>
             </div>
 
@@ -314,7 +327,9 @@ function SystemPage() {
 
             <form
               onSubmit={handleSubmit}
-              className="relative p-6 bg-gray-50 rounded-xl shadow-inner flex flex-col gap-6"
+              className={`relative p-6 bg-gray-50 rounded-xl shadow-inner flex flex-col gap-6 ${
+                !token ? "opacity-70 pointer-events-none" : ""
+              }`}
             >
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">
@@ -503,29 +518,11 @@ function SystemPage() {
                       : entry.moved_by,
                 }))}
                 title=""
-                displayOrder={[
-                  "from_location",
-                  "to_location",
-                  "note",
-                  "moved_by",
-                  "changed_at",
-                ]}
+                displayOrder={["to_location", "note", "moved_by", "changed_at"]}
                 visibleFields={
                   isMobile
-                    ? [
-                        "from_location",
-                        "to_location",
-                        "note",
-                        "moved_by",
-                        "changed_at,",
-                      ]
-                    : [
-                        "from_location",
-                        "to_location",
-                        "note",
-                        "moved_by",
-                        "changed_at",
-                      ]
+                    ? ["to_location", "note", "moved_by"]
+                    : ["to_location", "note", "moved_by", "changed_at"]
                 }
                 defaultSortBy={"changed_at"}
                 defaultSortAsc={true}
