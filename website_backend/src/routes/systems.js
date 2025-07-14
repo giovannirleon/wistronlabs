@@ -316,58 +316,54 @@ router.get("/:service_tag", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/location
-router.patch(
-  "/systems/:service_tag/location",
-  authenticateToken,
-  async (req, res) => {
-    const { service_tag } = req.params;
-    const { to_location_id, note } = req.body;
+router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
+  const { service_tag } = req.params;
+  const { to_location_id, note } = req.body;
 
-    if (!to_location_id || !note) {
-      return res
-        .status(400)
-        .json({ error: "to_location_id and note are required" });
+  if (!to_location_id || !note) {
+    return res
+      .status(400)
+      .json({ error: "to_location_id and note are required" });
+  }
+
+  try {
+    await db.query("BEGIN");
+
+    const systemResult = await db.query(
+      "SELECT id, location_id FROM system WHERE service_tag = $1",
+      [service_tag]
+    );
+
+    if (systemResult.rows.length === 0) {
+      await db.query("ROLLBACK");
+      return res.status(404).json({ error: "System not found" });
     }
 
-    try {
-      await db.query("BEGIN");
+    const { id: system_id, location_id: from_location_id } =
+      systemResult.rows[0];
 
-      const systemResult = await db.query(
-        "SELECT id, location_id FROM system WHERE service_tag = $1",
-        [service_tag]
-      );
+    await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
+      to_location_id,
+      system_id,
+    ]);
 
-      if (systemResult.rows.length === 0) {
-        await db.query("ROLLBACK");
-        return res.status(404).json({ error: "System not found" });
-      }
-
-      const { id: system_id, location_id: from_location_id } =
-        systemResult.rows[0];
-
-      await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
-        to_location_id,
-        system_id,
-      ]);
-
-      await db.query(
-        `
+    await db.query(
+      `
       INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note, moved_by)
       VALUES ($1, $2, $3, $4, $5)
     `,
-        [system_id, from_location_id, to_location_id, note, req.user.userId]
-      );
+      [system_id, from_location_id, to_location_id, note, req.user.userId]
+    );
 
-      await db.query("COMMIT");
+    await db.query("COMMIT");
 
-      res.json({ message: "Location updated" });
-    } catch (err) {
-      await db.query("ROLLBACK");
-      console.error(err);
-      res.status(500).json({ error: "Failed to update location" });
-    }
+    res.json({ message: "Location updated" });
+  } catch (err) {
+    await db.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Failed to update location" });
   }
-);
+});
 
 // PATCH /api/v1/systems/:service_tag/issue
 router.patch("/:service_tag/issue", authenticateToken, async (req, res) => {
