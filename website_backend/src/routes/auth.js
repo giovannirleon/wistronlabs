@@ -111,7 +111,8 @@ router.post("/login", async (req, res) => {
       httpOnly: true, // ✅ keep true even locally
       secure: true, // 🚫 must be false because localhost is HTTP
       sameSite: "none", // 🚫 must be none for cross-origin cookies"
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      //maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 1 * 60 * 1000, // 2 minutes
     });
 
     res.json({ token: accessToken });
