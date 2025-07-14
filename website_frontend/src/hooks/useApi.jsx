@@ -88,6 +88,15 @@ function useApi() {
       method: "DELETE",
     });
 
+  const moveSystemToProcessed = (service_tag) =>
+    fetchJSON(`/systems/${service_tag}/location`, token, {
+      method: "PATCH",
+      body: JSON.stringify({
+        to_location_id: 1,
+        note: "Moving back to processed from Inactive",
+      }),
+    });
+
   return {
     getSystems,
     getHistory,
@@ -104,6 +113,7 @@ function useApi() {
     createStation,
     updateStation,
     deleteStation,
+    moveSystemToProcessed,
   };
 }
 
