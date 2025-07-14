@@ -14,6 +14,7 @@ app.use(
       "http://localhost:5173",
       "https://tss.wistronlabs.com",
     ],
+    credentials: true,
   })
 );
 

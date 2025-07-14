@@ -2,7 +2,7 @@ import { createContext, useState, useEffect } from "react";
 import { jwtDecode } from "jwt-decode";
 import { useNavigate } from "react-router-dom";
 import useToast from "../hooks/useToast";
-import { refreshToken } from "../api/authApi";
+import { refreshAccessToken } from "../api/authApi";
 
 export const AuthContext = createContext();
 
