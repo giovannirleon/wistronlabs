@@ -62,7 +62,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);
-    navigate("/login");
+    navigate("/auth");
   };
 
   const refreshToken = async () => {
