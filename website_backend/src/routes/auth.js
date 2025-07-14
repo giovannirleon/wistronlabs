@@ -108,10 +108,10 @@ router.post("/login", async (req, res) => {
     });
 
     res.cookie("refreshToken", refreshToken, {
-      httpOnly: false, // Set to true if using HTTPS
-      secure: true,
+      httpOnly: true, // ✅ keep true even locally
+      secure: false, // 🚫 must be false because localhost is HTTP
       sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({ token: accessToken });
