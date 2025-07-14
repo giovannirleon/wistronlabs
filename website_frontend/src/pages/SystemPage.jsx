@@ -77,7 +77,6 @@ function SystemPage() {
       setLoading(false);
     }
   };
-
   let selectedStationObj = null;
   if (system?.location === "In L10") {
     selectedStationObj = stations.find(
@@ -249,6 +248,8 @@ function SystemPage() {
   }, []);
 
   console.log(selectedStationObj);
+  console.log("SystemPage render", serviceTag, history);
+
   return (
     <>
       <ConfirmDialog />
@@ -495,18 +496,36 @@ function SystemPage() {
                   note_title: "Note",
                   changed_at_title: "Updated At",
                   changed_at: formatDateHumanReadable(entry.changed_at),
+                  moved_by_title: "Moved By",
+                  moved_by:
+                    entry.moved_by === "deleted_user@example.com"
+                      ? "Unknown"
+                      : entry.moved_by,
                 }))}
                 title=""
                 displayOrder={[
                   "from_location",
                   "to_location",
                   "note",
+                  "moved_by",
                   "changed_at",
                 ]}
                 visibleFields={
                   isMobile
-                    ? ["from_location", "to_location", "note", "changed_at"]
-                    : ["from_location", "to_location", "note", "changed_at"]
+                    ? [
+                        "from_location",
+                        "to_location",
+                        "note",
+                        "moved_by",
+                        "changed_at,",
+                      ]
+                    : [
+                        "from_location",
+                        "to_location",
+                        "note",
+                        "moved_by",
+                        "changed_at",
+                      ]
                 }
                 defaultSortBy={"changed_at"}
                 defaultSortAsc={true}

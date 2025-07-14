@@ -117,65 +117,69 @@ router.get("/history/:id", async (req, res) => {
   }
 });
 
+const { authenticateToken } = require("./auth");
+
 // DELETE /api/v1/systems/:service_tag/history/last
-router.delete("/:service_tag/history/last", async (req, res, next) => {
-  const { service_tag } = req.params;
+router.delete(
+  "/:service_tag/history/last",
+  authenticateToken,
+  async (req, res) => {
+    const { service_tag } = req.params;
 
-  try {
-    const systemResult = await db.query(
-      "SELECT id FROM system WHERE service_tag = $1",
-      [service_tag]
-    );
+    try {
+      const systemResult = await db.query(
+        "SELECT id FROM system WHERE service_tag = $1",
+        [service_tag]
+      );
 
-    if (systemResult.rows.length === 0) {
-      return res.status(404).json({ error: "System not found" });
-    }
+      if (systemResult.rows.length === 0) {
+        return res.status(404).json({ error: "System not found" });
+      }
 
-    const system_id = systemResult.rows[0].id;
+      const system_id = systemResult.rows[0].id;
 
-    const historyResult = await db.query(
-      `
-      SELECT id, to_location_id, moved_by
-      FROM system_location_history
-      WHERE system_id = $1
-      ORDER BY changed_at DESC
-      LIMIT 1
-      `,
-      [system_id]
-    );
+      const historyResult = await db.query(
+        `
+        SELECT id, moved_by
+        FROM system_location_history
+        WHERE system_id = $1
+        ORDER BY changed_at DESC
+        `,
+        [system_id]
+      );
 
-    if (historyResult.rows.length === 0) {
-      return res.status(404).json({ error: "No history entries found" });
-    }
+      if (historyResult.rows.length === 0) {
+        return res.status(404).json({ error: "No history entries found" });
+      }
 
-    const {
-      id: history_id,
-      to_location_id: latestToLocation,
-      moved_by,
-    } = historyResult.rows[0];
+      if (historyResult.rows.length === 1) {
+        return res
+          .status(400)
+          .json({ error: "Cannot delete the first history entry" });
+      }
 
-    const deletedUserId = await getDeletedUserId();
+      const { id: history_id, moved_by } = historyResult[0];
 
-    // If last entry not moved by deleted user, require auth
-    if (moved_by !== deletedUserId) {
-      return authenticateToken(req, res, () => deleteLastHistory());
-    }
+      const deletedUserId = await getDeletedUserId();
 
-    // otherwise, continue
-    deleteLastHistory();
+      if (moved_by !== deletedUserId && moved_by !== req.user.userId) {
+        return res.status(403).json({
+          error:
+            "You are not authorized to delete this history entry. Only the original mover or any authenticated user if done by deleted_user can delete.",
+        });
+      }
 
-    async function deleteLastHistory() {
       await db.query("DELETE FROM system_location_history WHERE id = $1", [
         history_id,
       ]);
 
       res.json({ message: "Last history entry deleted" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to delete last history entry" });
     }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to delete last history entry" });
   }
-});
+);
 
 // GET /api/v1/systems/:service_tag/history
 router.get("/:service_tag/history", async (req, res) => {
