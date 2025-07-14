@@ -44,6 +44,13 @@ CREATE TABLE station (
     message VARCHAR(255) DEFAULT ''
 );
 
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- 📄 Index for faster queries on history
 CREATE INDEX idx_system_location_history_system_id ON system_location_history(system_id);
 

@@ -12,8 +12,8 @@ export const registerUser = async (username, password) => {
   return res.data;
 };
 
-export const forgotPassword = async (email) => {
-  const res = await axios.post(`${API_BASE}/forgot-password`, { email });
+export const forgotPassword = async (username) => {
+  const res = await axios.post(`${API_BASE}/forgot-password`, { username });
   return res.data;
 };
 

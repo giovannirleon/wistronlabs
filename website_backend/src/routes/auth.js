@@ -119,10 +119,9 @@ router.post("/forgot-password", async (req, res) => {
   }
 
   try {
-    const result = await db.query(
-      `SELECT id, email FROM users WHERE username = $1`,
-      [username]
-    );
+    const result = await db.query(`SELECT id FROM users WHERE username = $1`, [
+      username,
+    ]);
 
     if (result.rows.length === 0) {
       // Don’t reveal if user exists or not
@@ -138,7 +137,7 @@ router.post("/forgot-password", async (req, res) => {
 
     const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-    await sendResetEmail(user.email, resetLink);
+    await sendResetEmail(username, resetLink);
 
     res.json({
       message: "If this account exists, instructions have been sent.",

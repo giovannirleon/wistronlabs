@@ -15,7 +15,7 @@ export default function Auth({ defaultMode = "login" }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [email, setEmail] = useState("");
+  //const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
 
   const [redirectToUser, setRedirectToUser] = useState(false);
@@ -25,7 +25,7 @@ export default function Auth({ defaultMode = "login" }) {
     setUsername("");
     setPassword("");
     setConfirmPassword("");
-    setEmail("");
+    // setEmail("");
     setMessage("");
   };
 
@@ -53,7 +53,7 @@ export default function Auth({ defaultMode = "login" }) {
       }
 
       if (mode === "forgot") {
-        await forgotPassword(email);
+        await forgotPassword(username);
         setMessage(
           "If this email exists, password reset instructions have been sent."
         );
@@ -170,8 +170,8 @@ export default function Auth({ defaultMode = "login" }) {
                 <input
                   type="email"
                   placeholder="Email Address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   required
                 />
