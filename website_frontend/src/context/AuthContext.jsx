@@ -22,6 +22,9 @@ export function AuthProvider({ children }) {
           username: decoded.username,
           exp: decoded.exp,
         });
+
+        console.log("✅ Token loaded. Current time:", Date.now());
+        console.log("🕒 Token expiry:", decoded.exp * 1000);
       } catch (err) {
         console.error("Invalid token:", err);
         logout();
@@ -38,7 +41,9 @@ export function AuthProvider({ children }) {
         console.log("⏳ Current time:", Date.now());
         console.log("🕒 Token expiry:", user.exp * 1000);
 
-        if (Date.now() >= user.exp * 1000 - 5 * 60 * 1000) {
+        // if (Date.now() >= user.exp * 1000 - 5 * 60 * 1000) {// 5 minutes before expiry
+        if (Date.now() >= user.exp * 1000 - 15 * 1000) {
+          // 15 seconds before expiry
           console.log("🔄 Token is close to expiry, refreshing…");
           refreshToken();
         }
@@ -47,6 +52,11 @@ export function AuthProvider({ children }) {
 
     return () => clearInterval(interval);
   }, [token, user]);
+
+  const login = (newToken) => {
+    localStorage.setItem("token", newToken);
+    setToken(newToken);
+  };
 
   const logout = () => {
     localStorage.removeItem("token");
