@@ -28,6 +28,14 @@ export const changePassword = async (currentPassword, newPassword, token) => {
   return res.data;
 };
 
+export const resetPassword = async (token, newPassword) => {
+  const res = await axios.post(`${API_BASE}/reset-password`, {
+    token,
+    newPassword,
+  });
+  return res.data;
+};
+
 const authHeader = (token) => ({
   headers: { Authorization: `Bearer ${token}` },
 });

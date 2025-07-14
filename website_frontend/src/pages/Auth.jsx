@@ -15,8 +15,8 @@ export default function Auth({ defaultMode = "login" }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  //const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   const [redirectToUser, setRedirectToUser] = useState(false);
   const [hasJustLoggedIn, setHasJustLoggedIn] = useState(false);
@@ -25,13 +25,17 @@ export default function Auth({ defaultMode = "login" }) {
     setUsername("");
     setPassword("");
     setConfirmPassword("");
-    // setEmail("");
-    setMessage("");
+
+    delay(5000).then(() => {
+      setMessage("");
+      setError("");
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
+    setError("");
 
     try {
       if (mode === "login") {
@@ -53,14 +57,18 @@ export default function Auth({ defaultMode = "login" }) {
       }
 
       if (mode === "forgot") {
-        await forgotPassword(username);
+        const res = await forgotPassword(username);
+        console.log(res);
         setMessage(
-          "If this email exists, password reset instructions have been sent."
+          res.message ||
+            "If this email exists, password reset instructions have been sent."
         );
         resetFields();
       }
-    } catch {
-      setMessage("Something went wrong. Please try again.");
+    } catch (err) {
+      setError(
+        err.response?.data?.error || "Something went wrong. Please try again."
+      );
     }
   };
 
@@ -188,7 +196,15 @@ export default function Auth({ defaultMode = "login" }) {
             </form>
 
             {message && (
-              <p className="mt-4 text-center text-sm text-red-600">{message}</p>
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 mt-5 rounded">
+                {message}
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 mt-5 rounded">
+                {error}
+              </div>
             )}
           </>
         )}

@@ -1,43 +1,78 @@
 const express = require("express");
 const db = require("../db");
+const { authenticateToken } = require("./auth");
 
 const router = express.Router();
+
+// Helper: fetch deleted user id
+async function getDeletedUserId() {
+  const result = await db.query(
+    `SELECT id FROM users WHERE username = 'deleted_user@example.com'`
+  );
+  return result.rows[0]?.id;
+}
 
 // GET /api/v1/systems - list all systems, optional ?location_id=
 router.get("/", async (req, res) => {
   const { location_id } = req.query;
 
-  const result = await db.query(
-    `
-    SELECT s.service_tag, s.issue, l.name AS location
-    FROM system s
-    JOIN location l ON s.location_id = l.id
-    WHERE ($1::int IS NULL OR s.location_id = $1)
-    ORDER BY s.service_tag
-  `,
-    [location_id || null]
-  );
+  const params = [];
+  let whereClause = "";
+  if (location_id) {
+    params.push(location_id);
+    whereClause = `WHERE s.location_id = $${params.length}`;
+  }
 
-  res.json(result.rows);
+  try {
+    const result = await db.query(
+      `
+      SELECT s.service_tag, s.issue, l.name AS location
+      FROM system s
+      JOIN location l ON s.location_id = l.id
+      ${whereClause}
+      ORDER BY s.service_tag
+      `,
+      params
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch systems" });
+  }
 });
 
-// GET /api/v1/systems/history - full ledger
+// GET /api/v1/systems/history - full ledger (optionally filtered by ?service_tag)
 router.get("/history", async (req, res) => {
+  const { service_tag } = req.query;
+
+  const params = [];
+  let whereClause = "";
+  if (service_tag) {
+    params.push(service_tag);
+    whereClause = `WHERE s.service_tag = $${params.length}`;
+  }
+
   try {
     const result = await db.query(
       `
       SELECT 
+        h.id,
         s.service_tag,
         l_from.name AS from_location,
         l_to.name AS to_location,
+        u.username AS moved_by,
         h.note,
         h.changed_at
       FROM system_location_history h
       JOIN system s ON h.system_id = s.id
       LEFT JOIN location l_from ON h.from_location_id = l_from.id
       JOIN location l_to ON h.to_location_id = l_to.id
+      JOIN users u ON h.moved_by = u.id
+      ${whereClause}
       ORDER BY h.changed_at DESC
-      `
+      `,
+      params
     );
 
     res.json(result.rows);
@@ -47,13 +82,48 @@ router.get("/history", async (req, res) => {
   }
 });
 
+router.get("/history/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await db.query(
+      `
+      SELECT 
+        h.id,
+        s.service_tag,
+        l_from.name AS from_location,
+        l_to.name AS to_location,
+        u.username AS moved_by,
+        h.note,
+        h.changed_at
+      FROM system_location_history h
+      JOIN system s ON h.system_id = s.id
+      LEFT JOIN location l_from ON h.from_location_id = l_from.id
+      JOIN location l_to ON h.to_location_id = l_to.id
+      JOIN users u ON h.moved_by = u.id
+      WHERE h.id = $1
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "History record not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch history record" });
+  }
+});
+
 // DELETE /api/v1/systems/:service_tag/history/last
-router.delete("/:service_tag/history/last", async (req, res) => {
+router.delete("/:service_tag/history/last", async (req, res, next) => {
   const { service_tag } = req.params;
 
   try {
     const systemResult = await db.query(
-      "SELECT id, location_id FROM system WHERE service_tag = $1",
+      "SELECT id FROM system WHERE service_tag = $1",
       [service_tag]
     );
 
@@ -61,12 +131,11 @@ router.delete("/:service_tag/history/last", async (req, res) => {
       return res.status(404).json({ error: "System not found" });
     }
 
-    const { id: system_id, location_id: currentLocation } =
-      systemResult.rows[0];
+    const system_id = systemResult.rows[0].id;
 
     const historyResult = await db.query(
       `
-      SELECT id, to_location_id
+      SELECT id, to_location_id, moved_by
       FROM system_location_history
       WHERE system_id = $1
       ORDER BY changed_at DESC
@@ -79,43 +148,29 @@ router.delete("/:service_tag/history/last", async (req, res) => {
       return res.status(404).json({ error: "No history entries found" });
     }
 
-    const { id: history_id, to_location_id: latestToLocation } =
-      historyResult.rows[0];
+    const {
+      id: history_id,
+      to_location_id: latestToLocation,
+      moved_by,
+    } = historyResult.rows[0];
 
-    await db.query("DELETE FROM system_location_history WHERE id = $1", [
-      history_id,
-    ]);
+    const deletedUserId = await getDeletedUserId();
 
-    if (currentLocation === latestToLocation) {
-      const prevHistory = await db.query(
-        `
-        SELECT to_location_id
-        FROM system_location_history
-        WHERE system_id = $1
-        ORDER BY changed_at DESC
-        LIMIT 1
-        `,
-        [system_id]
-      );
-
-      const rollbackLocation =
-        prevHistory.rows.length > 0 ? prevHistory.rows[0].to_location_id : null;
-
-      await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
-        rollbackLocation,
-        system_id,
-      ]);
-
-      return res.json({
-        message: "Last history entry deleted and system location rolled back",
-        new_location_id: rollbackLocation,
-      });
+    // If last entry not moved by deleted user, require auth
+    if (moved_by !== deletedUserId) {
+      return authenticateToken(req, res, () => deleteLastHistory());
     }
 
-    res.json({
-      message:
-        "Last history entry deleted (no system.location rollback needed)",
-    });
+    // otherwise, continue
+    deleteLastHistory();
+
+    async function deleteLastHistory() {
+      await db.query("DELETE FROM system_location_history WHERE id = $1", [
+        history_id,
+      ]);
+
+      res.json({ message: "Last history entry deleted" });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to delete last history entry" });
@@ -139,10 +194,11 @@ router.get("/:service_tag/history", async (req, res) => {
 
   const result = await db.query(
     `
-    SELECT h.id, l_from.name AS from_location, l_to.name AS to_location, h.note, h.changed_at
+    SELECT h.id, l_from.name AS from_location, l_to.name AS to_location, h.note, u.username AS moved_by, h.changed_at
     FROM system_location_history h
     LEFT JOIN location l_from ON h.from_location_id = l_from.id
     JOIN location l_to ON h.to_location_id = l_to.id
+    JOIN users u ON h.moved_by = u.id
     WHERE h.system_id = $1
     ORDER BY h.changed_at DESC
   `,
@@ -152,29 +208,8 @@ router.get("/:service_tag/history", async (req, res) => {
   res.json(result.rows);
 });
 
-// GET /api/v1/systems/:service_tag
-router.get("/:service_tag", async (req, res) => {
-  const { service_tag } = req.params;
-
-  const result = await db.query(
-    `
-    SELECT s.id, s.service_tag, s.issue, l.name AS location
-    FROM system s
-    JOIN location l ON s.location_id = l.id
-    WHERE s.service_tag = $1
-  `,
-    [service_tag]
-  );
-
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "System not found" });
-  }
-
-  res.json(result.rows[0]);
-});
-
 // POST /api/v1/systems
-router.post("/", async (req, res) => {
+router.post("/", authenticateToken, async (req, res) => {
   const { service_tag, issue, location_id, note } = req.body;
 
   if (!service_tag || !location_id || !note) {
@@ -198,10 +233,10 @@ router.post("/", async (req, res) => {
 
     await db.query(
       `
-      INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note)
-      VALUES ($1, NULL, $2, $3)
+      INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note, moved_by)
+      VALUES ($1, NULL, $2, $3, $4)
     `,
-      [system_id, location_id, note]
+      [system_id, location_id, note, req.user.userId]
     );
 
     await db.query("COMMIT");
@@ -215,7 +250,7 @@ router.post("/", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/location
-router.patch("/:service_tag/location", async (req, res) => {
+router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { to_location_id, note } = req.body;
 
@@ -248,10 +283,10 @@ router.patch("/:service_tag/location", async (req, res) => {
 
     await db.query(
       `
-      INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note, moved_by)
+      VALUES ($1, $2, $3, $4, $5)
     `,
-      [system_id, from_location_id, to_location_id, note]
+      [system_id, from_location_id, to_location_id, note, req.user.userId]
     );
 
     await db.query("COMMIT");
@@ -265,7 +300,7 @@ router.patch("/:service_tag/location", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/issue
-router.patch("/:service_tag/issue", async (req, res) => {
+router.patch("/:service_tag/issue", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { issue } = req.body;
 
@@ -273,20 +308,25 @@ router.patch("/:service_tag/issue", async (req, res) => {
     return res.status(400).json({ error: "issue is required" });
   }
 
-  const result = await db.query(
-    "UPDATE system SET issue = $1 WHERE service_tag = $2 RETURNING service_tag",
-    [issue, service_tag]
-  );
+  try {
+    const result = await db.query(
+      "UPDATE system SET issue = $1 WHERE service_tag = $2 RETURNING service_tag",
+      [issue, service_tag]
+    );
 
-  if (result.rowCount === 0) {
-    return res.status(404).json({ error: "System not found" });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "System not found" });
+    }
+
+    res.json({ message: "Issue updated" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update issue" });
   }
-
-  res.json({ message: "Issue updated" });
 });
 
 // DELETE /api/v1/systems/:service_tag
-router.delete("/:service_tag", async (req, res) => {
+router.delete("/:service_tag", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
 
   const result = await db.query(

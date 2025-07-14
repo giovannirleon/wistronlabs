@@ -1,6 +1,7 @@
 import { useState, useContext } from "react";
 import axios from "axios";
 import { AuthContext } from "../context/AuthContext";
+import { changePassword } from "../api/authApi";
 
 export default function UserPage() {
   const { token, logout, user } = useContext(AuthContext);
@@ -22,16 +23,9 @@ export default function UserPage() {
     }
 
     try {
-      const res = await axios.post(
-        "/api/v1/auth/change-password",
-        { currentPassword, newPassword },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      setMessage(res.data.message || "Password changed successfully.");
+      const res = await changePassword(currentPassword, newPassword, token);
+      console.log("Password change response:", res);
+      setMessage(res.message || "Password changed successfully.");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");

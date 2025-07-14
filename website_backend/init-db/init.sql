@@ -16,6 +16,17 @@ INSERT INTO location (name) VALUES
 ('RMA PID'),
 ('Sent to L11');
 
+-- 📄 Create users table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 🌱 Seed deleted user
+INSERT INTO users (username, password_hash)
+VALUES ('deleted_user@example.com', '');
 
 -- 📄 Create systems table
 CREATE TABLE system (
@@ -25,18 +36,22 @@ CREATE TABLE system (
     location_id INT NOT NULL REFERENCES location(id) ON DELETE RESTRICT
 );
 
-
 -- 📄 Create system_location_history table
 CREATE TABLE system_location_history (
     id SERIAL PRIMARY KEY,
     system_id INT NOT NULL REFERENCES system(id) ON DELETE CASCADE,
     from_location_id INT REFERENCES location(id),
     to_location_id INT NOT NULL REFERENCES location(id),
+    moved_by INT NOT NULL DEFAULT (
+        (SELECT id FROM users WHERE username = 'deleted_user@example.com')
+    ),
     note TEXT NOT NULL,
-    changed_at TIMESTAMP NOT NULL DEFAULT NOW()
+    changed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_moved_by FOREIGN KEY (moved_by) REFERENCES users(id) ON DELETE SET DEFAULT
 );
 
-CREATE TABLE station ( 
+-- 📄 Create station table
+CREATE TABLE station (
     id SERIAL PRIMARY KEY,
     station_name VARCHAR(255) NOT NULL UNIQUE,
     system_id INTEGER REFERENCES system(id),
@@ -44,13 +59,6 @@ CREATE TABLE station (
     message VARCHAR(255) DEFAULT ''
 );
 
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 📄 Index for faster queries on history
+-- 📄 Indexes
 CREATE INDEX idx_system_location_history_system_id ON system_location_history(system_id);
-
+CREATE INDEX idx_system_location_history_moved_by ON system_location_history(moved_by);

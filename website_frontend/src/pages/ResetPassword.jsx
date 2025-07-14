@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import axios from "axios";
+
+import { resetPassword } from "../api/authApi";
+import { set } from "date-fns";
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -11,11 +13,13 @@ export default function ResetPassword() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
+    setError("");
 
     if (!newPassword || !confirmPassword) {
       setMessage("Please fill in all fields.");
@@ -30,17 +34,15 @@ export default function ResetPassword() {
     setLoading(true);
 
     try {
-      const res = await axios.post("/api/v1/auth/reset-password", {
-        token,
-        newPassword,
-      });
-
-      setMessage(res.data.message || "Password has been reset successfully.");
+      const res = await resetPassword(token, newPassword);
+      console.log(res);
+      setMessage(res.message || "Password has been reset successfully.");
       setTimeout(() => {
         navigate("/auth");
       }, 3000);
     } catch (err) {
-      setMessage(
+      console.log(err);
+      setError(
         err.response?.data?.error || "Failed to reset password. Try again."
       );
     } finally {
@@ -121,7 +123,15 @@ export default function ResetPassword() {
         </form>
 
         {message && (
-          <p className="mt-4 text-center text-sm text-red-600">{message}</p>
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 mt-5 rounded">
+            {message}
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 mt-5 rounded">
+            {error}
+          </div>
         )}
       </div>
     </div>

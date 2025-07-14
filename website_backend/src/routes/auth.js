@@ -222,6 +222,12 @@ function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
+  // if (!token) {
+  //   // fallback userId of deleted_user
+  //   req.user = { userId: DELETED_USER_ID };
+  //   return next();
+  // }
+
   if (!token) {
     return res.status(401).json({ error: "Missing token" });
   }
