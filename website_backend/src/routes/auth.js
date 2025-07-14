@@ -17,9 +17,13 @@ if (!process.env.JWT_SECRET) {
 }
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Helper: generate JWT
-function generateToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "1h" });
+// Helper
+function generateAccessToken(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" });
+}
+
+function generateRefreshToken(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 
 // 🔷 Register new user
@@ -94,9 +98,23 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = generateToken({ userId: user.id, username: user.username });
+    const accessToken = generateAccessToken({
+      userId: user.id,
+      username: user.username,
+    });
+    const refreshToken = generateRefreshToken({
+      userId: user.id,
+      username: user.username,
+    });
 
-    res.json({ token });
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.json({ token: accessToken });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login" });
@@ -240,5 +258,32 @@ function authenticateToken(req, res, next) {
     next();
   });
 }
+
+router.post("/refresh", (req, res) => {
+  const token = req.cookies.refreshToken;
+  if (!token) return res.status(401).json({ error: "Missing refresh token" });
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err)
+      return res
+        .status(403)
+        .json({ error: "Invalid or expired refresh token" });
+
+    const newAccessToken = generateAccessToken({
+      userId: user.userId,
+      username: user.username,
+    });
+    res.json({ token: newAccessToken });
+  });
+});
+
+router.post("/logout", (req, res) => {
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+  });
+  res.json({ message: "Logged out successfully" });
+});
 
 module.exports = { router, authenticateToken };

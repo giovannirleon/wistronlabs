@@ -4,7 +4,6 @@ import { Navigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { loginUser, registerUser, forgotPassword } from "../api/authApi";
-import { set } from "date-fns";
 import { delay } from "../utils/delay";
 
 export default function Auth({ defaultMode = "login" }) {

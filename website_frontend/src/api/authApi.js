@@ -44,3 +44,9 @@ export const getCurrentUser = async (token) => {
   const res = await axios.get(`${API_BASE}/me`, authHeader(token));
   return res.data;
 };
+
+export const refreshAccessToken = () =>
+  axios.post(`${API_BASE}/refresh`, null, { withCredentials: true });
+
+export const logoutUser = () =>
+  axios.post(`${API_BASE}/logout`, null, { withCredentials: true });

@@ -39,7 +39,7 @@ export default function useToast() {
   const Toast = () =>
     toast ? (
       <div
-        className={`fixed z-[9999] px-4 py-2 rounded-lg shadow-lg text-sm font-medium text-white transition-all duration-300 ease-in-out
+        className={`fixed z-[9999] px-8 py-4 rounded-lg shadow-lg text-sm font-medium text-white transition-all duration-300 ease-in-out
         ${getPositionClasses(toast.position)}
         ${
           toast.visible
