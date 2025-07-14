@@ -1,4 +1,4 @@
-const BASE_URL = "https://backend.tss.wistronlabs.com:/api/v1";
+const BASE_URL = "https://backend.tss.wistronlabs.com/api/v1";
 
 /**
  * Utility to wrap fetch and throw on error
@@ -13,6 +13,13 @@ async function fetchJSON(endpoint, token, options = {}) {
   if (!res.ok) {
     const msg = `API ${endpoint} failed: ${res.status} ${res.statusText}`;
     console.error(msg);
+    let errorBody = null;
+    try {
+      errorBody = await res.json();
+      console.error("Response body:", errorBody);
+    } catch (e) {
+      console.error("Failed to parse error response body:", e);
+    }
     throw new Error(msg);
   }
   return res.json();

@@ -89,8 +89,9 @@ function useApi() {
     });
 
   const moveSystemToProcessed = (service_tag) =>
-    fetchJSON(`/systems/${service_tag}/location`, token, {
+    fetchJSON(`/systems/${service_tag}/location`, {
       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to_location_id: 1,
         note: "Moving back to processed from Inactive",
