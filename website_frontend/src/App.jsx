@@ -7,6 +7,7 @@ import Header from "./components/Header";
 import Auth from "./pages/Auth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import UserPage from "./pages/UserPage";
+import ResetPassword from "./pages/ResetPassword";
 
 import ScrollToTop from "./helpers/ScrollToTop";
 
@@ -34,6 +35,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     </div>
   );
