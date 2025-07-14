@@ -117,8 +117,6 @@ router.get("/history/:id", async (req, res) => {
   }
 });
 
-const { authenticateToken } = require("./auth");
-
 // DELETE /api/v1/systems/:service_tag/history/last
 router.delete(
   "/:service_tag/history/last",
