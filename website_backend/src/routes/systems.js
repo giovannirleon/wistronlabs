@@ -126,7 +126,7 @@ router.delete(
     const { service_tag } = req.params;
 
     try {
-      // 1️⃣ Find system by service_tag
+      // 1️ Find system by service_tag
       const systemResult = await db.query(
         "SELECT id FROM system WHERE service_tag = $1",
         [service_tag]
@@ -138,7 +138,7 @@ router.delete(
 
       const system_id = systemResult.rows[0].id;
 
-      // 2️⃣ Get all history entries for this system, ordered newest to oldest
+      // 2️ Get all history entries for this system, ordered newest to oldest
       const historyResult = await db.query(
         `
       SELECT id, moved_by
@@ -161,7 +161,7 @@ router.delete(
 
       const { id: history_id, moved_by } = historyResult.rows[0];
 
-      // 3️⃣ Get deleted_user id
+      // 3️ Get deleted_user id
       const deletedUserIdResult = await db.query(
         `SELECT id FROM users WHERE username = 'deleted_user@example.com'`
       );
@@ -171,7 +171,7 @@ router.delete(
         return res.status(500).json({ error: "Deleted user not configured" });
       }
 
-      // 4️⃣ Check authorization: must be the mover OR deleted_user OR admin
+      // 4️ Check authorization: must be the mover OR deleted_user OR admin
       if (moved_by !== deletedUserId && moved_by !== req.user.userId) {
         return res.status(403).json({
           error:
@@ -179,12 +179,12 @@ router.delete(
         });
       }
 
-      // 5️⃣ Delete the latest history entry
+      // 5️ Delete the latest history entry
       await db.query("DELETE FROM system_location_history WHERE id = $1", [
         history_id,
       ]);
 
-      // 6️⃣ Roll back system.location_id to the new latest history entry
+      // 6️ Roll back system.location_id to the new latest history entry
       const latestRemaining = await db.query(
         `
       SELECT to_location_id
