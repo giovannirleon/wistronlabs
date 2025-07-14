@@ -109,8 +109,8 @@ router.post("/login", async (req, res) => {
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true, // ✅ keep true even locally
-      secure: false, // 🚫 must be false because localhost is HTTP
-      sameSite: "lax", // 🚫 must be none for cross-origin cookies"
+      secure: true, // 🚫 must be false because localhost is HTTP
+      sameSite: "none", // 🚫 must be none for cross-origin cookies"
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
