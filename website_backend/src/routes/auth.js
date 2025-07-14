@@ -19,7 +19,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // Helper
 function generateAccessToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "1m" }); //15m usual
 }
 
 function generateRefreshToken(payload) {

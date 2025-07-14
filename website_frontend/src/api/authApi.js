@@ -3,7 +3,11 @@ import axios from "axios";
 const API_BASE = "https://backend.tss.wistronlabs.com/api/v1/auth"; // or full URL if backend is separate
 
 export const loginUser = async (username, password) => {
-  const res = await axios.post(`${API_BASE}/login`, { username, password });
+  const res = await axios.post(
+    `${API_BASE}/login`,
+    { username, password },
+    { withCredentials: true }
+  );
   return res.data;
 };
 

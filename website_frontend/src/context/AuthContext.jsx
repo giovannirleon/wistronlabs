@@ -34,17 +34,19 @@ export function AuthProvider({ children }) {
   // Auto-refresh check
   useEffect(() => {
     const interval = setInterval(() => {
-      if (token && user && Date.now() >= user.exp * 1000 - 5 * 60 * 1000) {
-        refreshToken();
+      if (token && user) {
+        console.log("⏳ Current time:", Date.now());
+        console.log("🕒 Token expiry:", user.exp * 1000);
+
+        if (Date.now() >= user.exp * 1000 - 5 * 60 * 1000) {
+          console.log("🔄 Token is close to expiry, refreshing…");
+          refreshToken();
+        }
       }
     }, 60_000);
+
     return () => clearInterval(interval);
   }, [token, user]);
-
-  const login = (newToken) => {
-    localStorage.setItem("token", newToken);
-    setToken(newToken);
-  };
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -54,9 +56,13 @@ export function AuthProvider({ children }) {
   };
 
   const refreshToken = async () => {
+    console.log("🔄 Attempting to refresh access token…");
+
     try {
       const res = await refreshAccessToken();
       const token = res.data.token;
+      console.log("✅ New access token received:", token);
+
       login(token);
       console.log("Access token refreshed");
     } catch (err) {
