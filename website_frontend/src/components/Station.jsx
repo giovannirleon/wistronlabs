@@ -26,7 +26,7 @@ function Station({ stationInfo, link = false }) {
       <td className="p-3 border-b border-gray-200 text-center">
         {renderStatus(stationInfo.status, stationInfo.message)}
       </td>
-      <td className="p-3 border-b border-gray-200">
+      <td className="p-3 border-b border-gray-200 text-right">
         {stationInfo.system_service_tag === null ? (
           <p className="text-grey-800 text-right">Available</p>
         ) : link ? (

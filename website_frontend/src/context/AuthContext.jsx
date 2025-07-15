@@ -47,7 +47,7 @@ export function AuthProvider({ children }) {
         console.log("⏳ Current time:", new Date(Date.now()).toLocaleString());
         console.log(
           "🕒 Token expiry:",
-          new Date(decoded.exp * 1000).toLocaleString()
+          new Date(user.exp * 1000).toLocaleString()
         );
 
         if (Date.now() >= user.exp * 1000 - 5 * 60 * 1000) {
