@@ -23,8 +23,11 @@ export function AuthProvider({ children }) {
           exp: decoded.exp,
         });
 
-        console.log("✅ Token loaded. Current time:", Date.now());
-        console.log("🕒 Token expiry:", decoded.exp * 1000);
+        console.log(
+          "✅ Token loaded. Current time:",
+          new Date(Date.now()).toLocaleString()
+        );
+        console.log("🕒 Token expiry:",  new Date(decoded.exp * 1000).toLocaleString()
       } catch (err) {
         console.error("Invalid token:", err);
         logout();
@@ -38,8 +41,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const interval = setInterval(() => {
       if (token && user) {
-        console.log("⏳ Current time:", Date.now());
-        console.log("🕒 Token expiry:", user.exp * 1000);
+        console.log("⏳ Current time:", new Date(Date.now()).toLocaleString());
+        console.log(
+          "🕒 Token expiry:",
+          new Date(decoded.exp * 1000).toLocaleString()
+        );
 
         if (Date.now() >= user.exp * 1000 - 5 * 60 * 1000) {
           // 5 minutes before expiry
