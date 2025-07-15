@@ -19,11 +19,11 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // Helper
 function generateAccessToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "1m" }); //15m usual
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" }); //15m usual
 }
 
 function generateRefreshToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "2M" }); //USUALLY 7 DAYS
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" }); //USUALLY 7 DAYS
 }
 
 // 🔷 Register new user
@@ -111,8 +111,7 @@ router.post("/login", async (req, res) => {
       httpOnly: true, // ✅ keep true even locally
       secure: true, // 🚫 must be false because localhost is HTTP
       sameSite: "none", // 🚫 must be none for cross-origin cookies"
-      //maxAge: 7 * 24 * 60 * 60 * 1000,
-      maxAge: 2 * 60 * 1000, // 2 minutes
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({ token: accessToken });
