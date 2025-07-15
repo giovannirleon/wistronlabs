@@ -27,7 +27,10 @@ export function AuthProvider({ children }) {
           "✅ Token loaded. Current time:",
           new Date(Date.now()).toLocaleString()
         );
-        console.log("🕒 Token expiry:",  new Date(decoded.exp * 1000).toLocaleString()
+        console.log(
+          "🕒 Token expiry:",
+          new Date(decoded.exp * 1000).toLocaleString()
+        );
       } catch (err) {
         console.error("Invalid token:", err);
         logout();
