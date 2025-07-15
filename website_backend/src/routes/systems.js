@@ -82,6 +82,7 @@ router.get("/history", async (req, res) => {
   }
 });
 
+// GET /api/v1/systems/history/:id - get single history entry by ID
 router.get("/history/:id", async (req, res) => {
   const { id } = req.params;
 
@@ -117,7 +118,6 @@ router.get("/history/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/v1/systems/:service_tag/history/last
 // DELETE /api/v1/systems/:service_tag/history/last
 router.delete(
   "/:service_tag/history/last",

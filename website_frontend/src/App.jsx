@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import UserPage from "./pages/UserPage";
 import ResetPassword from "./pages/ResetPassword";
+import HistoryPage from "./pages/HistoryPage";
 
 import ScrollToTop from "./helpers/ScrollToTop";
 
@@ -36,6 +37,7 @@ function App() {
           }
         />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/locationHistory/:id" element={<HistoryPage />} />
       </Routes>
     </div>
   );

@@ -30,6 +30,7 @@ function useApi() {
   // System API
   const getSystems = () => fetchJSON("/systems");
   const getHistory = () => fetchJSON("/systems/history");
+  const getHistoryById = (id) => fetchJSON(`/systems/history/${id}`);
   const getSystem = (tag) => fetchJSON(`/systems/${tag}`);
   const getSystemHistory = (tag) => fetchJSON(`/systems/${tag}/history`);
 
@@ -88,15 +89,28 @@ function useApi() {
       method: "DELETE",
     });
 
-  const moveSystemToProcessed = (service_tag) =>
-    fetchJSON(`/systems/${service_tag}/location`, {
+  const moveSystemToProcessed = async (service_tag, issue, note) => {
+    // First fetch: move system
+    const updateLocation = await fetchJSON(`/systems/${service_tag}/location`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to_location_id: 1,
-        note: "Moving back to processed from Inactive",
+        note: `Moving back to processed from Inactive - ${note}`,
       }),
     });
+
+    // Second fetch: e.g., log event or update something else
+    const updateIssue = await fetchJSON(`/systems/${service_tag}/issue`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        issue: issue,
+      }),
+    });
+
+    return { updateLocation, updateIssue };
+  };
 
   return {
     getSystems,
@@ -115,6 +129,7 @@ function useApi() {
     updateStation,
     deleteStation,
     moveSystemToProcessed,
+    getHistoryById,
   };
 }
 

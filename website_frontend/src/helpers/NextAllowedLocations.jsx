@@ -10,6 +10,9 @@ export function allowedNextLocations(currentLocation, locations) {
           "Pending Parts",
           "In Debug - Nvidia",
           "In Debug - Wistron",
+          "RMA VID",
+          "RMA PID",
+          "RMA CID",
         ].includes(l.name)
       );
     case "Pending Parts":

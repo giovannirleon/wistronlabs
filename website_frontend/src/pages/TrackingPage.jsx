@@ -103,6 +103,7 @@ function TrackingPage() {
               location_title: "Location",
               date_created_title: "Created",
               date_last_modified_title: "Modified",
+              link: system.service_tag,
             };
           } catch {
             return system;
@@ -161,7 +162,7 @@ function TrackingPage() {
           return;
         }
 
-        await moveSystemToProcessed(service_tag);
+        await moveSystemToProcessed(service_tag, issue, note);
         showToast(
           `${service_tag} moved back to processed`,
           "success",

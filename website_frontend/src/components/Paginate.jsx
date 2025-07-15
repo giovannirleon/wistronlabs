@@ -133,7 +133,7 @@ function Items({
           if (linkType === "internal") {
             return (
               <Link
-                to={`/${item.service_tag || ""}`}
+                to={`/${item.link || ""}`}
                 className={commonClasses + " hover:bg-blue-50"}
               >
                 {children}

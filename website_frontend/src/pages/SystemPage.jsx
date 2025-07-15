@@ -22,6 +22,7 @@ import useApi from "../hooks/useApi";
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast.jsx";
 import useIsMobile from "../hooks/useIsMobile.jsx";
+import { set } from "date-fns";
 
 function SystemPage() {
   const { serviceTag } = useParams();
@@ -34,7 +35,8 @@ function SystemPage() {
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState(null);
-  const [formError, setFormError] = useState(false);
+  const [formError, setFormError] = useState("");
+  //useState(false);
 
   const [note, setNote] = useState("");
   const [toLocationId, setToLocationId] = useState("");
@@ -76,7 +78,7 @@ function SystemPage() {
       setStations(stationData);
       setSystem(systemsData);
       setLocations(locationsData);
-      setHistory(historyData);
+      setHistory(historyData); // add link to each history entry
     } catch (err) {
       setError(err.message);
     } finally {
@@ -186,11 +188,11 @@ function SystemPage() {
       note.trim() === "" ||
       (toLocationId === 5 && !selectedStation)
     ) {
-      setFormError(true);
+      setFormError("You must fill out all fields.");
       return;
     }
 
-    setFormError(false);
+    setFormError("");
     setSubmitting(true);
 
     try {
@@ -200,9 +202,14 @@ function SystemPage() {
       });
 
       if (selectedStationObj && toLocationId === 5) {
-        await updateStation(selectedStationObj.station_name, {
-          system_id: system.id,
-        });
+        if (selectedStationObj.system_id) {
+          setFormError("This station is already occupied.");
+          return;
+        } else {
+          await updateStation(selectedStationObj.station_name, {
+            system_id: system.id,
+          });
+        }
       }
 
       if (selectedStationObj && system?.location === "In L10") {
@@ -253,6 +260,15 @@ function SystemPage() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (isSentToL11) {
+      setFormError(
+        "If you need to work on this system again, you must re-add it through the tracking menu"
+      );
+    } else {
+      setFormError(""); // or null
+    }
+  }, [isSentToL11]);
   return (
     <>
       <ConfirmDialog />
@@ -383,9 +399,9 @@ function SystemPage() {
                 )}
 
                 {(toLocationId === 5 || system?.location === "In L10") && (
-                  <div className="mt-5 flex gap-4">
+                  <div className="mt-5 flex flex-col lg:flex-row gap-4">
                     {/* Table on the left */}
-                    <div className="w-3/5">
+                    <div className="w-full lg:w-3/5">
                       <table className="w-full bg-white rounded shadow-sm overflow-hidden border-collapse">
                         <thead>
                           <tr>
@@ -415,7 +431,7 @@ function SystemPage() {
                     </div>
 
                     {/* Dropdown on the right */}
-                    <div className="w-50">
+                    <div className="w-full lg:w-2/5">
                       <label
                         htmlFor="extra-options"
                         className="block text-sm font-medium text-gray-700 mb-1"
@@ -480,8 +496,12 @@ function SystemPage() {
               >
                 {submitting ? "Submitting…" : "Update Location"}
               </button>
-
-              {formError ? (
+              {formError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 mt-5 rounded">
+                  {formError}
+                </div>
+              )}
+              {/* {formError ? (
                 <p className="text-red-600 text-sm">
                   You must fill out all fields.
                 </p>
@@ -494,7 +514,7 @@ function SystemPage() {
                 <p className="text-red-600 text-sm invisible">
                   You must fill out all fields.
                 </p>
-              )}
+              )} */}
             </form>
             <div>
               <h1 className="text-3xl font-bold text-gray-800">
@@ -513,6 +533,7 @@ function SystemPage() {
                     entry.moved_by === "deleted_user@example.com"
                       ? "Unknown"
                       : entry.moved_by,
+                  link: `locationHistory/${entry.id}`, // add link to each history entry
                 }))}
                 title=""
                 displayOrder={["to_location", "note", "moved_by", "changed_at"]}
@@ -554,10 +575,10 @@ function SystemPage() {
                         },
                   note: (val) =>
                     val?.includes("Moving back to processed from Inactive")
-                      ? "font-bold"
+                      ? "font-semibold"
                       : "",
                 }}
-                linkType="none"
+                linkType={isMobile ? "internal" : "none"}
                 allowSort={false}
                 allowSearch={false}
                 defaultPage="last"
