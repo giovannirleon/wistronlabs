@@ -23,7 +23,7 @@ function generateAccessToken(payload) {
 }
 
 function generateRefreshToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "2M" }); //USUALLY 7 DAYS
 }
 
 // 🔷 Register new user
@@ -112,7 +112,7 @@ router.post("/login", async (req, res) => {
       secure: true, // 🚫 must be false because localhost is HTTP
       sameSite: "none", // 🚫 must be none for cross-origin cookies"
       //maxAge: 7 * 24 * 60 * 60 * 1000,
-      maxAge: 1 * 60 * 1000, // 2 minutes
+      maxAge: 2 * 60 * 1000, // 2 minutes
     });
 
     res.json({ token: accessToken });
