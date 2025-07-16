@@ -95,7 +95,10 @@ export default async function generateReport(history, earliestDate, systems) {
         service_tag: entry.service_tag,
         issue: systemIssueByTag.get(entry.service_tag) || "Unknown",
         location: entry.to_location?.trim() || "Unknown",
-        last_note: entry.note || "Unknown",
+        last_note:
+          entry.to_location === "Sent to L11"
+            ? "Passed L10"
+            : entry.note || "Unknown", // need to make this title agnostic
       };
     });
 
@@ -134,7 +137,10 @@ export default async function generateReport(history, earliestDate, systems) {
         service_tag: entry.service_tag,
         issue: systemIssueByTag.get(entry.service_tag) || "Unknown",
         location: entry.to_location?.trim() || "Unknown",
-        last_note: entry.note || "Unknown",
+        last_note:
+          entry.to_location === "Sent to L11"
+            ? "Passed L10"
+            : entry.note || "Unknown", // need to make this title agnostic
       };
     });
 
