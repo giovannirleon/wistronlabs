@@ -33,6 +33,7 @@ function useApi() {
   const getHistoryById = (id) => fetchJSON(`/systems/history/${id}`);
   const getSystem = (tag) => fetchJSON(`/systems/${tag}`);
   const getSystemHistory = (tag) => fetchJSON(`/systems/${tag}/history`);
+  const getServerTime = (tag) => fetchJSON(`/server/time`);
 
   const createSystem = (payload) =>
     fetchJSON("/systems", {
@@ -130,6 +131,7 @@ function useApi() {
     deleteStation,
     moveSystemToProcessed,
     getHistoryById,
+    getServerTime,
   };
 }
 

@@ -21,6 +21,8 @@ import useToast from "../hooks/useToast";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useApi from "../hooks/useApi.jsx";
 
+import generateReport from "../helpers/GenerateReport.jsx";
+
 const ACTIVE_LOCATION_IDS = [1, 2, 3, 4, 5];
 
 const REPORT_CUMULATIVE_LOCATIONS = [
@@ -281,112 +283,10 @@ function TrackingPage() {
 
   earliestDate.setHours(0, 0, 0, 0);
 
-  function getDateRange(fromDate, toDate) {
-    const dates = [];
-    const current = new Date(fromDate);
-    while (current <= toDate) {
-      dates.push(current.toISOString().slice(0, 10));
-      current.setDate(current.getDate() + 1);
-    }
-    return dates;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const historyDates = getDateRange(earliestDate, today);
-
   // Create a snapshot of the latest state for each service_tag on each date
   // This will be used for the report download
-  const stHistoryByDate = historyDates.map((date) => {
-    const latestByTag = new Map();
-    const earliestByTag = new Map();
 
-    // convert date string to midnight of that day
-    const dateEnd = new Date(date + "T23:59:59.999Z");
-
-    history.forEach((entry) => {
-      const entryTime = new Date(entry.changed_at);
-
-      // only consider history up to and including this date
-      if (entryTime <= dateEnd) {
-        const latest = latestByTag.get(entry.service_tag);
-        const earliest = earliestByTag.get(entry.service_tag);
-
-        // update latest if later
-        if (!latest || entryTime > new Date(latest.changed_at)) {
-          latestByTag.set(entry.service_tag, entry);
-        }
-
-        // update earliest if earlier
-        if (!earliest || entryTime < new Date(earliest.changed_at)) {
-          earliestByTag.set(entry.service_tag, entry);
-        }
-      }
-    });
-
-    const snapshot = [...latestByTag.values()].map((entry) => {
-      const earliestEntry = earliestByTag.get(entry.service_tag);
-      return {
-        recieved_on: formatDateHumanReadable(earliestEntry?.changed_at) || null,
-        service_tag: entry.service_tag,
-        location: entry.to_location?.trim() || "Unknown",
-        last_note: entry.note || "Unknown",
-      };
-    });
-
-    return { date, snapshot };
-  });
-
-  // Build map of first-ever entry per service_tag
-  const globalEarliestByTag = new Map();
-
-  history.forEach((entry) => {
-    const entryTime = new Date(entry.changed_at);
-    const earliest = globalEarliestByTag.get(entry.service_tag);
-
-    if (!earliest || entryTime < new Date(earliest.changed_at)) {
-      globalEarliestByTag.set(entry.service_tag, entry);
-    }
-  });
-
-  // Create a snapshot of what service_tags were worked on each day
-  // This will be used for the report download
-  const stWorkedOnByDate = historyDates.map((date) => {
-    const dateStart = new Date(date + "T00:00:00.000Z");
-    const dateEnd = new Date(date + "T23:59:59.999Z");
-
-    const entriesOnThisDate = history.filter((entry) => {
-      const entryTime = new Date(entry.changed_at);
-      return entryTime >= dateStart && entryTime <= dateEnd;
-    });
-
-    const latestByTag = new Map();
-
-    entriesOnThisDate.forEach((entry) => {
-      const entryTime = new Date(entry.changed_at);
-      const latest = latestByTag.get(entry.service_tag);
-
-      if (!latest || entryTime > new Date(latest.changed_at)) {
-        latestByTag.set(entry.service_tag, entry);
-      }
-    });
-
-    const snapshot = [...latestByTag.values()].map((entry) => {
-      const earliestEntry = globalEarliestByTag.get(entry.service_tag);
-
-      return {
-        recieved_on: formatDateHumanReadable(earliestEntry?.changed_at) || null,
-        service_tag: entry.service_tag,
-        location: entry.to_location?.trim() || "Unknown",
-        last_note: entry.note || "Unknown",
-      };
-    });
-
-    return { date, snapshot };
-  });
-
-  function handleDownloadReport() {
+  async function handleDownloadReport() {
     if (!reportDate) {
       showToast(`Select a Date`, "error", 3000, "top-right");
       return;
@@ -395,30 +295,42 @@ function TrackingPage() {
     // report includes:
     // - the cumulative snapshot of all systems as of the end of the selected day, for specific active locations
     // - and the list of systems that were moved to resolved locations on that day
-    const matchCumulative = stHistoryByDate.find((d) => d.date === reportDate);
-    let matchPerDay = null;
-    if (reportMode === "cumulative") {
-      matchPerDay = stHistoryByDate.find((d) => d.date === reportDate);
-    } else {
-      matchPerDay = stWorkedOnByDate.find((d) => d.date === reportDate);
-    }
 
-    const cumulativeRows =
-      matchCumulative?.snapshot.filter((row) =>
-        REPORT_CUMULATIVE_LOCATIONS.includes(row.location)
-      ) || [];
+    try {
+      const { stHistoryByDate, stWorkedOnByDate } = await generateReport(
+        history,
+        earliestDate
+      );
+      const matchCumulative = stHistoryByDate.find(
+        (d) => d.date === reportDate
+      );
+      let matchPerDay = null;
+      if (reportMode === "cumulative") {
+        matchPerDay = stHistoryByDate.find((d) => d.date === reportDate);
+      } else {
+        matchPerDay = stWorkedOnByDate.find((d) => d.date === reportDate);
+      }
 
-    const perDayRows =
-      matchPerDay?.snapshot.filter((row) =>
-        REPORT_PERDAY_LOCATIONS.includes(row.location)
-      ) || [];
+      const cumulativeRows =
+        matchCumulative?.snapshot.filter((row) =>
+          REPORT_CUMULATIVE_LOCATIONS.includes(row.location)
+        ) || [];
 
-    const combinedRows = [...cumulativeRows, ...perDayRows];
+      const perDayRows =
+        matchPerDay?.snapshot.filter((row) =>
+          REPORT_PERDAY_LOCATIONS.includes(row.location)
+        ) || [];
 
-    if (combinedRows.length > 0) {
-      downloadCSV(`snapshot_${reportDate}.csv`, combinedRows);
-    } else {
-      showToast("No data for that date", "error", 3000, "top-right");
+      const combinedRows = [...cumulativeRows, ...perDayRows];
+
+      if (combinedRows.length > 0) {
+        downloadCSV(`snapshot_${reportDate}.csv`, combinedRows);
+      } else {
+        showToast("No data for that date", "error", 3000, "top-right");
+      }
+    } catch (err) {
+      console.error("Failed to generate report", err);
+      showToast("Failed to generate report", "error", 3000, "top-right");
     }
   }
 
