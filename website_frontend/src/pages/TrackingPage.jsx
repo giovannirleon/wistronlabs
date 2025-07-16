@@ -300,6 +300,7 @@ function TrackingPage() {
   // This will be used for the report download
   const stHistoryByDate = historyDates.map((date) => {
     const latestByTag = new Map();
+    const earliestByTag = new Map();
 
     // convert date string to midnight of that day
     const dateEnd = new Date(date + "T23:59:59.999Z");
@@ -309,55 +310,78 @@ function TrackingPage() {
 
       // only consider history up to and including this date
       if (entryTime <= dateEnd) {
-        const existing = latestByTag.get(entry.service_tag);
+        const latest = latestByTag.get(entry.service_tag);
+        const earliest = earliestByTag.get(entry.service_tag);
 
-        if (!existing || entryTime > new Date(existing.changed_at)) {
+        // update latest if later
+        if (!latest || entryTime > new Date(latest.changed_at)) {
           latestByTag.set(entry.service_tag, entry);
+        }
+
+        // update earliest if earlier
+        if (!earliest || entryTime < new Date(earliest.changed_at)) {
+          earliestByTag.set(entry.service_tag, entry);
         }
       }
     });
 
-    const snapshot = [...latestByTag.values()].map((entry) => ({
-      service_tag: entry.service_tag,
-      location: entry.to_location?.trim() || "Unknown",
-      last_note: entry.note || "Unknown",
-    }));
+    const snapshot = [...latestByTag.values()].map((entry) => {
+      const earliestEntry = earliestByTag.get(entry.service_tag);
+      return {
+        recieved_on: formatDateHumanReadable(earliestEntry?.changed_at) || null,
+        service_tag: entry.service_tag,
+        location: entry.to_location?.trim() || "Unknown",
+        last_note: entry.note || "Unknown",
+      };
+    });
 
     return { date, snapshot };
   });
 
+  // Build map of first-ever entry per service_tag
+  const globalEarliestByTag = new Map();
+
+  history.forEach((entry) => {
+    const entryTime = new Date(entry.changed_at);
+    const earliest = globalEarliestByTag.get(entry.service_tag);
+
+    if (!earliest || entryTime < new Date(earliest.changed_at)) {
+      globalEarliestByTag.set(entry.service_tag, entry);
+    }
+  });
+
   // Create a snapshot of what service_tags were worked on each day
-  // This will be used for the report downloay
+  // This will be used for the report download
   const stWorkedOnByDate = historyDates.map((date) => {
-    // start and end of this day
     const dateStart = new Date(date + "T00:00:00.000Z");
     const dateEnd = new Date(date + "T23:59:59.999Z");
 
-    // keep only entries that happened on this specific day
     const entriesOnThisDate = history.filter((entry) => {
       const entryTime = new Date(entry.changed_at);
       return entryTime >= dateStart && entryTime <= dateEnd;
     });
 
-    // for each service_tag, keep only the latest change on that day
     const latestByTag = new Map();
 
     entriesOnThisDate.forEach((entry) => {
-      const existing = latestByTag.get(entry.service_tag);
+      const entryTime = new Date(entry.changed_at);
+      const latest = latestByTag.get(entry.service_tag);
 
-      if (
-        !existing ||
-        new Date(entry.changed_at) > new Date(existing.changed_at)
-      ) {
+      if (!latest || entryTime > new Date(latest.changed_at)) {
         latestByTag.set(entry.service_tag, entry);
       }
     });
 
-    const snapshot = [...latestByTag.values()].map((entry) => ({
-      service_tag: entry.service_tag,
-      location: entry.to_location?.trim() || "Unknown",
-      last_note: entry.note || "Unknown",
-    }));
+    const snapshot = [...latestByTag.values()].map((entry) => {
+      const earliestEntry = globalEarliestByTag.get(entry.service_tag);
+
+      return {
+        recieved_on: formatDateHumanReadable(earliestEntry?.changed_at) || null,
+        service_tag: entry.service_tag,
+        location: entry.to_location?.trim() || "Unknown",
+        last_note: entry.note || "Unknown",
+      };
+    });
 
     return { date, snapshot };
   });
