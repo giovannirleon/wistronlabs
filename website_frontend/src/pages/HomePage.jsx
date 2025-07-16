@@ -84,7 +84,9 @@ function HomePage() {
               }
             });
 
-            const formattedDate = formatDateHumanReadable(rawDate);
+            const formattedDate = formatDateHumanReadable(
+              new Date(rawDate + "Z")
+            );
 
             //push entry
             entries.push({
