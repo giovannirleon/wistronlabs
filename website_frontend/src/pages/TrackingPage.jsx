@@ -78,7 +78,6 @@ function TrackingPage() {
         ...entry,
         changed_at: formatDateHumanReadable(entry.changed_at),
       }));
-
       const enrichedSystems = await Promise.all(
         systemsData.map(async (system) => {
           try {
@@ -299,7 +298,8 @@ function TrackingPage() {
     try {
       const { stHistoryByDate, stWorkedOnByDate } = await generateReport(
         history,
-        earliestDate
+        earliestDate,
+        systems
       );
       const matchCumulative = stHistoryByDate.find(
         (d) => d.date === reportDate
@@ -333,7 +333,6 @@ function TrackingPage() {
       showToast("Failed to generate report", "error", 3000, "top-right");
     }
   }
-
   return (
     <>
       <ConfirmDialog />
@@ -450,7 +449,6 @@ function TrackingPage() {
             </button>
           </>
         )}
-
         {showModal && (
           <AddSystemModal
             onClose={() => setShowModal(false)}
@@ -460,7 +458,6 @@ function TrackingPage() {
             addSystemFormError={addSystemFormError}
           />
         )}
-
         {isModalOpen && (
           <DownloadReportModal
             onClose={() => setIsModalOpen(false)}

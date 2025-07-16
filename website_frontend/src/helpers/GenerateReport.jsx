@@ -31,7 +31,7 @@ export function getDateRange(fromDate, toDate) {
  * @returns {Promise<{ stHistoryByDate: Object[], stWorkedOnByDate: Object[] }>}
  *          Resolves to an object containing both snapshots.
  */
-export default async function generateReport(history, earliestDate) {
+export default async function generateReport(history, earliestDate, systems) {
   // Fetch the current server-local time
   const serverTimeResponse = await fetch(
     "https://backend.tss.wistronlabs.com/api/v1/server/time"
@@ -45,6 +45,12 @@ export default async function generateReport(history, earliestDate) {
 
   // Generate all dates between earliestDate and today (inclusive)
   const historyDates = getDateRange(earliestDate, today);
+
+  // Build a map of service_tag → issue from the systems dataset
+  const systemIssueByTag = new Map();
+  systems.forEach((system) => {
+    systemIssueByTag.set(system.service_tag, system.issue);
+  });
 
   // Build a global map of the first-ever entry for each service_tag
   const globalEarliestByTag = new Map();
@@ -87,6 +93,7 @@ export default async function generateReport(history, earliestDate) {
       return {
         recieved_on: formatDateHumanReadable(earliestEntry?.changed_at) || null,
         service_tag: entry.service_tag,
+        issue: systemIssueByTag.get(entry.service_tag) || "Unknown",
         location: entry.to_location?.trim() || "Unknown",
         last_note: entry.note || "Unknown",
       };
@@ -121,9 +128,11 @@ export default async function generateReport(history, earliestDate) {
 
     const snapshot = [...latestByTag.values()].map((entry) => {
       const earliestEntry = globalEarliestByTag.get(entry.service_tag);
+      console.log(entry);
       return {
         recieved_on: formatDateHumanReadable(earliestEntry?.changed_at) || null,
         service_tag: entry.service_tag,
+        issue: systemIssueByTag.get(entry.service_tag) || "Unknown",
         location: entry.to_location?.trim() || "Unknown",
         last_note: entry.note || "Unknown",
       };
