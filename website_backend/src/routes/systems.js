@@ -12,15 +12,59 @@ async function getDeletedUserId() {
   return result.rows[0]?.id;
 }
 
-// GET /api/v1/systems - list all systems, optional ?location_id=
+// GET /api/v1/systems - list all systems, with optional filters, sorting, pagination, and all=true
 router.get("/", async (req, res) => {
-  const { location_id } = req.query;
+  const {
+    service_tag,
+    issue,
+    location_id,
+    page,
+    page_size,
+    all,
+    sort_by,
+    sort_order,
+  } = req.query;
 
   const params = [];
-  let whereClause = "";
+  const conditions = [];
+
+  // Filters
+  if (service_tag) {
+    params.push(service_tag);
+    conditions.push(`s.service_tag = $${params.length}`);
+  }
+
+  if (issue) {
+    params.push(issue);
+    conditions.push(`s.issue ILIKE $${params.length}`);
+  }
+
   if (location_id) {
     params.push(location_id);
-    whereClause = `WHERE s.location_id = $${params.length}`;
+    conditions.push(`s.location_id = $${params.length}`);
+  }
+
+  const whereClause =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  // Sorting
+  const allowedSortColumns = {
+    service_tag: "s.service_tag",
+    issue: "s.issue",
+    location: "l.name",
+  };
+
+  const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";
+  const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
+
+  // Pagination
+  let limitOffsetClause = "";
+  if (!all || all === "false") {
+    const pageNum = Math.max(parseInt(page) || 1, 1);
+    const pageSize = Math.min(parseInt(page_size) || 50, 100);
+    const offset = (pageNum - 1) * pageSize;
+
+    limitOffsetClause = `LIMIT ${pageSize} OFFSET ${offset}`;
   }
 
   try {
@@ -30,7 +74,8 @@ router.get("/", async (req, res) => {
       FROM system s
       JOIN location l ON s.location_id = l.id
       ${whereClause}
-      ORDER BY s.service_tag
+      ORDER BY ${orderColumn} ${orderDirection}
+      ${limitOffsetClause}
       `,
       params
     );
@@ -42,15 +87,94 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/v1/systems/history - full ledger (optionally filtered by ?service_tag)
+/**
+ * GET /api/v1/systems/history
+ *
+ * Returns a list of system location history records (ledger).
+ *
+ * Supports:
+ * - Pagination: use `page` (default: 1) and `page_size` (default: 50, max: 100)
+ * - Fetch all records: set `all=true` to ignore pagination
+ * - Filtering: any combination of:
+ *      ?service_tag=<string>
+ *      ?from_location_id=<id>
+ *      ?to_location_id=<id>
+ *      ?moved_by_id=<id>
+ * - Sorting: use
+ *      ?sort_by=<field> (allowed: changed_at, service_tag, from_location_id, to_location_id, moved_by)
+ *      ?sort_order=asc|desc (default: desc)
+ *
+ * Example requests:
+ *   GET /api/v1/systems/history?page=1&page_size=25&sort_by=service_tag&sort_order=asc
+ *   GET /api/v1/systems/history?service_tag=ABC123&all=true
+ *
+ * Response: JSON array of history records, each with:
+ *   - id
+ *   - service_tag
+ *   - from_location
+ *   - to_location
+ *   - moved_by
+ *   - note
+ *   - changed_at
+ */
+
 router.get("/history", async (req, res) => {
-  const { service_tag } = req.query;
+  const {
+    all,
+    page = 1,
+    page_size = 50,
+    service_tag,
+    from_location_id,
+    to_location_id,
+    moved_by_id,
+    sort_by = "changed_at",
+    sort_order = "desc",
+  } = req.query;
 
   const params = [];
-  let whereClause = "";
+  const whereClauses = [];
+
+  // Filtering
   if (service_tag) {
     params.push(service_tag);
-    whereClause = `WHERE s.service_tag = $${params.length}`;
+    whereClauses.push(`s.service_tag = $${params.length}`);
+  }
+  if (from_location_id) {
+    params.push(from_location_id);
+    whereClauses.push(`h.from_location_id = $${params.length}`);
+  }
+  if (to_location_id) {
+    params.push(to_location_id);
+    whereClauses.push(`h.to_location_id = $${params.length}`);
+  }
+  if (moved_by_id) {
+    params.push(moved_by_id);
+    whereClauses.push(`h.moved_by = $${params.length}`);
+  }
+
+  const whereSQL =
+    whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+  // Validate sorting
+  const ALLOWED_SORT_FIELDS = [
+    "changed_at",
+    "service_tag",
+    "from_location_id",
+    "to_location_id",
+    "moved_by",
+  ];
+
+  const safeSortBy = ALLOWED_SORT_FIELDS.includes(sort_by)
+    ? sort_by
+    : "changed_at";
+  const safeSortOrder = sort_order.toLowerCase() === "asc" ? "ASC" : "DESC";
+
+  // Pagination
+  let limitOffsetSQL = "";
+  if (!all) {
+    const limit = Math.max(1, Math.min(parseInt(page_size), 100)); // cap page size to 100
+    const offset = (Math.max(1, parseInt(page)) - 1) * limit;
+    limitOffsetSQL = `LIMIT ${limit} OFFSET ${offset}`;
   }
 
   try {
@@ -69,8 +193,9 @@ router.get("/history", async (req, res) => {
       LEFT JOIN location l_from ON h.from_location_id = l_from.id
       JOIN location l_to ON h.to_location_id = l_to.id
       JOIN users u ON h.moved_by = u.id
-      ${whereClause}
-      ORDER BY h.changed_at DESC
+      ${whereSQL}
+      ORDER BY ${safeSortBy} ${safeSortOrder}
+      ${limitOffsetSQL}
       `,
       params
     );
