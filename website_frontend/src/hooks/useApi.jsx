@@ -28,8 +28,8 @@ function useApi() {
   }
 
   // System API
-  const getSystems = () => fetchJSON("/systems");
-  const getHistory = () => fetchJSON("/systems/history");
+  const getSystems = () => fetchJSON("/systems?all=true");
+  const getHistory = () => fetchJSON("/systems/history?all=true");
   const getHistoryById = (id) => fetchJSON(`/systems/history/${id}`);
   const getSystem = (tag) => fetchJSON(`/systems/${tag}`);
   const getSystemHistory = (tag) => fetchJSON(`/systems/${tag}/history`);
