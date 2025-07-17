@@ -12,7 +12,45 @@ async function getDeletedUserId() {
   return result.rows[0]?.id;
 }
 
-// GET /api/v1/systems - list all systems, with optional filters, sorting, pagination, and all=true
+/**
+ * Adds a SQL-safe `IN` clause for a field.
+ *
+ * @param {Array} params - array of SQL parameter values
+ * @param {Array} conditions - array of SQL WHERE conditions
+ * @param {string|string[]} value - single value or array of values
+ * @param {string} column - SQL column name
+ */
+function addFilter(params, conditions, value, column) {
+  if (value !== undefined) {
+    const values = Array.isArray(value) ? value : [value];
+    const placeholders = values.map((_, i) => `$${params.length + i + 1}`);
+    params.push(...values);
+    conditions.push(`${column} IN (${placeholders.join(", ")})`);
+  }
+}
+
+/**
+ * GET /api/v1/systems
+ *
+ * Lists systems, supporting:
+ * - Filters (AND across fields, OR within each field):
+ *      ?service_tag=tag1&service_tag=tag2
+ *      ?issue=issue1&issue=issue2
+ *      ?location_id=1&location_id=2
+ * - Sorting:
+ *      ?sort_by=service_tag|issue|location
+ *      ?sort_order=asc|desc
+ * - Pagination:
+ *      ?page=1&page_size=50
+ * - Fetch all:
+ *      ?all=true (ignores pagination)
+ *
+ * Notes:
+ * - Filters are combined with AND across fields and OR within a field.
+ * - Default sort is by `service_tag` descending.
+ * - Pagination page_size is capped at 100.
+ */
+
 router.get("/", async (req, res) => {
   const {
     service_tag,
@@ -29,20 +67,9 @@ router.get("/", async (req, res) => {
   const conditions = [];
 
   // Filters
-  if (service_tag) {
-    params.push(service_tag);
-    conditions.push(`s.service_tag = $${params.length}`);
-  }
-
-  if (issue) {
-    params.push(issue);
-    conditions.push(`s.issue ILIKE $${params.length}`);
-  }
-
-  if (location_id) {
-    params.push(location_id);
-    conditions.push(`s.location_id = $${params.length}`);
-  }
+  addFilter(params, conditions, service_tag, "s.service_tag");
+  addFilter(params, conditions, issue, "s.issue");
+  addFilter(params, conditions, location_id, "s.location_id");
 
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -63,7 +90,6 @@ router.get("/", async (req, res) => {
     const pageNum = Math.max(parseInt(page) || 1, 1);
     const pageSize = Math.min(parseInt(page_size) || 50, 100);
     const offset = (pageNum - 1) * pageSize;
-
     limitOffsetClause = `LIMIT ${pageSize} OFFSET ${offset}`;
   }
 
@@ -90,32 +116,24 @@ router.get("/", async (req, res) => {
 /**
  * GET /api/v1/systems/history
  *
- * Returns a list of system location history records (ledger).
+ * Lists system location history records, supporting:
+ * - Filters (AND across fields, OR within each field):
+ *      ?service_tag=tag1&service_tag=tag2
+ *      ?from_location_id=1&from_location_id=2
+ *      ?to_location_id=3&to_location_id=4
+ *      ?moved_by_id=5&moved_by_id=6
+ * - Sorting:
+ *      ?sort_by=changed_at|service_tag|from_location_id|to_location_id|moved_by
+ *      ?sort_order=asc|desc
+ * - Pagination:
+ *      ?page=1&page_size=50
+ * - Fetch all:
+ *      ?all=true (ignores pagination)
  *
- * Supports:
- * - Pagination: use `page` (default: 1) and `page_size` (default: 50, max: 100)
- * - Fetch all records: set `all=true` to ignore pagination
- * - Filtering: any combination of:
- *      ?service_tag=<string>
- *      ?from_location_id=<id>
- *      ?to_location_id=<id>
- *      ?moved_by_id=<id>
- * - Sorting: use
- *      ?sort_by=<field> (allowed: changed_at, service_tag, from_location_id, to_location_id, moved_by)
- *      ?sort_order=asc|desc (default: desc)
- *
- * Example requests:
- *   GET /api/v1/systems/history?page=1&page_size=25&sort_by=service_tag&sort_order=asc
- *   GET /api/v1/systems/history?service_tag=ABC123&all=true
- *
- * Response: JSON array of history records, each with:
- *   - id
- *   - service_tag
- *   - from_location
- *   - to_location
- *   - moved_by
- *   - note
- *   - changed_at
+ * Notes:
+ * - Filters are combined with AND across fields and OR within a field.
+ * - Default sort is by `changed_at` descending.
+ * - Pagination page_size is capped at 100.
  */
 
 router.get("/history", async (req, res) => {
@@ -132,28 +150,16 @@ router.get("/history", async (req, res) => {
   } = req.query;
 
   const params = [];
-  const whereClauses = [];
+  const conditions = [];
 
-  // Filtering
-  if (service_tag) {
-    params.push(service_tag);
-    whereClauses.push(`s.service_tag = $${params.length}`);
-  }
-  if (from_location_id) {
-    params.push(from_location_id);
-    whereClauses.push(`h.from_location_id = $${params.length}`);
-  }
-  if (to_location_id) {
-    params.push(to_location_id);
-    whereClauses.push(`h.to_location_id = $${params.length}`);
-  }
-  if (moved_by_id) {
-    params.push(moved_by_id);
-    whereClauses.push(`h.moved_by = $${params.length}`);
-  }
+  // Filters
+  addFilter(params, conditions, service_tag, "s.service_tag");
+  addFilter(params, conditions, from_location_id, "h.from_location_id");
+  addFilter(params, conditions, to_location_id, "h.to_location_id");
+  addFilter(params, conditions, moved_by_id, "h.moved_by");
 
   const whereSQL =
-    whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   // Validate sorting
   const ALLOWED_SORT_FIELDS = [
@@ -171,8 +177,8 @@ router.get("/history", async (req, res) => {
 
   // Pagination
   let limitOffsetSQL = "";
-  if (!all) {
-    const limit = Math.max(1, Math.min(parseInt(page_size), 100)); // cap page size to 100
+  if (!all || all === "false") {
+    const limit = Math.max(1, Math.min(parseInt(page_size), 100));
     const offset = (Math.max(1, parseInt(page)) - 1) * limit;
     limitOffsetSQL = `LIMIT ${limit} OFFSET ${offset}`;
   }
