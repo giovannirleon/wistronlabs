@@ -17,7 +17,7 @@ export default function Tooltip({
     return <>{children}</>;
   }
   return (
-    <div className="relative group inline-block">
+    <div className="relative group inline-flex">
       {children}
       <div
         className={`absolute ${posClasses[position]} hidden group-hover:flex bg-gray-800 text-white text-xs px-2 py-1 rounded shadow z-10 whitespace-nowrap`}

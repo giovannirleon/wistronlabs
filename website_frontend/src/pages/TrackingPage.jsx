@@ -20,6 +20,7 @@ import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useApi from "../hooks/useApi.jsx";
+import useDebounce from "../hooks/useDebounce.jsx";
 
 import generateReport from "../helpers/GenerateReport.jsx";
 
@@ -129,6 +130,15 @@ function TrackingPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
   const isMobile = useIsMobile();
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
+  useEffect(() => {
+    if (debouncedSearchTerm) {
+      fetchResults(debouncedSearchTerm);
+    }
+  }, [debouncedSearchTerm]);
 
   const resolvedSystems = systems.map((sys) => {
     const match = locations.find((l) => l.name === sys.location);
@@ -337,7 +347,7 @@ function TrackingPage() {
     <>
       <ConfirmDialog />
       <Toast />
-      <main className="max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
+      <main className="md:max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
           <Tooltip

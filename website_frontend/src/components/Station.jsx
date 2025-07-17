@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 function Station({ stationInfo, link = false }) {
   const renderStatus = (status, message) => {
     const base =
-      "inline-block px-2 py-1 rounded-full text-xs font-medium text-center";
+      "inline-block px-2 py-1  rounded-md md:rounded-full text-xs font-medium text-center";
     if (status === 0)
       return (
         <span className={`${base} bg-yellow-100 text-yellow-800`}>

@@ -109,7 +109,7 @@ function HomePage() {
   return (
     <>
       {/* Station Status */}
-      <main className="max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
+      <main className="md:max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
         <h1 className="text-2xl font-semibold mb-6">Station Status</h1>
 
         <div className="flex flex-col md:flex-row justify-between gap-8 mt-8 w-full">
@@ -136,7 +136,7 @@ function HomePage() {
         </div>
       </main>
       {/* Available Downloads */}
-      <section className="max-w-[1000px] mx-auto mt-8 bg-white rounded shadow-md p-4">
+      <section className="md:max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
         <SearchContainer
           data={downloads}
           title={"Available Logs"}

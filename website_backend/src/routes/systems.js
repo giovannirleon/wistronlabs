@@ -56,8 +56,8 @@ router.get("/", async (req, res) => {
     service_tag,
     issue,
     location_id,
-    page,
-    page_size,
+    page = 1,
+    page_size = 50,
     all,
     sort_by,
     sort_order,
@@ -84,29 +84,54 @@ router.get("/", async (req, res) => {
   const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";
   const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
 
-  // Pagination
   let limitOffsetClause = "";
+  let pageNum, pageSize, offset;
+
   if (!all || all === "false") {
-    const pageNum = Math.max(parseInt(page) || 1, 1);
-    const pageSize = Math.min(parseInt(page_size) || 50, 100);
-    const offset = (pageNum - 1) * pageSize;
+    pageNum = Math.max(parseInt(page), 1);
+    pageSize = Math.min(parseInt(page_size), 100);
+    offset = (pageNum - 1) * pageSize;
     limitOffsetClause = `LIMIT ${pageSize} OFFSET ${offset}`;
   }
 
   try {
-    const result = await db.query(
-      `
-      SELECT s.service_tag, s.issue, l.name AS location
-      FROM system s
-      JOIN location l ON s.location_id = l.id
-      ${whereClause}
-      ORDER BY ${orderColumn} ${orderDirection}
-      ${limitOffsetClause}
-      `,
-      params
-    );
+    const [dataResult, countResult] = await Promise.all([
+      db.query(
+        `
+        SELECT s.service_tag, s.issue, l.name AS location
+        FROM system s
+        JOIN location l ON s.location_id = l.id
+        ${whereClause}
+        ORDER BY ${orderColumn} ${orderDirection}
+        ${limitOffsetClause}
+        `,
+        params
+      ),
+      !all || all === "false"
+        ? db.query(
+            `
+            SELECT COUNT(*) AS count
+            FROM system s
+            JOIN location l ON s.location_id = l.id
+            ${whereClause}
+            `,
+            params
+          )
+        : Promise.resolve({ rows: [] }),
+    ]);
 
-    res.json(result.rows);
+    if (all && all !== "false") {
+      return res.json(dataResult.rows);
+    }
+
+    const total_count = parseInt(countResult.rows[0].count);
+
+    res.json({
+      data: dataResult.rows,
+      total_count,
+      page: pageNum,
+      page_size: pageSize,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch systems" });
@@ -161,7 +186,6 @@ router.get("/history", async (req, res) => {
   const whereSQL =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  // Validate sorting
   const ALLOWED_SORT_FIELDS = [
     "changed_at",
     "service_tag",
@@ -175,38 +199,67 @@ router.get("/history", async (req, res) => {
     : "changed_at";
   const safeSortOrder = sort_order.toLowerCase() === "asc" ? "ASC" : "DESC";
 
-  // Pagination
   let limitOffsetSQL = "";
+  let pageNum, pageSize, offset;
+
   if (!all || all === "false") {
-    const limit = Math.max(1, Math.min(parseInt(page_size), 100));
-    const offset = (Math.max(1, parseInt(page)) - 1) * limit;
-    limitOffsetSQL = `LIMIT ${limit} OFFSET ${offset}`;
+    pageNum = Math.max(1, parseInt(page));
+    pageSize = Math.min(100, parseInt(page_size));
+    offset = (pageNum - 1) * pageSize;
+    limitOffsetSQL = `LIMIT ${pageSize} OFFSET ${offset}`;
   }
 
   try {
-    const result = await db.query(
-      `
-      SELECT 
-        h.id,
-        s.service_tag,
-        l_from.name AS from_location,
-        l_to.name AS to_location,
-        u.username AS moved_by,
-        h.note,
-        h.changed_at
-      FROM system_location_history h
-      JOIN system s ON h.system_id = s.id
-      LEFT JOIN location l_from ON h.from_location_id = l_from.id
-      JOIN location l_to ON h.to_location_id = l_to.id
-      JOIN users u ON h.moved_by = u.id
-      ${whereSQL}
-      ORDER BY ${safeSortBy} ${safeSortOrder}
-      ${limitOffsetSQL}
-      `,
-      params
-    );
+    const [dataResult, countResult] = await Promise.all([
+      db.query(
+        `
+        SELECT 
+          h.id,
+          s.service_tag,
+          l_from.name AS from_location,
+          l_to.name AS to_location,
+          u.username AS moved_by,
+          h.note,
+          h.changed_at
+        FROM system_location_history h
+        JOIN system s ON h.system_id = s.id
+        LEFT JOIN location l_from ON h.from_location_id = l_from.id
+        JOIN location l_to ON h.to_location_id = l_to.id
+        JOIN users u ON h.moved_by = u.id
+        ${whereSQL}
+        ORDER BY ${safeSortBy} ${safeSortOrder}
+        ${limitOffsetSQL}
+        `,
+        params
+      ),
+      !all || all === "false"
+        ? db.query(
+            `
+            SELECT COUNT(*) AS count
+            FROM system_location_history h
+            JOIN system s ON h.system_id = s.id
+            LEFT JOIN location l_from ON h.from_location_id = l_from.id
+            JOIN location l_to ON h.to_location_id = l_to.id
+            JOIN users u ON h.moved_by = u.id
+            ${whereSQL}
+            `,
+            params
+          )
+        : Promise.resolve({ rows: [] }),
+    ]);
 
-    res.json(result.rows);
+    if (all && all !== "false") {
+      return res.json(dataResult.rows);
+    }
+
+    const total_count = parseInt(countResult.rows[0].count);
+
+    res.json({
+      data: dataResult.rows,
+      total_count,
+      page: pageNum,
+      page_size: pageSize,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch history ledger" });

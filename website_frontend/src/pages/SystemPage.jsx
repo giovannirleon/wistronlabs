@@ -22,7 +22,6 @@ import useApi from "../hooks/useApi";
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast.jsx";
 import useIsMobile from "../hooks/useIsMobile.jsx";
-import { set } from "date-fns";
 
 function SystemPage() {
   const { serviceTag } = useParams();
@@ -273,7 +272,7 @@ function SystemPage() {
     <>
       <ConfirmDialog />
       <Toast />
-      <main className="max-w-4xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
+      <main className="md:max-w-10/12  mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         {loading ? (
           <LoadingSkeleton rows={6} />
         ) : error ? (
@@ -329,7 +328,7 @@ function SystemPage() {
               </div>
             </div>
 
-            <div className="w-full overflow-x-auto">
+            <div className="max-w-3/4 mx-auto overflow-x-auto">
               <Flowchart
                 currentLocation_id={
                   locations.find((l) => l.name === currentLocation)?.id || 1
