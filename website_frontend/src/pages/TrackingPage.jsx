@@ -20,7 +20,6 @@ import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useApi from "../hooks/useApi.jsx";
-import useDebounce from "../hooks/useDebounce.jsx";
 
 import generateReport from "../helpers/GenerateReport.jsx";
 
@@ -130,15 +129,6 @@ function TrackingPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
   const isMobile = useIsMobile();
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 500);
-
-  useEffect(() => {
-    if (debouncedSearchTerm) {
-      fetchResults(debouncedSearchTerm);
-    }
-  }, [debouncedSearchTerm]);
 
   const resolvedSystems = systems.map((sys) => {
     const match = locations.find((l) => l.name === sys.location);
