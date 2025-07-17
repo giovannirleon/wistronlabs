@@ -81,7 +81,10 @@ export default function Auth({ defaultMode = "login" }) {
   }, [token, navigate, hasJustLoggedIn]);
 
   return (
-    <div className="flex justify-center items-start min-h-[calc(100vh-60px)]">
+    <div
+      className="flex justify-center items-start"
+      style={{ minHeight: "calc(100vh - 100px)" }}
+    >
       <div className="w-full max-w-md bg-white shadow rounded-xl p-6 mt-20 sm:p-8">
         {redirectToUser ? (
           <div className="flex flex-col items-center justify-center space-y-4 py-12">
@@ -143,7 +146,7 @@ export default function Auth({ defaultMode = "login" }) {
               {mode !== "forgot" && (
                 <input
                   type="text"
-                  placeholder="Username"
+                  placeholder="Email Address"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"

@@ -13,7 +13,7 @@ function Header() {
   const active = "bg-white/20 text-white";
 
   return (
-    <header className="relative z-10 bg-blue-900 text-white px-4 py-2 flex items-center justify-between h-[60px]">
+    <header className="sticky top-0 z-10 bg-blue-900 text-white px-4 py-2 flex items-center justify-between h-[60px]">
       {/* Left: logo + title */}
       <div className="flex items-center gap-2">
         <img

@@ -69,9 +69,9 @@ function TrackingPage() {
     setLoading(true);
     try {
       const [systemsData, locationsData, historyData] = await Promise.all([
-        getSystems(),
+        getSystems({ all: true }),
         getLocations(),
-        getHistory(),
+        getHistory({ all: true }),
       ]);
 
       const formattedHistory = historyData.map((entry) => ({

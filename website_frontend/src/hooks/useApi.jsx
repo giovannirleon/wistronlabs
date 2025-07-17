@@ -28,12 +28,77 @@ function useApi() {
   }
 
   // System API
-  const getSystems = () => fetchJSON("/systems?all=true");
-  const getHistory = () => fetchJSON("/systems/history?all=true");
+
+  function buildQueryString(params) {
+    const usp = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => usp.append(key, v));
+      } else if (value !== undefined && value !== null) {
+        usp.append(key, value);
+      }
+    });
+    return usp.toString() ? `?${usp.toString()}` : "";
+  }
+
+  /**
+   * Get systems with optional filters/sorts/pagination
+   */
+  const getSystems = ({
+    service_tag,
+    issue,
+    location_id,
+    page,
+    page_size,
+    all,
+    sort_by,
+    sort_order,
+  } = {}) => {
+    const qs = buildQueryString({
+      service_tag,
+      issue,
+      location_id,
+      page,
+      page_size,
+      all,
+      sort_by,
+      sort_order,
+    });
+    return fetchJSON(`/systems${qs}`);
+  };
+
+  /**
+   * Get history with optional filters/sorts/pagination
+   */
+  const getHistory = ({
+    service_tag,
+    from_location_id,
+    to_location_id,
+    moved_by_id,
+    page,
+    page_size,
+    all,
+    sort_by,
+    sort_order,
+  } = {}) => {
+    const qs = buildQueryString({
+      service_tag,
+      from_location_id,
+      to_location_id,
+      moved_by_id,
+      page,
+      page_size,
+      all,
+      sort_by,
+      sort_order,
+    });
+    return fetchJSON(`/systems/history${qs}`);
+  };
+
   const getHistoryById = (id) => fetchJSON(`/systems/history/${id}`);
   const getSystem = (tag) => fetchJSON(`/systems/${tag}`);
   const getSystemHistory = (tag) => fetchJSON(`/systems/${tag}/history`);
-  const getServerTime = (tag) => fetchJSON(`/server/time`);
+  const getServerTime = () => fetchJSON(`/server/time`);
 
   const createSystem = (payload) =>
     fetchJSON("/systems", {
