@@ -45,6 +45,7 @@ function useApi() {
    * Get systems with optional filters/sorts/pagination
    */
   const getSystems = ({
+    filters, // advanced filters JSON string or object
     service_tag,
     issue,
     location_id,
@@ -54,16 +55,25 @@ function useApi() {
     sort_by,
     sort_order,
   } = {}) => {
-    const qs = buildQueryString({
-      service_tag,
-      issue,
-      location_id,
+    const params = {
       page,
       page_size,
       all,
       sort_by,
       sort_order,
-    });
+    };
+
+    if (filters) {
+      params.filters =
+        typeof filters === "string" ? filters : JSON.stringify(filters);
+    } else {
+      // fallback for old-style params
+      if (service_tag) params.service_tag = service_tag;
+      if (issue) params.issue = issue;
+      if (location_id) params.location_id = location_id;
+    }
+
+    const qs = buildQueryString(params);
     return fetchJSON(`/systems${qs}`);
   };
 
@@ -71,6 +81,7 @@ function useApi() {
    * Get history with optional filters/sorts/pagination
    */
   const getHistory = ({
+    filters, // advanced filters JSON string or object
     service_tag,
     from_location_id,
     to_location_id,
@@ -81,17 +92,26 @@ function useApi() {
     sort_by,
     sort_order,
   } = {}) => {
-    const qs = buildQueryString({
-      service_tag,
-      from_location_id,
-      to_location_id,
-      moved_by_id,
+    const params = {
       page,
       page_size,
       all,
       sort_by,
       sort_order,
-    });
+    };
+
+    if (filters) {
+      params.filters =
+        typeof filters === "string" ? filters : JSON.stringify(filters);
+    } else {
+      // fallback for old-style params
+      if (service_tag) params.service_tag = service_tag;
+      if (from_location_id) params.from_location_id = from_location_id;
+      if (to_location_id) params.to_location_id = to_location_id;
+      if (moved_by_id) params.moved_by_id = moved_by_id;
+    }
+
+    const qs = buildQueryString(params);
     return fetchJSON(`/systems/history${qs}`);
   };
 

@@ -62,3 +62,8 @@ CREATE TABLE station (
 -- 📄 Indexes
 CREATE INDEX idx_system_location_history_system_id ON system_location_history(system_id);
 CREATE INDEX idx_system_location_history_moved_by ON system_location_history(moved_by);
+-- 📄 Optional: Non-unique index on location.name (for fast lookups)
+CREATE INDEX IF NOT EXISTS idx_location_name ON location(name);
+-- 📄 Additional index for efficient queries by system_id and changed_at
+CREATE INDEX idx_history_system_changed_at 
+ON system_location_history (system_id, changed_at);
