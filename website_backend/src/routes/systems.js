@@ -61,7 +61,7 @@ function buildWhereClause(filterGroup, params, tableAliases = {}) {
       table = null, // optionally override table
     } = cond;
 
-    const column = (tableAliases[field] || table || "") + field;
+    const column = tableAliases[field] || (table || "") + field;
 
     const orClauses = values.map((v) => {
       params.push(fieldOp.toUpperCase() === "ILIKE" ? `%${v}%` : v);
