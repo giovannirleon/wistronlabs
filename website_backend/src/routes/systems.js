@@ -136,9 +136,9 @@ router.get("/", async (req, res) => {
     whereSQL =
       parsed && parsed.conditions?.length
         ? `WHERE ${buildWhereClause(parsed, params, {
-            service_tag: "s.",
-            issue: "s.",
-            location_id: "s.",
+            service_tag: "s.service_tag",
+            issue: "s.issue",
+            location_id: "s.location_id",
             location: "l.name",
           })}`
         : "";
@@ -296,10 +296,10 @@ router.get("/history", async (req, res) => {
     whereSQL =
       parsed && parsed.conditions?.length
         ? `WHERE ${buildWhereClause(parsed, params, {
-            service_tag: "s.",
-            from_location_id: "h.",
-            to_location_id: "h.",
-            moved_by_id: "h.",
+            service_tag: "s.service_tag",
+            from_location_id: "h.from_location_id",
+            to_location_id: "h.to_location_id",
+            moved_by_id: "h.moved_by",
           })}`
         : "";
   }
