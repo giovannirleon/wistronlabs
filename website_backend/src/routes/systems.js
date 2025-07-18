@@ -139,7 +139,7 @@ router.get("/", async (req, res) => {
             service_tag: "s.",
             issue: "s.",
             location_id: "s.",
-            location: "l.",
+            location: "l.name",
           })}`
         : "";
   }

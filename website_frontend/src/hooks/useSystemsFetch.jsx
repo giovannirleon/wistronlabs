@@ -32,7 +32,7 @@ export function useSystemsFetch() {
       sort_by,
       sort_order,
     };
-
+    console.log(search);
     if (search) {
       const orGroup = buildGroup("OR", [
         buildLeaf("location", [search], "ILIKE"),
