@@ -239,15 +239,10 @@ export default function SearchContainerSS({
 
             {/* Pagination */}
             <ReactPaginate
-              onPageChange={({ selected }) => {
-                const y = window.scrollY;
-                setPage(selected + 1);
-                window.scrollTo(0, y);
-              }}
               breakLabel="…"
               nextLabel="›"
               previousLabel="‹"
-              //   onPageChange={({ selected }) => setPage(selected + 1)}
+              onPageChange={({ selected }) => setPage(selected + 1)}
               pageRangeDisplayed={1}
               marginPagesDisplayed={1}
               pageCount={pageCount}

@@ -54,14 +54,17 @@ function buildWhereClause(filterGroup, params, tableAliases = {}) {
       return `(${buildWhereClause(cond, params, tableAliases)})`;
     }
 
-    const {
-      field,
-      op: fieldOp = "=",
-      values = [],
-      table = null, // optionally override table
-    } = cond;
+    const { field, op: fieldOp = "=", values = [], table = null } = cond;
 
     const column = tableAliases[field] || (table || "") + field;
+
+    if (["IN", "NOT IN"].includes(fieldOp.toUpperCase())) {
+      const placeholders = values.map((v) => {
+        params.push(v);
+        return `$${params.length}`;
+      });
+      return `${column} ${fieldOp} (${placeholders.join(", ")})`;
+    }
 
     const orClauses = values.map((v) => {
       params.push(fieldOp.toUpperCase() === "ILIKE" ? `%${v}%` : v);

@@ -1,20 +1,23 @@
 import useApi from "../hooks/useApi";
 import { buildLeaf, buildGroup } from "../utils/filter.js";
+import { formatDateHumanReadable } from "../utils/date_format.js";
 
 /**
  * Custom hook to fetch systems with advanced filters.
  */
 export function useSystemsFetch() {
-  const { getSystems } = useApi();
+  const { getSystems, getLocations } = useApi();
 
   /**
-   * Fetch systems with server-side pagination/sort/search
+   * Fetch systems with server-side pagination/sort/search/active-inactive filter
    * @param {Object} options
    * @param {number} [options.page]
    * @param {number} [options.page_size]
    * @param {string} [options.sort_by]
    * @param {string} [options.sort_order]
-   * @param {string} [options.search] - optional search string
+   * @param {string} [options.search]
+   * @param {boolean} [options.active] - include active
+   * @param {boolean} [options.inactive] - include inactive
    * @returns {Promise<{data: [], total_count: number, page: number, page_size: number}>}
    */
   const fetchSystems = async (options = {}) => {
@@ -24,6 +27,8 @@ export function useSystemsFetch() {
       sort_by = "service_tag",
       sort_order = "asc",
       search,
+      active = true,
+      inactive = false,
     } = options;
 
     const params = {
@@ -32,21 +37,49 @@ export function useSystemsFetch() {
       sort_by,
       sort_order,
     };
-    console.log(search);
+
+    const conditions = [];
+
+    // Add search
     if (search) {
       const orGroup = buildGroup("OR", [
         buildLeaf("location", [search], "ILIKE"),
         buildLeaf("service_tag", [search], "ILIKE"),
         buildLeaf("issue", [search], "ILIKE"),
       ]);
-
-      params.filters = JSON.stringify({ conditions: [orGroup] });
+      conditions.push(orGroup);
     }
 
+    // Add active/inactive
+    const inactiveLocations = [6, 7, 8, 9]; // or fetch from `getLocations()` dynamically if needed
+
+    if (!active || !inactive) {
+      if (active && !inactive) {
+        // Only active → NOT in inactiveLocations
+        conditions.push(buildLeaf("location_id", inactiveLocations, "NOT IN"));
+      } else if (!active && inactive) {
+        // Only inactive → IN inactiveLocations
+        conditions.push(buildLeaf("location_id", inactiveLocations, "IN"));
+      }
+      // if both active && inactive → no condition needed
+    }
+
+    if (conditions.length > 0) {
+      params.filters = JSON.stringify({ op: "AND", conditions });
+    }
+
+    // Call backend
     const response = await getSystems(params);
 
+    // Format dates
+    const formattedData = response.data.map((d) => ({
+      ...d,
+      date_created: formatDateHumanReadable(d.date_created),
+      date_modified: formatDateHumanReadable(d.date_modified),
+    }));
+
     return {
-      data: response.data,
+      data: formattedData,
       total_count: response.total_count,
       page: response.page,
       page_size: response.page_size,
