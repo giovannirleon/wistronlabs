@@ -19,7 +19,7 @@ function App() {
   return (
     <>
       <div className="bg-gray-100 min-h-screen text-gray-800 font-roboto pb-10">
-        <ScrollToTop />
+        {/* <ScrollToTop /> */}
         <Header />
         <Routes>
           <Route path="/" element={<HomePage />} />

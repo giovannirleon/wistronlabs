@@ -1,3 +1,36 @@
+/**
+ * Filter Operators
+ *
+ * When defining a filter condition in `filters`, you can optionally specify an `op` (operator).
+ * If omitted, the default is usually `IN` for lists or `=` for single values.
+ *
+ * Supported operators for leaf conditions:
+ *
+ *   op             Meaning
+ *   =              Exact match
+ *   IN             Match any of the given values (default if values is an array)
+ *   ILIKE          Case-insensitive partial match (Postgres only; LIKE but case-insensitive)
+ *   LIKE           Case-sensitive partial match
+ *   >              Greater than
+ *   <              Less than
+ *   >=             Greater or equal
+ *   <=             Less or equal
+ *   <>             Not equal
+ *   NOT IN         Not in a list
+ *   IS NULL        Field is null (in this case, `values` is not required)
+ *   IS NOT NULL    Field is not null
+ *
+ * Supported logical operators for grouping conditions:
+ *
+ *   op             Meaning
+ *   AND            Combine conditions with logical AND
+ *   OR             Combine conditions with logical OR
+ *
+ * Notes:
+ * - Leaf conditions have `field`, `values`, and `op`.
+ * - Groups have `op` and `conditions` (array of Filter).
+ */
+
 const express = require("express");
 const db = require("../db");
 const { authenticateToken } = require("./auth");
@@ -12,50 +45,80 @@ async function getDeletedUserId() {
   return result.rows[0]?.id;
 }
 
-/**
- * Adds a SQL-safe `IN` clause for a field.
- *
- * @param {Array} params - array of SQL parameter values
- * @param {Array} conditions - array of SQL WHERE conditions
- * @param {string|string[]} value - single value or array of values
- * @param {string} column - SQL column name
- */
-function addFilter(params, conditions, value, column) {
-  if (value !== undefined) {
-    const values = Array.isArray(value) ? value : [value];
-    const placeholders = values.map((_, i) => `$${params.length + i + 1}`);
-    params.push(...values);
-    conditions.push(`${column} IN (${placeholders.join(", ")})`);
-  }
+function buildWhereClause(filterGroup, params, tableAliases = {}) {
+  const { op = "AND", conditions = [] } = filterGroup;
+
+  const sqlConditions = conditions.map((cond) => {
+    if (cond.conditions) {
+      // nested group
+      return `(${buildWhereClause(cond, params, tableAliases)})`;
+    }
+
+    const {
+      field,
+      op: fieldOp = "=",
+      values = [],
+      table = null, // optionally override table
+    } = cond;
+
+    const column = (tableAliases[field] || table || "") + field;
+
+    const orClauses = values.map((v) => {
+      params.push(fieldOp.toUpperCase() === "ILIKE" ? `%${v}%` : v);
+      return `${column} ${fieldOp} $${params.length}`;
+    });
+
+    return `(${orClauses.join(" OR ")})`;
+  });
+
+  return sqlConditions.join(` ${op} `);
 }
 
 /**
  * GET /api/v1/systems
  *
  * Lists systems, supporting:
- * - Filters (AND across fields, OR within each field):
- *      ?service_tag=tag1&service_tag=tag2
- *      ?issue=issue1&issue=issue2
- *      ?location_id=1&location_id=2
+ *
+ * Query Parameters:
+ * - filters: JSON string or object defining advanced nested filters
+ *   Example:
+ *     filters={
+ *       "op": "AND",
+ *       "conditions": [
+ *         {
+ *           "op": "OR",
+ *           "conditions": [
+ *             { "field": "service_tag", "values": ["TEST", "DEMO"], "op": "ILIKE" },
+ *             { "field": "issue", "values": ["Fan"], "op": "ILIKE" }
+ *           ]
+ *         },
+ *         {
+ *           "field": "location_id",
+ *           "values": [1, 2],
+ *           "op": "IN"
+ *         }
+ *       ]
+ *     }
+ *
  * - Sorting:
- *      ?sort_by=service_tag|issue|location
- *      ?sort_order=asc|desc
+ *     ?sort_by=service_tag|issue|location
+ *     ?sort_order=asc|desc
+ *
  * - Pagination:
- *      ?page=1&page_size=50
+ *     ?page=1&page_size=50
+ *
  * - Fetch all:
- *      ?all=true (ignores pagination)
+ *     ?all=true (disables pagination and returns all rows)
  *
  * Notes:
- * - Filters are combined with AND across fields and OR within a field.
+ * - `filters` is required for advanced AND/OR and operator selection.
  * - Default sort is by `service_tag` descending.
  * - Pagination page_size is capped at 100.
+ * - If `all=true`, pagination is ignored and all matching records are returned.
  */
-
 router.get("/", async (req, res) => {
   const {
-    service_tag,
-    issue,
-    location_id,
+    filters, // JSON string or object with conditions
     page = 1,
     page_size = 50,
     all,
@@ -64,15 +127,21 @@ router.get("/", async (req, res) => {
   } = req.query;
 
   const params = [];
-  const conditions = [];
+  let whereSQL = "";
 
-  // Filters
-  addFilter(params, conditions, service_tag, "s.service_tag");
-  addFilter(params, conditions, issue, "s.issue");
-  addFilter(params, conditions, location_id, "s.location_id");
+  // parse and build where clause
+  if (filters) {
+    const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
 
-  const whereClause =
-    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    whereSQL =
+      parsed && parsed.conditions?.length
+        ? `WHERE ${buildWhereClause(parsed, params, {
+            service_tag: "s.",
+            issue: "s.",
+            location_id: "s.",
+          })}`
+        : "";
+  }
 
   // Sorting
   const allowedSortColumns = {
@@ -84,14 +153,14 @@ router.get("/", async (req, res) => {
   const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";
   const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
 
-  let limitOffsetClause = "";
+  let limitOffsetSQL = "";
   let pageNum, pageSize, offset;
 
   if (!all || all === "false") {
     pageNum = Math.max(parseInt(page), 1);
     pageSize = Math.min(parseInt(page_size), 100);
     offset = (pageNum - 1) * pageSize;
-    limitOffsetClause = `LIMIT ${pageSize} OFFSET ${offset}`;
+    limitOffsetSQL = `LIMIT ${pageSize} OFFSET ${offset}`;
   }
 
   try {
@@ -101,9 +170,9 @@ router.get("/", async (req, res) => {
         SELECT s.service_tag, s.issue, l.name AS location
         FROM system s
         JOIN location l ON s.location_id = l.id
-        ${whereClause}
+        ${whereSQL}
         ORDER BY ${orderColumn} ${orderDirection}
-        ${limitOffsetClause}
+        ${limitOffsetSQL}
         `,
         params
       ),
@@ -113,7 +182,7 @@ router.get("/", async (req, res) => {
             SELECT COUNT(*) AS count
             FROM system s
             JOIN location l ON s.location_id = l.id
-            ${whereClause}
+            ${whereSQL}
             `,
             params
           )
@@ -142,49 +211,70 @@ router.get("/", async (req, res) => {
  * GET /api/v1/systems/history
  *
  * Lists system location history records, supporting:
- * - Filters (AND across fields, OR within each field):
- *      ?service_tag=tag1&service_tag=tag2
- *      ?from_location_id=1&from_location_id=2
- *      ?to_location_id=3&to_location_id=4
- *      ?moved_by_id=5&moved_by_id=6
+ *
+ * Query Parameters:
+ * - filters: JSON string or object defining advanced nested filters
+ *   Example:
+ *     filters={
+ *       "op": "AND",
+ *       "conditions": [
+ *         {
+ *           "field": "service_tag",
+ *           "values": ["TEST123", "STAGE"],
+ *           "op": "ILIKE"
+ *         },
+ *         {
+ *           "op": "OR",
+ *           "conditions": [
+ *             { "field": "from_location_id", "values": [1], "op": "IN" },
+ *             { "field": "to_location_id", "values": [2], "op": "IN" }
+ *           ]
+ *         }
+ *       ]
+ *     }
+ *
  * - Sorting:
- *      ?sort_by=changed_at|service_tag|from_location_id|to_location_id|moved_by
- *      ?sort_order=asc|desc
+ *     ?sort_by=changed_at|service_tag|from_location_id|to_location_id|moved_by
+ *     ?sort_order=asc|desc
+ *
  * - Pagination:
- *      ?page=1&page_size=50
+ *     ?page=1&page_size=50
+ *
  * - Fetch all:
- *      ?all=true (ignores pagination)
+ *     ?all=true (disables pagination and returns all rows)
  *
  * Notes:
- * - Filters are combined with AND across fields and OR within a field.
+ * - `filters` is required for advanced AND/OR and operator selection.
  * - Default sort is by `changed_at` descending.
  * - Pagination page_size is capped at 100.
+ * - If `all=true`, pagination is ignored and all matching records are returned.
  */
-
 router.get("/history", async (req, res) => {
   const {
     all,
     page = 1,
     page_size = 50,
-    service_tag,
-    from_location_id,
-    to_location_id,
-    moved_by_id,
     sort_by = "changed_at",
     sort_order = "desc",
+    filters, // new
   } = req.query;
 
   const params = [];
-  const conditions = [];
+  let whereSQL = "";
 
-  // Filters
-  addFilter(params, conditions, service_tag, "s.service_tag");
-  addFilter(params, conditions, from_location_id, "h.from_location_id");
-  addFilter(params, conditions, to_location_id, "h.to_location_id");
-  addFilter(params, conditions, moved_by_id, "h.moved_by");
+  if (filters) {
+    const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
 
-  const whereSQL =
-    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    whereSQL =
+      parsed && parsed.conditions?.length
+        ? `WHERE ${buildWhereClause(parsed, params, {
+            service_tag: "s.",
+            from_location_id: "h.",
+            to_location_id: "h.",
+            moved_by_id: "h.",
+          })}`
+        : "";
+  }
 
   const ALLOWED_SORT_FIELDS = [
     "changed_at",

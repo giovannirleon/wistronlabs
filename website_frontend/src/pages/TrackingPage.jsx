@@ -1,5 +1,6 @@
 import React, { useContext, useState, useEffect } from "react";
 import SearchContainer from "../components/SearchContainer";
+import SearchContainerSS from "../components/SearchContainerSS.jsx";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
 import SystemLocationsChart from "../components/SystemLocationsChart.jsx";
@@ -20,6 +21,7 @@ import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useApi from "../hooks/useApi.jsx";
+import { useSystemsFetch } from "../hooks/useSystemsFetch.jsx";
 
 import generateReport from "../helpers/GenerateReport.jsx";
 
@@ -53,9 +55,13 @@ function TrackingPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [addSystemFormError, setAddSystemFormError] = useState(false);
 
+  const [testSystems, setTestSystems] = useState([]);
+
   const [reportMode, setReportMode] = useState("perday");
 
   const { token } = useContext(AuthContext);
+
+  const fetchSystems = useSystemsFetch();
 
   const {
     getSystems,
@@ -68,11 +74,13 @@ function TrackingPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [systemsData, locationsData, historyData] = await Promise.all([
-        getSystems({ all: true }),
-        getLocations(),
-        getHistory({ all: true }),
-      ]);
+      const [systemsData, locationsData, historyData, testSystemsData] =
+        await Promise.all([
+          getSystems({ all: true }),
+          getLocations(),
+          getHistory({ all: true }),
+          getSystems(),
+        ]);
 
       const formattedHistory = historyData.map((entry) => ({
         ...entry,
@@ -115,6 +123,7 @@ function TrackingPage() {
       setSystems(enrichedSystems);
       setLocations(locationsData);
       setHistory(formattedHistory);
+      setTestSystems(testSystemsData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -125,6 +134,8 @@ function TrackingPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  console.log(testSystems);
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
@@ -401,7 +412,7 @@ function TrackingPage() {
               </label>
             </div>
 
-            <SearchContainer
+            {/* <SearchContainer
               data={filteredSystems}
               title=""
               displayOrder={[
@@ -439,8 +450,47 @@ function TrackingPage() {
                       "date_last_modified",
                     ]
               }
+            /> */}
+            <SearchContainerSS
+              // data={filteredSystems}
+              title=""
+              fetchData={fetchSystems}
+              displayOrder={[
+                "service_tag",
+                "issue",
+                "location",
+                "date_created",
+                "date_last_modified",
+              ]}
+              defaultSortBy="date_last_modified"
+              defaultSortAsc={false}
+              fieldStyles={{
+                service_tag: "text-blue-600 font-medium",
+                date_created: "text-gray-500 text-sm",
+                date_last_modified: "text-gray-500 text-sm",
+                location: (val) =>
+                  ["Sent to L11", "RMA CID", "RMA VID", "RMA PID"].includes(val)
+                    ? { type: "pill", color: "bg-green-100 text-green-800" }
+                    : ["Processed", "In Debug - Wistron", "In L10"].includes(
+                        val
+                      )
+                    ? { type: "pill", color: "bg-red-100 text-red-800" }
+                    : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
+              }}
+              linkType="internal"
+              truncate={true}
+              visibleFields={
+                isMobile
+                  ? ["service_tag", "issue", "location"]
+                  : [
+                      "service_tag",
+                      "issue",
+                      "location",
+                      "date_created",
+                      "date_last_modified",
+                    ]
+              }
             />
-
             <button
               onClick={() => setIsModalOpen(true)}
               className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 mt-4"
