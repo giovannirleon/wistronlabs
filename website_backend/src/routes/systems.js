@@ -152,6 +152,9 @@ router.get("/", async (req, res) => {
     service_tag: "s.service_tag",
     issue: "s.issue",
     location: "l.name",
+    date_created: "first_history.changed_at",
+    date_modified: "last_history.changed_at",
+    added_by: "first_user.username",
   };
 
   const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";

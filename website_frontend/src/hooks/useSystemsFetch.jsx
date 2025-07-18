@@ -28,7 +28,7 @@ export function useSystemsFetch() {
       sort_order = "asc",
       search,
       active = true,
-      inactive = false,
+      inactive = true,
     } = options;
 
     const params = {
@@ -51,18 +51,17 @@ export function useSystemsFetch() {
     }
 
     // Add active/inactive
-    const inactiveLocations = [6, 7, 8, 9]; // or fetch from `getLocations()` dynamically if needed
+    const inactiveLocations = [6, 7, 8, 9];
 
-    if (!active || !inactive) {
-      if (active && !inactive) {
-        // Only active → NOT in inactiveLocations
-        conditions.push(buildLeaf("location_id", inactiveLocations, "NOT IN"));
-      } else if (!active && inactive) {
-        // Only inactive → IN inactiveLocations
-        conditions.push(buildLeaf("location_id", inactiveLocations, "IN"));
-      }
-      // if both active && inactive → no condition needed
+    if (active && !inactive) {
+      conditions.push(buildLeaf("location_id", inactiveLocations, "NOT IN"));
+    } else if (!active && inactive) {
+      conditions.push(buildLeaf("location_id", inactiveLocations, "IN"));
+    } else if (!active && !inactive) {
+      // Neither checked → show nothing
+      conditions.push(buildLeaf("location_id", [-1], "IN"));
     }
+    // if both active && inactive → show all (no filter)
 
     if (conditions.length > 0) {
       params.filters = JSON.stringify({ op: "AND", conditions });
@@ -76,6 +75,12 @@ export function useSystemsFetch() {
       ...d,
       date_created: formatDateHumanReadable(d.date_created),
       date_modified: formatDateHumanReadable(d.date_modified),
+      service_tag_title: "Service Tag",
+      issue_title: "Issue",
+      location_title: "Location",
+      date_created_title: "Date Created",
+      date_modified_title: "Date Modified",
+      link: d.service_tag,
     }));
 
     return {

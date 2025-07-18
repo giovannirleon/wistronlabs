@@ -64,7 +64,7 @@ export default function SearchContainerSS({
           item &&
           item[actionButtonVisibleIf.field] === actionButtonVisibleIf.equals
       ));
-
+  console.log("Sory by", sortBy);
   return (
     <>
       <div className="flex justify-between items-center mb-6">
@@ -102,7 +102,6 @@ export default function SearchContainerSS({
                   : "text-left";
 
                 const headerLabel = getHeaderLabel(data, field);
-
                 return (
                   <button
                     key={field}

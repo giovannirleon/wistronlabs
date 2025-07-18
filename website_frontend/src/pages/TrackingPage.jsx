@@ -460,9 +460,9 @@ function TrackingPage() {
                 "issue",
                 "location",
                 "date_created",
-                "date_last_modified",
+                "date_modified",
               ]}
-              defaultSortBy="date_last_modified"
+              defaultSortBy="date_modified"
               defaultSortAsc={false}
               fieldStyles={{
                 service_tag: "text-blue-600 font-medium",
@@ -487,7 +487,7 @@ function TrackingPage() {
                       "issue",
                       "location",
                       "date_created",
-                      "date_last_modified",
+                      "date_modified",
                     ]
               }
             />
