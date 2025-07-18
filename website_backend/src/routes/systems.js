@@ -133,13 +133,13 @@ router.get("/", async (req, res) => {
   if (filters) {
     const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
 
-    whereSQL =
+    whereSQL = whereSQL =
       parsed && parsed.conditions?.length
         ? `WHERE ${buildWhereClause(parsed, params, {
             service_tag: "s.",
             issue: "s.",
             location_id: "s.",
-            location: "l.name",
+            location: "l.",
           })}`
         : "";
   }
