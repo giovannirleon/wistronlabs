@@ -168,9 +168,36 @@ router.get("/", async (req, res) => {
     const [dataResult, countResult] = await Promise.all([
       db.query(
         `
-        SELECT s.service_tag, s.issue, l.name AS location
+        SELECT 
+          s.service_tag,
+          s.issue,
+          l.name AS location,
+          first_history.changed_at AS date_created,
+          first_user.username AS added_by,
+          last_history.changed_at AS date_modified
         FROM system s
         JOIN location l ON s.location_id = l.id
+
+        -- first history entry per system
+        LEFT JOIN LATERAL (
+          SELECT h.changed_at, h.moved_by
+          FROM system_location_history h
+          WHERE h.system_id = s.id
+          ORDER BY h.changed_at ASC
+          LIMIT 1
+        ) AS first_history ON TRUE
+
+        LEFT JOIN users first_user ON first_user.id = first_history.moved_by
+
+        -- last history entry per system
+        LEFT JOIN LATERAL (
+          SELECT h.changed_at
+          FROM system_location_history h
+          WHERE h.system_id = s.id
+          ORDER BY h.changed_at DESC
+          LIMIT 1
+        ) AS last_history ON TRUE
+
         ${whereSQL}
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
