@@ -262,7 +262,7 @@ router.get("/snapshot", async (req, res) => {
     return res.json(cached);
   }
 
-  const params = [date];
+  const params = [new Date(`${date}T23:59:59`).toISOString()];
   const locationFilterSQL = [];
 
   if (locations) {
