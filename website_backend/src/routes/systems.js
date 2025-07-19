@@ -35,6 +35,9 @@ const express = require("express");
 const db = require("../db");
 const { authenticateToken } = require("./auth");
 
+const NodeCache = require("node-cache");
+const snapshotCache = new NodeCache({ stdTTL: 8 * 60 * 60 }); // 8 hours
+
 const router = express.Router();
 
 // Helper: fetch deleted user id
@@ -242,12 +245,33 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/snapshot", async (req, res) => {
-  const { date } = req.query;
+  const { date, locations } = req.query;
 
   if (!date) {
     return res
       .status(400)
       .json({ error: "Missing required `date` query param" });
+  }
+
+  const cacheKey = `${date}:${locations || ""}`;
+
+  const cached = snapshotCache.get(cacheKey);
+  if (cached) {
+    // reset TTL to keep it alive another 5 mins
+    snapshotCache.ttl(cacheKey, 300);
+    return res.json(cached);
+  }
+
+  const params = [date];
+  const locationFilterSQL = [];
+
+  if (locations) {
+    const locationList = locations.split(",").map((loc) => loc.trim());
+    if (locationList.length > 0) {
+      const placeholders = locationList.map((_, idx) => `$${idx + 2}`);
+      locationFilterSQL.push(`AND l.name IN (${placeholders.join(", ")})`);
+      params.push(...locationList);
+    }
   }
 
   try {
@@ -256,19 +280,27 @@ router.get("/snapshot", async (req, res) => {
       SELECT 
         s.service_tag,
         s.issue,
-        l.name AS location
+        l.name AS location,
+        h.changed_at AS as_of
       FROM system s
-      JOIN location l ON s.location_id = l.id
-      WHERE EXISTS (
-        SELECT 1
-        FROM system_location_history h
-        WHERE h.system_id = s.id
-          AND h.changed_at <= $1
-      )
+      JOIN (
+          SELECT DISTINCT ON (h.system_id)
+            h.system_id,
+            h.to_location_id,
+            h.changed_at
+          FROM system_location_history h
+          WHERE h.changed_at <= $1
+          ORDER BY h.system_id, h.changed_at DESC
+      ) h ON h.system_id = s.id
+      JOIN location l ON h.to_location_id = l.id
+      WHERE 1=1
+      ${locationFilterSQL.join(" ")}
+      ORDER BY s.service_tag
       `,
-      [date]
+      params
     );
 
+    snapshotCache.set(cacheKey, snapshotResult.rows);
     res.json(snapshotResult.rows);
   } catch (err) {
     console.error(err);
