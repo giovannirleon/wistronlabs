@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useState, useEffect, useCallback } from "react";
 import SearchContainerSS from "../components/SearchContainerSS.jsx";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
@@ -21,6 +21,7 @@ import useToast from "../hooks/useToast";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useApi from "../hooks/useApi.jsx";
 import { useSystemsFetch } from "../hooks/useSystemsFetch.jsx";
+import { useHistoryFetch } from "../hooks/useHistoryFetch.jsx";
 
 import generateReport from "../helpers/GenerateReport.jsx";
 
@@ -41,6 +42,8 @@ const REPORT_PERDAY_LOCATIONS = [
 ];
 
 function TrackingPage() {
+  const [page, setPage] = useState(1);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -60,6 +63,7 @@ function TrackingPage() {
   const { token } = useContext(AuthContext);
 
   const fetchSystems = useSystemsFetch();
+  const fetchHistory = useHistoryFetch();
 
   const { getLocations, getHistory, createSystem, moveSystemToProcessed } =
     useApi();
@@ -299,13 +303,16 @@ function TrackingPage() {
     }
   }
 
-  const fetchSystemsWithFlags = (options) => {
-    return fetchSystems({
-      ...options,
-      active: showActive,
-      inactive: showInactive,
-    });
-  };
+  const fetchSystemsWithFlags = useCallback(
+    (options) => {
+      return fetchSystems({
+        ...options,
+        active: showActive,
+        inactive: showInactive,
+      });
+    },
+    [showActive, showInactive]
+  );
 
   return (
     <>
@@ -339,7 +346,10 @@ function TrackingPage() {
           <div className="text-red-600">{error}</div>
         ) : (
           <>
-            <SystemLocationsChart history={history} locations={locations} />
+            <SystemLocationsChart
+              fetchSystems={fetchSystems}
+              fetchHistory={fetchHistory}
+            />
             <SystemsCreatedChart history={history} />
 
             <div className="flex justify-end gap-4 mt-4">
@@ -350,6 +360,7 @@ function TrackingPage() {
                   onChange={() => {
                     if (showInactive || !showActive) {
                       setShowActive(!showActive);
+                      setPage(1);
                     }
                   }}
                   className="accent-blue-600"
@@ -363,6 +374,7 @@ function TrackingPage() {
                   onChange={() => {
                     if (showActive || !showInactive) {
                       setShowInactive(!showInactive);
+                      setPage(1);
                     }
                   }}
                   className="accent-blue-600"
@@ -371,6 +383,8 @@ function TrackingPage() {
               </label>
             </div>
             <SearchContainerSS
+              page={page}
+              onPageChange={(newPage) => setPage(newPage)}
               title=""
               fetchData={fetchSystemsWithFlags}
               displayOrder={[

@@ -30,6 +30,7 @@ export function useSystemsFetch() {
       active = true,
       inactive = true,
       all = false,
+      filters,
     } = options;
 
     const params = {
@@ -46,23 +47,33 @@ export function useSystemsFetch() {
 
     const conditions = [];
 
-    if (search) {
-      const orGroup = buildGroup("OR", [
-        buildLeaf("location", [search], "ILIKE"),
-        buildLeaf("service_tag", [search], "ILIKE"),
-        buildLeaf("issue", [search], "ILIKE"),
-      ]);
-      conditions.push(orGroup);
-    }
+    if (filters) {
+      conditions.push(...filters.conditions);
 
-    const inactiveLocations = [6, 7, 8, 9];
+      if (search || active !== true || inactive !== true) {
+        console.warn(
+          "[useSystemsFetch] Both `filters` and `search`/`active`/`inactive` were provided. Only `filters` is used."
+        );
+      }
+    } else {
+      if (search) {
+        const orGroup = buildGroup("OR", [
+          buildLeaf("location", [search], "ILIKE"),
+          buildLeaf("service_tag", [search], "ILIKE"),
+          buildLeaf("issue", [search], "ILIKE"),
+        ]);
+        conditions.push(orGroup);
+      }
 
-    if (active && !inactive) {
-      conditions.push(buildLeaf("location_id", inactiveLocations, "NOT IN"));
-    } else if (!active && inactive) {
-      conditions.push(buildLeaf("location_id", inactiveLocations, "IN"));
-    } else if (!active && !inactive) {
-      conditions.push(buildLeaf("location_id", [-1], "IN"));
+      const inactiveLocations = [6, 7, 8, 9];
+
+      if (active && !inactive) {
+        conditions.push(buildLeaf("location_id", inactiveLocations, "NOT IN"));
+      } else if (!active && inactive) {
+        conditions.push(buildLeaf("location_id", inactiveLocations, "IN"));
+      } else if (!active && !inactive) {
+        conditions.push(buildLeaf("location_id", [-1], "IN"));
+      }
     }
 
     if (conditions.length > 0) {

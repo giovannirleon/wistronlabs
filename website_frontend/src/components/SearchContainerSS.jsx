@@ -18,8 +18,10 @@ export default function SearchContainerSS({
   fetchData,
   allowSearch = true,
   itemsPerPage = 10,
+  page: externalPage,
+  onPageChange,
 }) {
-  const [page, setPage] = useState(1);
+  const [internalPage, setInternalPage] = useState(1);
   const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
   const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -30,6 +32,13 @@ export default function SearchContainerSS({
   const [loading, setLoading] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  const page = externalPage ?? internalPage;
+
+  const handlePageChange = (newPage) => {
+    if (onPageChange) onPageChange(newPage);
+    else setInternalPage(newPage);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -84,7 +93,7 @@ export default function SearchContainerSS({
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
-              setPage(1);
+              handlePageChange(1);
             }}
           />
         )}
@@ -263,10 +272,10 @@ export default function SearchContainerSS({
                 breakLabel="…"
                 nextLabel="›"
                 previousLabel="‹"
-                onPageChange={({ selected }) => setPage(selected + 1)}
                 pageRangeDisplayed={1}
                 marginPagesDisplayed={1}
                 pageCount={pageCount}
+                onPageChange={({ selected }) => handlePageChange(selected + 1)}
                 forcePage={page - 1}
                 containerClassName="flex flex-wrap justify-center items-center gap-1 mt-4 text-xs sm:text-sm"
                 pageLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"

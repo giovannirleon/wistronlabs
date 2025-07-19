@@ -241,6 +241,41 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/snapshot", async (req, res) => {
+  const { date } = req.query;
+
+  if (!date) {
+    return res
+      .status(400)
+      .json({ error: "Missing required `date` query param" });
+  }
+
+  try {
+    const snapshotResult = await db.query(
+      `
+      SELECT 
+        s.service_tag,
+        s.issue,
+        l.name AS location
+      FROM system s
+      JOIN location l ON s.location_id = l.id
+      WHERE EXISTS (
+        SELECT 1
+        FROM system_location_history h
+        WHERE h.system_id = s.id
+          AND h.changed_at <= $1
+      )
+      `,
+      [date]
+    );
+
+    res.json(snapshotResult.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch snapshot" });
+  }
+});
+
 /**
  * GET /api/v1/systems/history
  *
