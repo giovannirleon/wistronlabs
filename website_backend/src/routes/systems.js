@@ -373,6 +373,7 @@ router.get("/history", async (req, res) => {
             from_location_id: "h.from_location_id",
             to_location_id: "h.to_location_id",
             moved_by_id: "h.moved_by",
+            changed_at: "h.changed_at",
           })}`
         : "";
   }

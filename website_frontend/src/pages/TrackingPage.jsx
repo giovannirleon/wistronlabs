@@ -56,6 +56,8 @@ function TrackingPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [addSystemFormError, setAddSystemFormError] = useState(false);
 
+  const [serverTime, setServerTime] = useState([]);
+
   const [systems, setSystems] = useState([]);
 
   const [reportMode, setReportMode] = useState("perday");
@@ -65,15 +67,21 @@ function TrackingPage() {
   const fetchSystems = useSystemsFetch();
   const fetchHistory = useHistoryFetch();
 
-  const { getLocations, getHistory, createSystem, moveSystemToProcessed } =
-    useApi();
+  const {
+    getLocations,
+    getHistory,
+    createSystem,
+    moveSystemToProcessed,
+    getServerTime,
+  } = useApi();
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [locationsData, historyData] = await Promise.all([
+      const [locationsData, historyData, serverTimeData] = await Promise.all([
         getLocations(),
         getHistory({ all: true }),
+        getServerTime(),
       ]);
 
       const formattedHistory = historyData.map((entry) => ({
@@ -83,6 +91,7 @@ function TrackingPage() {
 
       setLocations(locationsData);
       setHistory(formattedHistory);
+      setServerTime(serverTimeData);
     } catch (err) {
       setError(err.message);
       console.log(err.message);
@@ -349,6 +358,8 @@ function TrackingPage() {
             <SystemLocationsChart
               fetchSystems={fetchSystems}
               fetchHistory={fetchHistory}
+              locations={locations}
+              serverTime={serverTime}
             />
             <SystemsCreatedChart history={history} />
 

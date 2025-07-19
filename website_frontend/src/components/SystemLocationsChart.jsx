@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from "react";
+
+import toZuluIso from "../utils/toZuluISO.js";
+import useApi from "../hooks/useApi.jsx";
+
 import {
   ResponsiveContainer,
   LineChart,
@@ -27,35 +31,66 @@ function getLastNDates(n) {
   return dates;
 }
 
-function SystemLocationsChart({ fetchHistory, fetchSystems }) {
+function SystemLocationsChart({
+  fetchHistory,
+  fetchSystems,
+  locations,
+  serverTime,
+}) {
+  const days = 7;
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
   const [data, setData] = useState();
+
+  const { getSnapshot } = useApi();
+
   useEffect(() => {
     const loadActiveHistory = async () => {
       setLoading(true);
 
       try {
-        const { data: activeSystems } = await fetchSystems({
-          active: true,
-          inactive: false,
-          all: true,
+        //get active location data
+        const activeLocationIDs = [1, 2, 3, 4, 5];
+        const activeLocationNames = locations
+          .filter((loc) => activeLocationIDs.includes(loc.id))
+          .map((loc) => loc.name);
+
+        // get server time and date and just convert it to YYYY-MM-DD (what snapshot needs)
+        const date = new Date(serverTime.localtime);
+
+        date.setDate(date.getDate() - (days - 1));
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const dd = String(date.getDate()).padStart(2, "0");
+
+        const beginningDate = `${yyyy}-${mm}-${dd}`;
+        //need to get Zulu ISO datetime since that is what the backend /systems/history takes
+        const beginningDateZISO = toZuluIso(
+          beginningDate,
+          "11:59:59 PM",
+          Number(serverTime.utcOffset)
+        );
+        console.log(serverTime);
+        console.log(beginningDateZISO);
+        const activeLocationSnapshotFirstDay = await getSnapshot({
+          date: beginningDate,
+          locations: activeLocationNames,
         });
 
-        const activeServiceTags = activeSystems.map((item) => item.service_tag);
+        console.log(activeLocationSnapshotFirstDay);
+
         const { data: historyFromActiveLocations } = await fetchHistory({
           all: true,
           filters: {
             op: "AND",
             conditions: [
-              { field: "service_tag", values: activeServiceTags, op: "IN" },
+              { field: "changed_at", values: beginningDateZISO, op: ">=" },
             ],
           },
         });
         console.log("historyFromActiveLocations", historyFromActiveLocations);
-
-        setData(activeServiceTags);
       } catch (err) {
         console.error("Failed to fetch history:", err);
         setError("Failed to load history.");

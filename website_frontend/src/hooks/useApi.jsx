@@ -6,6 +6,40 @@ const BASE_URL = "https://backend.tss.wistronlabs.com/api/v1";
 function useApi() {
   const { token } = useContext(AuthContext);
 
+  function getServerUTCOffset(serverTimeString) {
+    // Parse server time string
+    const [datePart, timePart] = serverTimeString.split(", ");
+    const [month, day, year] = datePart.split("/").map(Number);
+    let [time, meridiem] = timePart.split(" ");
+    let [hour, minute, second] = time.split(":").map(Number);
+
+    if (meridiem === "PM" && hour !== 12) hour += 12;
+    if (meridiem === "AM" && hour === 12) hour = 0;
+
+    // Build a *local* Date using server values
+    const serverLocal = new Date(year, month - 1, day, hour, minute, second);
+
+    // Get what UTC time that Date corresponds to
+    const utcYear = serverLocal.getUTCFullYear();
+    const utcMonth = serverLocal.getUTCMonth();
+    const utcDate = serverLocal.getUTCDate();
+    const utcHour = serverLocal.getUTCHours();
+    const utcMinute = serverLocal.getUTCMinutes();
+    const utcSecond = serverLocal.getUTCSeconds();
+
+    // Compare to local to get offset
+    const offsetMinutes =
+      (serverLocal.getHours() - utcHour) * 60 +
+      (serverLocal.getMinutes() - utcMinute);
+
+    const offsetHours = offsetMinutes / 60;
+
+    const sign = offsetHours >= 0 ? "+" : "-";
+    const absOffset = Math.abs(offsetHours);
+
+    return `${sign}${absOffset}`;
+  }
+
   async function fetchJSON(endpoint, options = {}) {
     const headers = {
       ...(options.headers || {}),
@@ -118,7 +152,10 @@ function useApi() {
   const getHistoryById = (id) => fetchJSON(`/systems/history/${id}`);
   const getSystem = (tag) => fetchJSON(`/systems/${tag}`);
   const getSystemHistory = (tag) => fetchJSON(`/systems/${tag}/history`);
-  const getServerTime = () => fetchJSON(`/server/time`);
+  const getServerTime = async () => {
+    const res = await fetchJSON(`/server/time`);
+    return { ...res, utcOffset: getServerUTCOffset(res.localtime) };
+  };
 
   const createSystem = (payload) =>
     fetchJSON("/systems", {
@@ -186,7 +223,7 @@ function useApi() {
       }),
     });
 
-    // Second fetch: e.g., log event or update something else
+    // Second fetch: update location in systems
     const updateIssue = await fetchJSON(`/systems/${service_tag}/issue`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -196,6 +233,27 @@ function useApi() {
     });
 
     return { updateLocation, updateIssue };
+  };
+
+  /**
+   * Get a snapshot of system locations as of a specific date, with optional location filter.
+   * @param {Object} options
+   * @param {string} options.date - YYYY-MM-DD date string (required)
+   * @param {string[]|string} [options.locations] - Optional array or comma-separated string of locations to filter
+   * @returns {Promise<Array>} snapshot data
+   */
+  const getSnapshot = ({ date, locations } = {}) => {
+    if (!date) throw new Error("getSnapshot requires a `date` parameter");
+
+    const params = { date };
+    if (locations) {
+      params.locations = Array.isArray(locations)
+        ? locations.join(",")
+        : locations;
+    }
+
+    const qs = buildQueryString(params);
+    return fetchJSON(`/systems/snapshot${qs}`);
   };
 
   return {
@@ -217,6 +275,7 @@ function useApi() {
     moveSystemToProcessed,
     getHistoryById,
     getServerTime,
+    getSnapshot,
   };
 }
 
