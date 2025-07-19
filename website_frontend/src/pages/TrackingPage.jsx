@@ -1,5 +1,4 @@
 import React, { useContext, useState, useEffect } from "react";
-import SearchContainer from "../components/SearchContainer";
 import SearchContainerSS from "../components/SearchContainerSS.jsx";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
@@ -42,7 +41,6 @@ const REPORT_PERDAY_LOCATIONS = [
 ];
 
 function TrackingPage() {
-  const [systems, setSystems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -55,7 +53,7 @@ function TrackingPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [addSystemFormError, setAddSystemFormError] = useState(false);
 
-  const [testSystems, setTestSystems] = useState([]);
+  const [systems, setSystems] = useState([]);
 
   const [reportMode, setReportMode] = useState("perday");
 
@@ -63,69 +61,27 @@ function TrackingPage() {
 
   const fetchSystems = useSystemsFetch();
 
-  const {
-    getSystems,
-    getLocations,
-    getHistory,
-    createSystem,
-    moveSystemToProcessed,
-  } = useApi();
+  const { getLocations, getHistory, createSystem, moveSystemToProcessed } =
+    useApi();
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [systemsData, locationsData, historyData, testSystemsData] =
-        await Promise.all([
-          getSystems({ all: true }),
-          getLocations(),
-          getHistory({ all: true }),
-          getSystems(),
-        ]);
+      const [locationsData, historyData] = await Promise.all([
+        getLocations(),
+        getHistory({ all: true }),
+      ]);
 
       const formattedHistory = historyData.map((entry) => ({
         ...entry,
         changed_at: formatDateHumanReadable(entry.changed_at),
       }));
-      const enrichedSystems = await Promise.all(
-        systemsData.map(async (system) => {
-          try {
-            const res = await fetch(
-              `https://backend.tss.wistronlabs.com:/api/v1/systems/${system.service_tag}/history`
-            );
-            if (!res.ok) throw new Error("History fetch failed");
-            const history = await res.json();
-            const created = history.find((h) => h.from_location === null);
-            const latest = history.reduce((a, b) =>
-              new Date(a.changed_at) > new Date(b.changed_at) ? a : b
-            );
 
-            return {
-              ...system,
-              date_created: created?.changed_at
-                ? formatDateHumanReadable(created.changed_at)
-                : "",
-              date_last_modified: latest?.changed_at
-                ? formatDateHumanReadable(latest.changed_at)
-                : "",
-              service_tag_title: "Service Tag",
-              issue_title: "Issue",
-              location_title: "Location",
-              date_created_title: "Created",
-              date_last_modified_title: "Modified",
-              link: system.service_tag,
-            };
-          } catch {
-            return system;
-          }
-        })
-      );
-
-      setSystems(enrichedSystems);
       setLocations(locationsData);
       setHistory(formattedHistory);
-      setTestSystems(testSystemsData);
     } catch (err) {
       setError(err.message);
+      console.log(err.message);
     } finally {
       setLoading(false);
     }
@@ -135,28 +91,26 @@ function TrackingPage() {
     fetchData();
   }, []);
 
-  console.log(testSystems);
-
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
   const isMobile = useIsMobile();
 
-  const resolvedSystems = systems.map((sys) => {
-    const match = locations.find((l) => l.name === sys.location);
-    return { ...sys, resolved_location_id: match?.id || null };
-  });
-
-  const filteredSystems = resolvedSystems.filter((sys) => {
-    const isActive = ACTIVE_LOCATION_IDS.includes(sys.resolved_location_id);
-    return (showActive && isActive) || (showInactive && !isActive);
-  });
-
   async function addOrUpdateSystem(service_tag, issue, note) {
+    const { data: inactiveSystems } = await fetchSystems({
+      page_size: 150,
+      inactive: true,
+      active: false,
+      sort_by: "location",
+      sort_order: "desc",
+      all: true,
+    });
+
     const payload = { service_tag, issue, location_id: 1, note };
-    const inactive = resolvedSystems.find(
+
+    const inactive = inactiveSystems.find(
       (sys) =>
-        sys.service_tag === service_tag &&
-        !ACTIVE_LOCATION_IDS.includes(sys.resolved_location_id)
+        sys.service_tag.trim().toUpperCase() ===
+        service_tag.trim().toUpperCase()
     );
 
     try {
@@ -201,7 +155,7 @@ function TrackingPage() {
     if (!bulkMode) {
       const service_tag = formData.get("service_tag")?.trim().toUpperCase();
       const issue = formData.get("issue")?.trim();
-      const note = formData.get("note")?.trim() || null;
+      const note = formData.get("note")?.trim();
 
       if (!service_tag || !issue || !note) {
         setAddSystemFormError(true);
@@ -344,6 +298,15 @@ function TrackingPage() {
       showToast("Failed to generate report", "error", 3000, "top-right");
     }
   }
+
+  const fetchSystemsWithFlags = (options) => {
+    return fetchSystems({
+      ...options,
+      active: showActive,
+      inactive: showInactive,
+    });
+  };
+
   return (
     <>
       <ConfirmDialog />
@@ -377,11 +340,7 @@ function TrackingPage() {
         ) : (
           <>
             <SystemLocationsChart history={history} locations={locations} />
-            <SystemsCreatedChart
-              systems={systems}
-              history={history}
-              locations={locations}
-            />
+            <SystemsCreatedChart history={history} />
 
             <div className="flex justify-end gap-4 mt-4">
               <label className="flex items-center gap-2 text-sm">
@@ -411,50 +370,9 @@ function TrackingPage() {
                 Inactive
               </label>
             </div>
-
-            {/* <SearchContainer
-              data={filteredSystems}
-              title=""
-              displayOrder={[
-                "service_tag",
-                "issue",
-                "location",
-                "date_created",
-                "date_last_modified",
-              ]}
-              defaultSortBy="date_last_modified"
-              defaultSortAsc={false}
-              fieldStyles={{
-                service_tag: "text-blue-600 font-medium",
-                date_created: "text-gray-500 text-sm",
-                date_last_modified: "text-gray-500 text-sm",
-                location: (val) =>
-                  ["Sent to L11", "RMA CID", "RMA VID", "RMA PID"].includes(val)
-                    ? { type: "pill", color: "bg-green-100 text-green-800" }
-                    : ["Processed", "In Debug - Wistron", "In L10"].includes(
-                        val
-                      )
-                    ? { type: "pill", color: "bg-red-100 text-red-800" }
-                    : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
-              }}
-              linkType="internal"
-              truncate={true}
-              visibleFields={
-                isMobile
-                  ? ["service_tag", "issue", "location"]
-                  : [
-                      "service_tag",
-                      "issue",
-                      "location",
-                      "date_created",
-                      "date_last_modified",
-                    ]
-              }
-            /> */}
             <SearchContainerSS
-              // data={filteredSystems}
               title=""
-              fetchData={fetchSystems}
+              fetchData={fetchSystemsWithFlags}
               displayOrder={[
                 "service_tag",
                 "issue",

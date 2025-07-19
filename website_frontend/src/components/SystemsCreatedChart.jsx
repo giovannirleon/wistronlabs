@@ -27,7 +27,7 @@ function getLastNDates(n) {
   return dates;
 }
 
-function SystemLocationsChart({ history }) {
+function SystemsCreatedChart({ history }) {
   const EXCLUDED_LOCATIONS_EOD = [
     "Pending Parts",
     "In Debug - Wistron",
@@ -146,4 +146,4 @@ function SystemLocationsChart({ history }) {
   );
 }
 
-export default SystemLocationsChart;
+export default SystemsCreatedChart;

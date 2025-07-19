@@ -29,18 +29,23 @@ export function useSystemsFetch() {
       search,
       active = true,
       inactive = true,
+      all = false,
     } = options;
 
     const params = {
-      page,
-      page_size,
       sort_by,
       sort_order,
     };
 
+    if (!all) {
+      params.page = page;
+      params.page_size = page_size;
+    } else {
+      params.all = true;
+    }
+
     const conditions = [];
 
-    // Add search
     if (search) {
       const orGroup = buildGroup("OR", [
         buildLeaf("location", [search], "ILIKE"),
@@ -50,7 +55,6 @@ export function useSystemsFetch() {
       conditions.push(orGroup);
     }
 
-    // Add active/inactive
     const inactiveLocations = [6, 7, 8, 9];
 
     if (active && !inactive) {
@@ -58,20 +62,19 @@ export function useSystemsFetch() {
     } else if (!active && inactive) {
       conditions.push(buildLeaf("location_id", inactiveLocations, "IN"));
     } else if (!active && !inactive) {
-      // Neither checked → show nothing
       conditions.push(buildLeaf("location_id", [-1], "IN"));
     }
-    // if both active && inactive → show all (no filter)
 
     if (conditions.length > 0) {
       params.filters = JSON.stringify({ op: "AND", conditions });
     }
 
-    // Call backend
     const response = await getSystems(params);
 
-    // Format dates
-    const formattedData = response.data.map((d) => ({
+    // Handle `all=true` where backend returns an array directly
+    const rows = Array.isArray(response) ? response : response.data;
+
+    const formattedData = rows.map((d) => ({
       ...d,
       date_created: formatDateHumanReadable(d.date_created),
       date_modified: formatDateHumanReadable(d.date_modified),
@@ -82,6 +85,12 @@ export function useSystemsFetch() {
       date_modified_title: "Date Modified",
       link: d.service_tag,
     }));
+
+    if (all) {
+      return {
+        data: formattedData,
+      };
+    }
 
     return {
       data: formattedData,
