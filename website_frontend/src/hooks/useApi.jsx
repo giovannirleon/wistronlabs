@@ -224,14 +224,7 @@ function useApi() {
     return { updateLocation, updateIssue };
   };
 
-  /**
-   * Get a snapshot of system locations as of a specific date, with optional location filter.
-   * @param {Object} options
-   * @param {string} options.date - YYYY-MM-DD date string (required)
-   * @param {string[]|string} [options.locations] - Optional array or comma-separated string of locations to filter
-   * @returns {Promise<Array>} snapshot data
-   */
-  const getSnapshot = ({ date, locations, includeNotes = false } = {}) => {
+  const getSnapshot = ({ date, locations, includeNote = false } = {}) => {
     if (!date) throw new Error("getSnapshot requires a `date` parameter");
 
     const params = { date };
@@ -242,8 +235,8 @@ function useApi() {
         : locations;
     }
 
-    // Add the toggle
-    params.includeNotes = includeNotes ? "true" : "false";
+    // Add the toggle (use `includeNote` to match backend)
+    params.includeNote = includeNote ? "true" : "false";
 
     const qs = buildQueryString(params);
     return fetchJSON(`/systems/snapshot${qs}`);

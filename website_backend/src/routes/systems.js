@@ -245,7 +245,7 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/snapshot", async (req, res) => {
-  const { date, locations, includeNote } = req.query;
+  const { date, locations, includeNote, noCache } = req.query;
 
   if (!date) {
     return res
@@ -256,12 +256,16 @@ router.get("/snapshot", async (req, res) => {
   const includeNoteFlag =
     includeNote === "true" || includeNote === "1" || includeNote === true;
 
+  const noCacheFlag = noCache === "true" || noCache === "1" || noCache === true;
+
   const cacheKey = `${date}:${locations || ""}:${includeNoteFlag}`;
 
-  const cached = snapshotCache.get(cacheKey);
-  if (cached) {
-    snapshotCache.ttl(cacheKey, 300);
-    return res.json(cached);
+  if (!noCacheFlag) {
+    const cached = snapshotCache.get(cacheKey);
+    if (cached) {
+      snapshotCache.ttl(cacheKey, 300);
+      return res.json(cached);
+    }
   }
 
   const params = [date];
@@ -307,7 +311,10 @@ router.get("/snapshot", async (req, res) => {
       params
     );
 
-    snapshotCache.set(cacheKey, snapshotResult.rows);
+    if (!noCacheFlag) {
+      snapshotCache.set(cacheKey, snapshotResult.rows);
+    }
+
     res.json(snapshotResult.rows);
   } catch (err) {
     console.error(err);

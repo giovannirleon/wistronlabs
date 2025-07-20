@@ -338,7 +338,7 @@ function TrackingPage() {
 
       const reportSnapshot = await getSnapshot({
         date: reportDT,
-        includeNotes: true,
+        includeNote: true,
       });
 
       let reportServiceTags;
@@ -380,20 +380,33 @@ function TrackingPage() {
           ],
         },
       });
-      console.log("filtered", filteredSystems);
 
       const report = reportData.map((unit) => {
-        unitData = reportServiceTags.filter(
-          (st) => st.service_tag === unit.service_tag
+        const unitData = filteredSystems.find(
+          (fs) => fs.service_tag === unit.service_tag
         );
         return {
-          received_on: formatDateHumanReadable(unitData.date_created),
+          received_on: unitData
+            ? formatDateHumanReadable(unitData.date_created)
+            : null,
           service_tag: unit.service_tag,
-          issue: unitData.issue,
+          issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
           location: unit.location,
           last_note: unit.note,
         };
       });
+
+      if (report.length > 0) {
+        downloadCSV(`snapshot_${reportDate}.csv`, report);
+        showToast(
+          `Report for ${reportDate} donwloading`,
+          "success",
+          3000,
+          "top-right"
+        );
+      } else {
+        showToast("No data for that date", "error", 3000, "top-right");
+      }
     } catch (err) {
       console.error("Failed to generate report", err);
       showToast("Failed to generate report", "error", 3000, "top-right");
