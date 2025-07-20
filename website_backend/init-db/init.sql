@@ -6,7 +6,7 @@ CREATE TABLE location (
 
 -- 🌱 Seed locations
 INSERT INTO location (name) VALUES
-('Processed'),
+('Received'),
 ('In Debug - Wistron'),
 ('In Debug - Nvidia'),
 ('Pending Parts'),

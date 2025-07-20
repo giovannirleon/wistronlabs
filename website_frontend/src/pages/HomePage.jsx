@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import SearchContainer from "../components/SearchContainer";
-import { AuthContext } from "../context/AuthContext";
 
-import { getStations } from "../api/apis.js";
 import useIsMobile from "../hooks/useIsMobile.jsx";
+import useApi from "../hooks/useApi.jsx";
 
 import Rack from "../components/Rack";
 import Table from "../components/Table";
@@ -11,6 +10,7 @@ import Table from "../components/Table";
 import { formatDateHumanReadable } from "../utils/date_format";
 
 function HomePage() {
+  const { getStations } = useApi();
   const [stations, setStations] = useState([]);
   const [downloads, setDownloads] = useState([]);
   const [loading, setLoading] = useState(false);

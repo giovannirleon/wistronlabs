@@ -25,27 +25,10 @@ import useApi from "../hooks/useApi.jsx";
 import { useSystemsFetch } from "../hooks/useSystemsFetch.jsx";
 import { useHistoryFetch } from "../hooks/useHistoryFetch.jsx";
 
-import generateReport from "../helpers/GenerateReport.jsx";
-
-const ACTIVE_LOCATION_IDS = [1, 2, 3, 4, 5];
-
-const REPORT_CUMULATIVE_LOCATIONS = [
-  "Processed",
-  "In Debug - Wistron",
-  "In L10",
-  "In Debug - Nvidia",
-  "Pending Parts",
-];
-const REPORT_PERDAY_LOCATIONS = [
-  "Sent to L11",
-  "RMA VID",
-  "RMA PID",
-  "RMA CID",
-];
-
 function TrackingPage() {
-  const [page, setPage] = useState(1);
+  const FRONTEND_URL = import.meta.env.VITE_URL;
 
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -61,8 +44,6 @@ function TrackingPage() {
   const [addSystemFormError, setAddSystemFormError] = useState(false);
 
   const [serverTime, setServerTime] = useState([]);
-
-  const [systems, setSystems] = useState([]);
 
   const [reportMode, setReportMode] = useState("perday");
 
@@ -248,7 +229,7 @@ function TrackingPage() {
               systems={[
                 {
                   service_tag: service_tag,
-                  url: `https://tss.wistronlabs.com/${service_tag}`,
+                  url: `${FRONTEND_URL}${service_tag}`,
                 },
               ]}
             />
@@ -288,7 +269,7 @@ function TrackingPage() {
 
         systemsPDF.push({
           service_tag: rawTag.toUpperCase(),
-          url: `https://tss.wistronlabs.com/${rawTag.toUpperCase()}`,
+          url: `${FRONTEND_URL}${rawTag.toUpperCase()}`,
         });
       }
 
@@ -321,8 +302,6 @@ function TrackingPage() {
       return;
     }
 
-    console.log(reportDate);
-
     // Set report "time" as EOD (server’s local timezone) in ZuluISO time
     try {
       const serverTimeReport = await getServerTime();
@@ -339,6 +318,7 @@ function TrackingPage() {
       const reportSnapshot = await getSnapshot({
         date: reportDT,
         includeNote: true,
+        noCache: true,
       });
 
       let reportServiceTags;
@@ -411,48 +391,6 @@ function TrackingPage() {
       console.error("Failed to generate report", err);
       showToast("Failed to generate report", "error", 3000, "top-right");
     }
-
-    // report includes:
-    // - the cumulative snapshot of all systems as of the end of the selected day, for specific active locations
-    // - and the list of systems that were moved to resolved locations on that day
-
-    // try {
-    //   const { stHistoryByDate, stWorkedOnByDate } = await generateReport(
-    //     history,
-    //     earliestDate,
-    //     systems
-    //   );
-    //   const matchCumulative = stHistoryByDate.find(
-    //     (d) => d.date === reportDate
-    //   );
-    //   let matchPerDay = null;
-    //   if (reportMode === "cumulative") {
-    //     matchPerDay = stHistoryByDate.find((d) => d.date === reportDate);
-    //   } else {
-    //     matchPerDay = stWorkedOnByDate.find((d) => d.date === reportDate);
-    //   }
-
-    //   const cumulativeRows =
-    //     matchCumulative?.snapshot.filter((row) =>
-    //       REPORT_CUMULATIVE_LOCATIONS.includes(row.location)
-    //     ) || [];
-
-    //   const perDayRows =
-    //     matchPerDay?.snapshot.filter((row) =>
-    //       REPORT_PERDAY_LOCATIONS.includes(row.location)
-    //     ) || [];
-
-    //   const combinedRows = [...cumulativeRows, ...perDayRows];
-
-    //   if (combinedRows.length > 0) {
-    //     downloadCSV(`snapshot_${reportDate}.csv`, combinedRows);
-    //   } else {
-    //     showToast("No data for that date", "error", 3000, "top-right");
-    //   }
-    // } catch (err) {
-    //   console.error("Failed to generate report", err);
-    //   showToast("Failed to generate report", "error", 3000, "top-right");
-    // }
   }
 
   const fetchSystemsWithFlags = useCallback(
@@ -563,9 +501,7 @@ function TrackingPage() {
                 location: (val) =>
                   ["Sent to L11", "RMA CID", "RMA VID", "RMA PID"].includes(val)
                     ? { type: "pill", color: "bg-green-100 text-green-800" }
-                    : ["Processed", "In Debug - Wistron", "In L10"].includes(
-                        val
-                      )
+                    : ["Received", "In Debug - Wistron", "In L10"].includes(val)
                     ? { type: "pill", color: "bg-red-100 text-red-800" }
                     : { type: "pill", color: "bg-yellow-100 text-yellow-800" },
               }}

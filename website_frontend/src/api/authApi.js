@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = "https://backend.tss.wistronlabs.com/api/v1/auth"; // or full URL if backend is separate
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
 export const loginUser = async (username, password) => {
   const res = await axios.post(

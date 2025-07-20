@@ -1,7 +1,7 @@
 export function allowedNextLocations(currentLocation, locations) {
   if (!locations.length) return [];
   switch (currentLocation) {
-    case "Processed":
+    case "Received":
       return locations.filter((l) => l.name === "In Debug - Wistron");
     case "In Debug - Wistron":
       return locations.filter((l) =>

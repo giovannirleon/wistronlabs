@@ -500,20 +500,6 @@ function SystemPage() {
                   {formError}
                 </div>
               )}
-              {/* {formError ? (
-                <p className="text-red-600 text-sm">
-                  You must fill out all fields.
-                </p>
-              ) : isSentToL11 ? (
-                <p className="text-red-600 text-sm">
-                  If you need to work on this system again, you must re-add it
-                  through the tracking menu
-                </p>
-              ) : (
-                <p className="text-red-600 text-sm invisible">
-                  You must fill out all fields.
-                </p>
-              )} */}
             </form>
             <div>
               <h1 className="text-3xl font-bold text-gray-800">
@@ -550,7 +536,7 @@ function SystemPage() {
                     val === "RMA VID" ||
                     val === "RMA PID"
                       ? { type: "pill", color: "bg-green-100 text-green-800" }
-                      : val === "Processed" ||
+                      : val === "Received" ||
                         val === "In Debug - Wistron" ||
                         val === "In L10"
                       ? { type: "pill", color: "bg-red-100 text-red-800" }
@@ -564,7 +550,7 @@ function SystemPage() {
                     val === "RMA VID" ||
                     val === "RMA PID"
                       ? { type: "pill", color: "bg-green-100 text-green-800" }
-                      : val === "Processed" ||
+                      : val === "Received" ||
                         val === "In Debug - Wistron" ||
                         val === "In L10"
                       ? { type: "pill", color: "bg-red-100 text-red-800" }
@@ -573,6 +559,7 @@ function SystemPage() {
                           color: "bg-yellow-100 text-yellow-800",
                         },
                   note: (val) =>
+                    val?.includes("Moving back to received from Inactive") ||
                     val?.includes("Moving back to processed from Inactive")
                       ? "font-semibold"
                       : "",

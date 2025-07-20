@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { AuthContext } from "../context/AuthContext";
 
-const BASE_URL = "https://backend.tss.wistronlabs.com/api/v1";
+const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 function useApi() {
   const { token } = useContext(AuthContext);
@@ -208,7 +208,7 @@ function useApi() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to_location_id: 1,
-        note: `Moving back to processed from Inactive - ${note}`,
+        note: `Moving back to received from Inactive - ${note}`,
       }),
     });
 
@@ -224,7 +224,12 @@ function useApi() {
     return { updateLocation, updateIssue };
   };
 
-  const getSnapshot = ({ date, locations, includeNote = false } = {}) => {
+  const getSnapshot = ({
+    date,
+    locations,
+    includeNote = false,
+    noCache = false,
+  } = {}) => {
     if (!date) throw new Error("getSnapshot requires a `date` parameter");
 
     const params = { date };
@@ -235,8 +240,8 @@ function useApi() {
         : locations;
     }
 
-    // Add the toggle (use `includeNote` to match backend)
     params.includeNote = includeNote ? "true" : "false";
+    params.noCache = noCache ? "true" : "false";
 
     const qs = buildQueryString(params);
     return fetchJSON(`/systems/snapshot${qs}`);
