@@ -1,8 +1,10 @@
 import React, { useContext, useState, useEffect, useCallback } from "react";
 import SearchContainerSS from "../components/SearchContainerSS.jsx";
 import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
-import SystemsCreatedChart from "../components/SystemsCreatedChart.jsx";
+import SystemInOutChart from "../components/SystemInOutChart.jsx";
 import SystemLocationsChart from "../components/SystemLocationsChart.jsx";
+import { DateTime } from "luxon";
+
 import { AuthContext } from "../context/AuthContext.jsx";
 
 import { pdf } from "@react-pdf/renderer";
@@ -48,7 +50,9 @@ function TrackingPage() {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [locations, setLocations] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [InOutChartHistory, setInOutChartHistory] = useState([]);
+  const [locationChartHistory, setLocationChartHistory] = useState([]);
+  const [snapshot, setSnapshot] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [reportDate, setReportDate] = useState("");
@@ -67,34 +71,88 @@ function TrackingPage() {
   const fetchSystems = useSystemsFetch();
   const fetchHistory = useHistoryFetch();
 
+  const chartDays = 7;
+  const activeLocationIDs = [1, 2, 3, 4, 5];
+  const inactiveLocationIDs = [6, 7, 8, 9];
+
   const {
     getLocations,
     getHistory,
     createSystem,
-    moveSystemToProcessed,
+    moveSystemToReceived,
     getServerTime,
+    getSnapshot,
   } = useApi();
 
   const fetchData = async () => {
     setLoading(true);
+
     try {
-      const [locationsData, historyData, serverTimeData] = await Promise.all([
+      const [locationsData, serverTimeData] = await Promise.all([
         getLocations(),
-        getHistory({ all: true }),
         getServerTime(),
       ]);
 
-      const formattedHistory = historyData.map((entry) => ({
-        ...entry,
-        changed_at: formatDateHumanReadable(entry.changed_at),
-      }));
+      const activeLocationNames = locationsData
+        .filter((loc) => activeLocationIDs.includes(loc.id))
+        .map((loc) => loc.name);
+
+      // Base time in server’s local timezone
+      const serverLocalNow = DateTime.fromFormat(
+        serverTimeData.localtime,
+        "MM/dd/yyyy, hh:mm:ss a",
+        { zone: serverTimeData.zone }
+      );
+
+      const snapshotDate = serverLocalNow
+        .minus({ days: chartDays - 1 })
+        .set({ hour: 23, minute: 59, second: 59, millisecond: 0 })
+        .toUTC()
+        .toISO();
+
+      const historyBeginningDateTime = serverLocalNow
+        .minus({ days: chartDays - 1 })
+        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
+
+      const historyBeginningDateISO = historyBeginningDateTime.toUTC().toISO();
+
+      const [activeLocationSnapshotFirstDay, historyData] = await Promise.all([
+        getSnapshot({ date: snapshotDate, locations: activeLocationNames }),
+        fetchHistory({
+          all: true,
+          filters: {
+            op: "AND",
+            conditions: [
+              {
+                field: "changed_at",
+                values: [historyBeginningDateISO],
+                op: ">=",
+              },
+            ],
+          },
+        }).then((res) => res.data),
+      ]);
+
+      // cutoff for Location Chart: *one day after historyBeginningDateTime*
+      const locationChartHistoryCutoffDateTime = historyBeginningDateTime.plus({
+        days: 1,
+      });
+
+      const filteredHistory = historyData.filter((h) => {
+        const dt = DateTime.fromISO(h.changed_at, { zone: "utc" }).setZone(
+          serverTimeData.zone
+        );
+        return dt >= locationChartHistoryCutoffDateTime;
+      });
 
       setLocations(locationsData);
-      setHistory(formattedHistory);
+      setInOutChartHistory(historyData);
+      setLocationChartHistory(filteredHistory);
       setServerTime(serverTimeData);
+      setSnapshot(activeLocationSnapshotFirstDay);
     } catch (err) {
       setError(err.message);
-      console.log(err.message);
+      console.error(err.message);
     } finally {
       setLoading(false);
     }
@@ -130,7 +188,7 @@ function TrackingPage() {
       if (inactive) {
         const confirmed = await confirm({
           title: "Re-enter System?",
-          message: `${service_tag} already exists as inactive. Move it back to processed?`,
+          message: `${service_tag} already exists as inactive. Move it back to received?`,
           confirmText: "Confirm",
           cancelText: "Cancel",
           confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
@@ -141,9 +199,9 @@ function TrackingPage() {
           return;
         }
 
-        await moveSystemToProcessed(service_tag, issue, note);
+        await moveSystemToReceived(service_tag, issue, note);
         showToast(
-          `${service_tag} moved back to processed`,
+          `${service_tag} moved back to received`,
           "success",
           3000,
           "top-right"
@@ -254,14 +312,8 @@ function TrackingPage() {
     }
   }
 
-  const earliestDate = history
-    .map((h) => new Date(h.changed_at))
-    .reduce((min, d) => (d < min ? d : min), new Date());
-
-  earliestDate.setHours(0, 0, 0, 0);
-
-  // Create a snapshot of the latest state for each service_tag on each date
-  // This will be used for the report download
+  // // Create a snapshot of the latest state for each service_tag on each date
+  // // This will be used for the report download
 
   async function handleDownloadReport() {
     if (!reportDate) {
@@ -269,47 +321,125 @@ function TrackingPage() {
       return;
     }
 
-    // report includes:
-    // - the cumulative snapshot of all systems as of the end of the selected day, for specific active locations
-    // - and the list of systems that were moved to resolved locations on that day
+    console.log(reportDate);
 
+    // Set report "time" as EOD (server’s local timezone) in ZuluISO time
     try {
-      const { stHistoryByDate, stWorkedOnByDate } = await generateReport(
-        history,
-        earliestDate,
-        systems
-      );
-      const matchCumulative = stHistoryByDate.find(
-        (d) => d.date === reportDate
-      );
-      let matchPerDay = null;
-      if (reportMode === "cumulative") {
-        matchPerDay = stHistoryByDate.find((d) => d.date === reportDate);
+      const serverTimeReport = await getServerTime();
+
+      const serverLocalNow = DateTime.fromISO(reportDate, {
+        zone: serverTimeReport.zone,
+      });
+      const reportDT = serverLocalNow
+        .set({ hour: 23, minute: 59, second: 59, millisecond: 0 })
+        .toUTC()
+        .toISO();
+      console.log(reportDT);
+
+      const reportSnapshot = await getSnapshot({
+        date: reportDT,
+        includeNotes: true,
+      });
+
+      let reportServiceTags;
+      let reportData;
+      const locationsToExclude = locations
+        .filter((location) => inactiveLocationIDs.includes(location.id))
+        .map((location) => location.name);
+
+      if (reportMode !== "cumulative") {
+        const todayMidnight = serverLocalNow
+          .startOf("day") // today at 12:00 AM in server timezone
+          .toUTC();
+
+        const filteredSnapshot = reportSnapshot.filter((r) => {
+          const asOfLocal = DateTime.fromISO(r.as_of, {
+            zone: serverTimeReport.zone,
+          });
+          const isExcludedLocation = locationsToExclude.includes(r.location);
+          const isBeforeToday = asOfLocal < todayMidnight;
+          return !(isExcludedLocation && isBeforeToday);
+        });
+        reportServiceTags = filteredSnapshot.map((r) => r.service_tag);
+        reportData = filteredSnapshot;
       } else {
-        matchPerDay = stWorkedOnByDate.find((d) => d.date === reportDate);
+        reportServiceTags = reportSnapshot.map((r) => r.service_tag);
+        reportData = reportSnapshot;
       }
 
-      const cumulativeRows =
-        matchCumulative?.snapshot.filter((row) =>
-          REPORT_CUMULATIVE_LOCATIONS.includes(row.location)
-        ) || [];
+      const { data: filteredSystems } = await fetchSystems({
+        all: true,
+        filters: {
+          op: "AND",
+          conditions: [
+            {
+              field: "service_tag",
+              values: reportServiceTags,
+              op: "IN",
+            },
+          ],
+        },
+      });
+      console.log("filtered", filteredSystems);
 
-      const perDayRows =
-        matchPerDay?.snapshot.filter((row) =>
-          REPORT_PERDAY_LOCATIONS.includes(row.location)
-        ) || [];
-
-      const combinedRows = [...cumulativeRows, ...perDayRows];
-
-      if (combinedRows.length > 0) {
-        downloadCSV(`snapshot_${reportDate}.csv`, combinedRows);
-      } else {
-        showToast("No data for that date", "error", 3000, "top-right");
-      }
+      const report = reportData.map((unit) => {
+        unitData = reportServiceTags.filter(
+          (st) => st.service_tag === unit.service_tag
+        );
+        return {
+          received_on: formatDateHumanReadable(unitData.date_created),
+          service_tag: unit.service_tag,
+          issue: unitData.issue,
+          location: unit.location,
+          last_note: unit.note,
+        };
+      });
     } catch (err) {
       console.error("Failed to generate report", err);
       showToast("Failed to generate report", "error", 3000, "top-right");
     }
+
+    // report includes:
+    // - the cumulative snapshot of all systems as of the end of the selected day, for specific active locations
+    // - and the list of systems that were moved to resolved locations on that day
+
+    // try {
+    //   const { stHistoryByDate, stWorkedOnByDate } = await generateReport(
+    //     history,
+    //     earliestDate,
+    //     systems
+    //   );
+    //   const matchCumulative = stHistoryByDate.find(
+    //     (d) => d.date === reportDate
+    //   );
+    //   let matchPerDay = null;
+    //   if (reportMode === "cumulative") {
+    //     matchPerDay = stHistoryByDate.find((d) => d.date === reportDate);
+    //   } else {
+    //     matchPerDay = stWorkedOnByDate.find((d) => d.date === reportDate);
+    //   }
+
+    //   const cumulativeRows =
+    //     matchCumulative?.snapshot.filter((row) =>
+    //       REPORT_CUMULATIVE_LOCATIONS.includes(row.location)
+    //     ) || [];
+
+    //   const perDayRows =
+    //     matchPerDay?.snapshot.filter((row) =>
+    //       REPORT_PERDAY_LOCATIONS.includes(row.location)
+    //     ) || [];
+
+    //   const combinedRows = [...cumulativeRows, ...perDayRows];
+
+    //   if (combinedRows.length > 0) {
+    //     downloadCSV(`snapshot_${reportDate}.csv`, combinedRows);
+    //   } else {
+    //     showToast("No data for that date", "error", 3000, "top-right");
+    //   }
+    // } catch (err) {
+    //   console.error("Failed to generate report", err);
+    //   showToast("Failed to generate report", "error", 3000, "top-right");
+    // }
   }
 
   const fetchSystemsWithFlags = useCallback(
@@ -350,18 +480,24 @@ function TrackingPage() {
         </div>
 
         {loading ? (
-          <LoadingSkeleton rows={6} />
+          <LoadingSkeleton rows={10} />
         ) : error ? (
           <div className="text-red-600">{error}</div>
         ) : (
           <>
             <SystemLocationsChart
-              fetchSystems={fetchSystems}
-              fetchHistory={fetchHistory}
+              snapshot={snapshot}
+              history={locationChartHistory}
               locations={locations}
+              activeLocationIDs={activeLocationIDs}
               serverTime={serverTime}
             />
-            <SystemsCreatedChart history={history} />
+            <SystemInOutChart
+              history={InOutChartHistory}
+              locations={locations}
+              activeLocationIDs={activeLocationIDs}
+              serverTime={serverTime}
+            />
 
             <div className="flex justify-end gap-4 mt-4">
               <label className="flex items-center gap-2 text-sm">

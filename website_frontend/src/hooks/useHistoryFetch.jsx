@@ -72,7 +72,7 @@ export function useHistoryFetch() {
 
     const formatted = rows.map((h) => ({
       ...h,
-      changed_at: formatDateHumanReadable(h.changed_at),
+      // changed_at: formatDateHumanReadable(h.changed_at),
     }));
 
     if (all) {

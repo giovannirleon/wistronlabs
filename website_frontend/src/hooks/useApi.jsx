@@ -201,7 +201,7 @@ function useApi() {
       method: "DELETE",
     });
 
-  const moveSystemToProcessed = async (service_tag, issue, note) => {
+  const moveSystemToReceived = async (service_tag, issue, note) => {
     // First fetch: move system
     const updateLocation = await fetchJSON(`/systems/${service_tag}/location`, {
       method: "PATCH",
@@ -231,15 +231,19 @@ function useApi() {
    * @param {string[]|string} [options.locations] - Optional array or comma-separated string of locations to filter
    * @returns {Promise<Array>} snapshot data
    */
-  const getSnapshot = ({ date, locations } = {}) => {
+  const getSnapshot = ({ date, locations, includeNotes = false } = {}) => {
     if (!date) throw new Error("getSnapshot requires a `date` parameter");
 
     const params = { date };
+
     if (locations) {
       params.locations = Array.isArray(locations)
         ? locations.join(",")
         : locations;
     }
+
+    // Add the toggle
+    params.includeNotes = includeNotes ? "true" : "false";
 
     const qs = buildQueryString(params);
     return fetchJSON(`/systems/snapshot${qs}`);
@@ -261,7 +265,7 @@ function useApi() {
     createStation,
     updateStation,
     deleteStation,
-    moveSystemToProcessed,
+    moveSystemToReceived,
     getHistoryById,
     getServerTime,
     getSnapshot,

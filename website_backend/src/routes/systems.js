@@ -245,7 +245,7 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/snapshot", async (req, res) => {
-  const { date, locations } = req.query;
+  const { date, locations, includeNote } = req.query;
 
   if (!date) {
     return res
@@ -253,11 +253,13 @@ router.get("/snapshot", async (req, res) => {
       .json({ error: "Missing required `date` query param" });
   }
 
-  const cacheKey = `${date}:${locations || ""}`;
+  const includeNoteFlag =
+    includeNote === "true" || includeNote === "1" || includeNote === true;
+
+  const cacheKey = `${date}:${locations || ""}:${includeNoteFlag}`;
 
   const cached = snapshotCache.get(cacheKey);
   if (cached) {
-    // reset TTL to keep it alive another 5 mins
     snapshotCache.ttl(cacheKey, 300);
     return res.json(cached);
   }
@@ -274,6 +276,9 @@ router.get("/snapshot", async (req, res) => {
     }
   }
 
+  const selectNote = includeNoteFlag ? `, h.note` : ``;
+  const subqueryNote = includeNoteFlag ? `, h.note` : ``;
+
   try {
     const snapshotResult = await db.query(
       `
@@ -282,15 +287,17 @@ router.get("/snapshot", async (req, res) => {
         s.issue,
         l.name AS location,
         h.changed_at AS as_of
+        ${selectNote}
       FROM system s
       JOIN (
-          SELECT DISTINCT ON (h.system_id)
-            h.system_id,
-            h.to_location_id,
-            h.changed_at
-          FROM system_location_history h
-          WHERE h.changed_at <= $1
-          ORDER BY h.system_id, h.changed_at DESC
+        SELECT DISTINCT ON (h.system_id)
+          h.system_id,
+          h.to_location_id,
+          h.changed_at
+          ${subqueryNote}
+        FROM system_location_history h
+        WHERE h.changed_at <= $1
+        ORDER BY h.system_id, h.changed_at DESC
       ) h ON h.system_id = s.id
       JOIN location l ON h.to_location_id = l.id
       WHERE 1=1
