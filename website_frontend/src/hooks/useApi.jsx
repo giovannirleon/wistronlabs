@@ -19,25 +19,14 @@ function useApi() {
     // Build a *local* Date using server values
     const serverLocal = new Date(year, month - 1, day, hour, minute, second);
 
-    // Get what UTC time that Date corresponds to
-    const utcYear = serverLocal.getUTCFullYear();
-    const utcMonth = serverLocal.getUTCMonth();
-    const utcDate = serverLocal.getUTCDate();
-    const utcHour = serverLocal.getUTCHours();
-    const utcMinute = serverLocal.getUTCMinutes();
-    const utcSecond = serverLocal.getUTCSeconds();
-
-    // Compare to local to get offset
+    // Compare to UTC to get offset
     const offsetMinutes =
-      (serverLocal.getHours() - utcHour) * 60 +
-      (serverLocal.getMinutes() - utcMinute);
+      (serverLocal.getHours() - serverLocal.getUTCHours()) * 60 +
+      (serverLocal.getMinutes() - serverLocal.getUTCMinutes());
 
     const offsetHours = offsetMinutes / 60;
 
-    const sign = offsetHours >= 0 ? "+" : "-";
-    const absOffset = Math.abs(offsetHours);
-
-    return `${sign}${absOffset}`;
+    return offsetHours; // e.g., -5 for CST
   }
 
   async function fetchJSON(endpoint, options = {}) {

@@ -23,6 +23,7 @@ router.get("/time", (req, res) => {
     timestamp: now.getTime(), // epoch ms
     isoTime: now.toISOString(), // ISO in UTC
     localtime: cstTime, // human-readable CST/CDT
+    zone: "America/Chicago",
   };
 
   res.json(response);

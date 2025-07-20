@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 
+import { DateTime } from "luxon";
+
 import toZuluIso from "../utils/toZuluISO.js";
+import formatDateYYYYMMDD from "../utils/formatYYYYMMDD.js";
 import useApi from "../hooks/useApi.jsx";
 
 import {
@@ -57,40 +60,56 @@ function SystemLocationsChart({
           .filter((loc) => activeLocationIDs.includes(loc.id))
           .map((loc) => loc.name);
 
-        // get server time and date and just convert it to YYYY-MM-DD (what snapshot needs)
-        const date = new Date(serverTime.localtime);
+        // get server time and date (shows as "07/19/2025, 06:05:18 PM")
+        const snapshotDate = new Date(serverTime.localtime);
+        const historyBeginningDate = new Date(serverTime.localtime);
 
-        date.setDate(date.getDate() - (days - 1));
-        const yyyy = date.getFullYear();
-        const mm = String(date.getMonth() + 1).padStart(2, "0");
-        const dd = String(date.getDate()).padStart(2, "0");
+        // sets the snapshotDate to 7 days prior at EOD (in the servers local time)
+        snapshotDate.setDate(snapshotDate.getDate() - (days - 1));
 
-        const beginningDate = `${yyyy}-${mm}-${dd}`;
-        //need to get Zulu ISO datetime since that is what the backend /systems/history takes
-        const beginningDateZISO = toZuluIso(
-          beginningDate,
-          "11:59:59 PM",
-          Number(serverTime.utcOffset)
+        // sets the snapshotDate to 7 days prior at EOD (in the servers local time)
+        historyBeginningDate.setDate(
+          historyBeginningDate.getDate() - (days - 2)
         );
-        console.log(serverTime);
-        console.log(beginningDateZISO);
-        const activeLocationSnapshotFirstDay = await getSnapshot({
-          date: beginningDate,
-          locations: activeLocationNames,
-        });
 
-        console.log(activeLocationSnapshotFirstDay);
+        //need to get Zulu ISO datetime since that is what the backend /systems/history takes
+        // server local time also includes a UTC offset which is a number
+        const snapshotDateZISO = toZuluIso(
+          formatDateYYYYMMDD(snapshotDate),
+          "23:59:59",
+          serverTime.utcOffset
+        );
 
-        const { data: historyFromActiveLocations } = await fetchHistory({
-          all: true,
-          filters: {
-            op: "AND",
-            conditions: [
-              { field: "changed_at", values: beginningDateZISO, op: ">=" },
-            ],
-          },
-        });
-        console.log("historyFromActiveLocations", historyFromActiveLocations);
+        const historyBeginningDateZISO = toZuluIso(
+          formatDateYYYYMMDD(historyBeginningDate),
+          "00:00:00",
+          serverTime.utcOffset
+        );
+
+        console.log("server local time", serverTime);
+        console.log("snapshotDate", snapshotDate);
+        console.log("historyBeginningDate", historyBeginningDate);
+
+        console.log("snapshotDateZISO", snapshotDateZISO);
+        console.log("historyBeginningDateZISO", historyBeginningDateZISO);
+        //console.log(beginningDateZISO);
+        // const activeLocationSnapshotFirstDay = await getSnapshot({
+        //   date: beginningDate,
+        //   locations: activeLocationNames,
+        // });
+
+        // console.log(activeLocationSnapshotFirstDay);
+
+        // const { data: historyFromActiveLocations } = await fetchHistory({
+        //   all: true,
+        //   filters: {
+        //     op: "AND",
+        //     conditions: [
+        //       { field: "changed_at", values: [beginningDateZISO], op: ">=" },
+        //     ],
+        //   },
+        // });
+        // console.log("historyFromActiveLocations", historyFromActiveLocations);
       } catch (err) {
         console.error("Failed to fetch history:", err);
         setError("Failed to load history.");
