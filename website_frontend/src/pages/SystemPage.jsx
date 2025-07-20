@@ -330,7 +330,7 @@ function SystemPage() {
               </div>
             </div>
 
-            <div className="max-w-3/4 mx-auto overflow-x-auto">
+            <div className="max-w-3/4 2xl:max-w-5/8 mx-auto overflow-x-auto">
               <Flowchart
                 currentLocation_id={
                   locations.find((l) => l.name === currentLocation)?.id || 1
