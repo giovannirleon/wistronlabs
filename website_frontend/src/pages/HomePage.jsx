@@ -10,6 +10,8 @@ import Table from "../components/Table";
 import { formatDateHumanReadable } from "../utils/date_format";
 
 function HomePage() {
+  const FRONTEND_URL = import.meta.env.VITE_URL;
+
   const { getStations } = useApi();
   const [stations, setStations] = useState([]);
   const [downloads, setDownloads] = useState([]);
@@ -19,8 +21,8 @@ function HomePage() {
 
   const baseUrl =
     import.meta.env.MODE === "development"
-      ? "http://html.tss.wistronlabs.com" // is "/l10_logs/" in development
-      : "https://tss.wistronlabs.com"; // is "/l10_logs/" in production
+      ? FRONTEND_URL // is "/l10_logs/" in development
+      : FRONTEND_URL; // is "/l10_logs/" in production
 
   const fetchStations = async () => {
     try {
