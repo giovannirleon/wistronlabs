@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
+const API_BASE = `${import.meta.env.VITE_BACKEND_URL}/auth`;
 
 export const loginUser = async (username, password) => {
   const res = await axios.post(
