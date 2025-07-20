@@ -24,6 +24,8 @@ import useToast from "../hooks/useToast.jsx";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 
 function SystemPage() {
+  const FRONTEND_URL = import.meta.env.VITE_URL;
+
   const { serviceTag } = useParams();
 
   const [history, setHistory] = useState([]);
@@ -236,7 +238,7 @@ function SystemPage() {
         systems={[
           {
             service_tag: system.service_tag,
-            url: `https://tss.wistronlabs.com/${system.service_tag}`,
+            url: `${FRONTEND_URL}${system.service_tag}`,
           },
         ]} // pass as array
       />
