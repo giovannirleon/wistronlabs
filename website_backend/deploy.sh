@@ -51,7 +51,7 @@ for loc in $selected; do
     # Backup database on remote server
     echo "Creating PostgreSQL database backup on $loc..."
     if ! ssh -o BatchMode=yes "$USER@$loc.$BASE_URL" \
-        "docker exec -t website_backend-db-1 pg_dump -U postgres mydb > /opt/docker/database_backups/db_backup_$(date +%Y%m%d_%H%M%S).sql"; then
+        "sudo docker exec -t website_backend-db-1 pg_dump -U postgres mydb > /opt/docker/database_backups/db_backup_$(date +%Y%m%d_%H%M%S).sql"; then
         echo "ERROR: Failed to create database backup on $loc"
         exit 1
     fi
