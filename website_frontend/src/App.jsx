@@ -14,8 +14,15 @@ import HistoryPage from "./pages/HistoryPage";
 import ScrollToTop from "./helpers/ScrollToTop";
 
 import "./styles/datepicker.css";
+import { useEffect } from "react";
 
 function App() {
+  const LOCATION = import.meta.env.VITE_LOCATION;
+
+  useEffect(() => {
+    document.title = `${LOCATION} Dashboard`;
+  }, []);
+
   return (
     <>
       <div className="bg-gray-100 min-h-screen text-gray-800 font-roboto pb-10">

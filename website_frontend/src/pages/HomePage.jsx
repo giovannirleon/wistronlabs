@@ -11,6 +11,7 @@ import { formatDateHumanReadable } from "../utils/date_format";
 
 function HomePage() {
   const FRONTEND_URL = import.meta.env.VITE_URL;
+  const LOCATION = import.meta.env.VITE_LOCATION;
 
   const { getStations } = useApi();
   const [stations, setStations] = useState([]);
@@ -115,26 +116,62 @@ function HomePage() {
         <h1 className="text-2xl font-semibold mb-6">Station Status</h1>
 
         <div className="flex flex-col md:flex-row justify-between gap-8 mt-8 w-full">
-          {/* Left Column */}
-          <div className="flex flex-col w-full">
-            <Table
-              stations={stations}
-              stationNumbers={[1, 2]}
-              tableNumber={1}
-              link={true}
-            />
-            <Table
-              stations={stations}
-              stationNumbers={[3, 4]}
-              tableNumber={2}
-              link={true}
-            />
-          </div>
+          {LOCATION === "TSS" ? (
+            <>
+              <div className="flex flex-col w-full">
+                <Table
+                  stations={stations}
+                  stationNumbers={[1, 2]}
+                  tableNumber={1}
+                  link={true}
+                />
+                <Table
+                  stations={stations}
+                  stationNumbers={[3, 4]}
+                  tableNumber={2}
+                  link={true}
+                />
+              </div>
 
-          {/* Right Column */}
-          <div className="flex flex-col w-full">
-            <Rack stations={stations} rackNumber={1} link={true} />
-          </div>
+              {/* Right Column */}
+              <div className="flex flex-col w-full">
+                <Rack stations={stations} rackNumber={1} link={true} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col w-full">
+                <Table
+                  stations={stations}
+                  stationNumbers={[1, 2]}
+                  tableNumber={1}
+                  link={true}
+                />
+                <Table
+                  stations={stations}
+                  stationNumbers={[3, 4]}
+                  tableNumber={2}
+                  link={true}
+                />
+              </div>
+
+              {/* Right Column */}
+              <div className="flex flex-col w-full">
+                <Table
+                  stations={stations}
+                  stationNumbers={[5, 6]}
+                  tableNumber={3}
+                  link={true}
+                />
+                <Table
+                  stations={stations}
+                  stationNumbers={[7, 8]}
+                  tableNumber={4}
+                  link={true}
+                />
+              </div>
+            </>
+          )}
         </div>
       </main>
       {/* Available Downloads */}

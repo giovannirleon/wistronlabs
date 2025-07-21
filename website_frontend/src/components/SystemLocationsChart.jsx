@@ -18,6 +18,8 @@ function computeActiveLocationsPerDay(
   activeLocationNames,
   timezone
 ) {
+  console.log("activeLocationNames", activeLocationNames);
+
   function normalize(entry) {
     return {
       tag: entry.service_tag,
@@ -26,16 +28,6 @@ function computeActiveLocationsPerDay(
     };
   }
 
-  const activeState = new Map();
-
-  snapshot.forEach((entry) => {
-    const { tag, loc } = normalize(entry);
-    if (activeLocationNames.includes(loc)) {
-      activeState.set(tag, loc);
-    }
-  });
-
-  const inactiveTags = new Set();
   const historyByDay = new Map();
   let minDay = null;
   let maxDay = null;
@@ -55,10 +47,10 @@ function computeActiveLocationsPerDay(
     if (!historyByDay.has(dayKey)) historyByDay.set(dayKey, new Map());
     const tagMap = historyByDay.get(dayKey);
 
-    const existing = tagMap.get(tag);
-    if (!existing || DateTime.fromISO(existing.ts) < dt) {
-      tagMap.set(tag, { tag, loc, ts });
+    if (!tagMap.has(tag)) {
+      tagMap.set(tag, []);
     }
+    tagMap.get(tag).push({ tag, loc, ts });
   });
 
   if (!minDay || !maxDay) {
@@ -70,35 +62,60 @@ function computeActiveLocationsPerDay(
   });
   const today = DateTime.now().setZone(timezone).startOf("day");
 
+  if (maxDay > today.toISODate()) {
+    console.warn(
+      `⚠️ maxDay (${maxDay}) is ahead of today (${today.toISODate()}), clamping`
+    );
+    maxDay = today.toISODate();
+  }
+
   let endDay = DateTime.fromISO(maxDay, { zone: timezone });
   if (endDay < today) {
-    endDay = today; // ensure we cover up to today
+    endDay = today;
   }
+
+  console.log("📅 snapshotDay:", snapshotDay.toISODate());
+  console.log("📅 minDay (first history):", minDay);
+  console.log("📅 maxDay (last history):", maxDay);
+  console.log("📅 today:", today.toISODate());
+  console.log("📅 endDay (inclusive):", endDay.toISODate());
 
   const results = [];
 
-  let currentState = new Map(activeState);
+  let currentState = new Map();
 
-  results.push({
-    date: snapshotDay.toISODate(),
-    counts: countState(currentState, activeLocationNames),
-  });
+  if (snapshot.length > 0) {
+    snapshot.forEach((entry) => {
+      const { tag, loc } = normalize(entry);
+      if (activeLocationNames.includes(loc)) {
+        currentState.set(tag, loc);
+      }
+    });
 
-  let day = snapshotDay.plus({ days: 1 });
+    results.push({
+      date: snapshotDay.toISODate(),
+      counts: countState(currentState, activeLocationNames),
+    });
+  }
+
+  let day =
+    snapshot.length > 0
+      ? snapshotDay.plus({ days: 1 })
+      : DateTime.fromISO(minDay, { zone: timezone });
 
   while (day <= endDay) {
     const dayKey = day.toISODate();
 
     if (historyByDay.has(dayKey)) {
       const changes = historyByDay.get(dayKey);
-      for (const { tag, loc } of changes.values()) {
-        if (inactiveTags.has(tag)) continue;
-
-        if (!activeLocationNames.includes(loc)) {
-          currentState.delete(tag);
-          inactiveTags.add(tag);
-        } else {
-          currentState.set(tag, loc);
+      for (const events of changes.values()) {
+        events.sort((a, b) => DateTime.fromISO(a.ts) - DateTime.fromISO(b.ts));
+        for (const { tag, loc } of events) {
+          if (!activeLocationNames.includes(loc)) {
+            currentState.delete(tag);
+          } else {
+            currentState.set(tag, loc);
+          }
         }
       }
     }
@@ -139,7 +156,7 @@ function SystemLocationsChart({
     .map((loc) => loc.name);
 
   const historyByDay = React.useMemo(() => {
-    if (!snapshot.length || !history.length) return null;
+    if (!history.length) return null;
     return computeActiveLocationsPerDay(
       snapshot,
       history,
@@ -148,6 +165,7 @@ function SystemLocationsChart({
     );
   }, [snapshot, history, activeLocationNames, serverTime.zone]);
 
+  console.log("chartData", history);
   if (!historyByDay) return <div>No data</div>;
 
   // Flatten for Recharts

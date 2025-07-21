@@ -85,19 +85,24 @@ function TrackingPage() {
         { zone: serverTimeData.zone }
       );
 
+      let activeLocationSnapshotFirstDay,
+        historyData,
+        historyBeginningDateTime = null;
+
+      //for (let daysBack = chartDays - 1; daysBack >= 0; daysBack--) {
       const snapshotDate = serverLocalNow
         .minus({ days: chartDays - 1 })
-        .set({ hour: 23, minute: 59, second: 59, millisecond: 0 })
+        .set({ hour: 23, minute: 59, second: 59, millisecond: 59 })
         .toUTC()
         .toISO();
 
-      const historyBeginningDateTime = serverLocalNow
+      historyBeginningDateTime = serverLocalNow
         .minus({ days: chartDays - 1 })
         .set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
 
       const historyBeginningDateISO = historyBeginningDateTime.toUTC().toISO();
 
-      const [activeLocationSnapshotFirstDay, historyData] = await Promise.all([
+      [activeLocationSnapshotFirstDay, historyData] = await Promise.all([
         getSnapshot({ date: snapshotDate, locations: activeLocationNames }),
         fetchHistory({
           all: true,
@@ -114,18 +119,28 @@ function TrackingPage() {
         }).then((res) => res.data),
       ]);
 
+      //   if (
+      //     activeLocationSnapshotFirstDay &&
+      //     activeLocationSnapshotFirstDay.length > 0
+      //   ) {
+      //     break;
+      //   }
+      // }
+
       // cutoff for Location Chart: *one day after historyBeginningDateTime*
-      const locationChartHistoryCutoffDateTime = historyBeginningDateTime.plus({
-        days: 1,
-      });
+      const locationChartHistoryCutoffDateTime = historyBeginningDateTime
+        .plus({
+          days: 1,
+        })
+        .toUTC()
+        .toISO();
 
       const filteredHistory = historyData.filter((h) => {
-        const dt = DateTime.fromISO(h.changed_at, { zone: "utc" }).setZone(
-          serverTimeData.zone
-        );
+        const dt = DateTime.fromISO(h.changed_at, { zone: "utc" }).toISO();
         return dt >= locationChartHistoryCutoffDateTime;
       });
-
+      console.log("historyData", filteredHistory);
+      console.log("snapshot data", activeLocationSnapshotFirstDay);
       setLocations(locationsData);
       setInOutChartHistory(historyData);
       setLocationChartHistory(filteredHistory);

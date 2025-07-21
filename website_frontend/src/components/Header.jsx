@@ -3,6 +3,8 @@ import { AuthContext } from "../context/AuthContext";
 import { Link, useLocation } from "react-router-dom";
 
 function Header() {
+  const LOCATION = import.meta.env.VITE_LOCATION;
+
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -22,7 +24,7 @@ function Header() {
           className="h-[25px] md:h-[30px]"
         />
         <h1 className="text-[1.5rem] md:text-[1.8rem] font-medium pt-1">
-          TSS Dashboard
+          {LOCATION} Dashboard
         </h1>
       </div>
 
