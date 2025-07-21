@@ -2,7 +2,7 @@
 
 # Backend deploy script with structured output and fzf location selection
 
-LOCATIONS=("TSS")  # adjust if you really deploy backend to multiple locations
+LOCATIONS=("TSS" "FRK")  # adjust if you really deploy backend to multiple locations
 BASE_URL="wistronlabs.com"
 USER="falab"
 
