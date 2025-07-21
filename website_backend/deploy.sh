@@ -10,6 +10,12 @@ echo "============================================================"
 echo "Checking for unstaged or uncommitted changes in git..."
 echo "============================================================"
 
+# Check that fzf is installed
+if ! command -v fzf >/dev/null 2>&1; then
+    echo "ERROR: fzf is not installed. Please install fzf and try again."
+    exit 1
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "ERROR: You have unstaged or uncommitted changes."
     echo ""
