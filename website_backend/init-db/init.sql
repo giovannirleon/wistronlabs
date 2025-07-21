@@ -42,9 +42,7 @@ CREATE TABLE system_location_history (
     system_id INT NOT NULL REFERENCES system(id) ON DELETE CASCADE,
     from_location_id INT REFERENCES location(id),
     to_location_id INT NOT NULL REFERENCES location(id),
-    moved_by INT NOT NULL DEFAULT (
-        (SELECT id FROM users WHERE username = 'deleted_user@example.com')
-    ),
+    moved_by INT NOT NULL DEFAULT 1,
     note TEXT NOT NULL,
     changed_at TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_moved_by FOREIGN KEY (moved_by) REFERENCES users(id) ON DELETE SET DEFAULT
