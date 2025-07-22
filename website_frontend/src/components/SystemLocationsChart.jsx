@@ -18,8 +18,6 @@ function computeActiveLocationsPerDay(
   activeLocationNames,
   timezone
 ) {
-  console.log("activeLocationNames", activeLocationNames);
-
   function normalize(entry) {
     return {
       tag: entry.service_tag,
@@ -73,12 +71,6 @@ function computeActiveLocationsPerDay(
   if (endDay < today) {
     endDay = today;
   }
-
-  console.log("📅 snapshotDay:", snapshotDay.toISODate());
-  console.log("📅 minDay (first history):", minDay);
-  console.log("📅 maxDay (last history):", maxDay);
-  console.log("📅 today:", today.toISODate());
-  console.log("📅 endDay (inclusive):", endDay.toISODate());
 
   const results = [];
 
@@ -165,7 +157,6 @@ function SystemLocationsChart({
     );
   }, [snapshot, history, activeLocationNames, serverTime.zone]);
 
-  console.log("chartData", history);
   if (!historyByDay) return <div>No data</div>;
 
   // Flatten for Recharts

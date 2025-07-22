@@ -63,6 +63,7 @@ function TrackingPage() {
     moveSystemToReceived,
     getServerTime,
     getSnapshot,
+    getSystemHistory,
   } = useApi();
 
   const fetchData = async () => {
@@ -376,18 +377,51 @@ function TrackingPage() {
         },
       });
 
+      const lastReceivedMap = new Map();
+
+      for (const tag of reportServiceTags) {
+        const historyResponse = await getSystemHistory(tag);
+        const history = Array.isArray(historyResponse) ? historyResponse : [];
+
+        console.log(`for ST ${tag}`, history);
+
+        const reportDTMillis = DateTime.fromISO(reportDT).toMillis();
+
+        const locationOneName = locations.find(
+          (location) => location.id === 1
+        )?.name;
+
+        const lastReceivedEvent = history
+          .filter(
+            (e) => DateTime.fromISO(e.changed_at).toMillis() <= reportDTMillis
+          ) // only events on/before reportDT
+          .sort(
+            (a, b) =>
+              DateTime.fromISO(b.changed_at).toMillis() -
+              DateTime.fromISO(a.changed_at).toMillis()
+          ) // newest → oldest
+          .find((e) => e.to_location === locationOneName);
+
+        if (lastReceivedEvent) {
+          lastReceivedMap.set(tag, lastReceivedEvent.changed_at);
+        }
+      }
+
       const report = reportData.map((unit) => {
         const unitData = filteredSystems.find(
           (fs) => fs.service_tag === unit.service_tag
         );
         return {
-          received_on: unitData
+          "First Received On": unitData
             ? formatDateHumanReadable(unitData.date_created)
             : null,
-          service_tag: unit.service_tag,
-          issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
-          location: unit.location,
-          last_note: unit.note,
+          "Last Received On": lastReceivedMap.has(unit.service_tag)
+            ? formatDateHumanReadable(lastReceivedMap.get(unit.service_tag))
+            : null,
+          "Service Tag": unit.service_tag,
+          Issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
+          Location: unit.location,
+          "Last Note": unit.note,
         };
       });
 
