@@ -149,8 +149,14 @@ function HomePage() {
                 />
                 <Table
                   stations={stations}
-                  stationNumbers={[3, 4]}
-                  tableNumber={2}
+                  stationNumbers={[5, 6]}
+                  tableNumber={3}
+                  link={true}
+                />
+                <Table
+                  stations={stations}
+                  stationNumbers={[9, 10]}
+                  tableNumber={5}
                   link={true}
                 />
               </div>
@@ -159,8 +165,8 @@ function HomePage() {
               <div className="flex flex-col w-full">
                 <Table
                   stations={stations}
-                  stationNumbers={[5, 6]}
-                  tableNumber={3}
+                  stationNumbers={[3, 4]}
+                  tableNumber={2}
                   link={true}
                 />
                 <Table
