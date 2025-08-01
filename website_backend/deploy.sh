@@ -42,12 +42,10 @@ while true; do
     fi
 done
 
-rm -r node_modules > /dev/null
-rm package-lock.json > /dev/null
+rm -rf node_modules package-lock.json >/dev/null 2>&1
 
 # Loop through each selected location
 for loc in $selected; do
-
     echo ""
     echo "============================================================"
     echo ">>> Starting backend deployment for: $loc"
@@ -63,21 +61,16 @@ for loc in $selected; do
     fi
     echo "Database backup created on $loc."
 
-    # Clean up remote containers and old code
+    # Stop old backend containers without deleting files
     echo ""
-    echo "Cleaning up old backend containers and code on $loc..."
-    if ! ssh -o BatchMode=yes "$USER@$loc.$BASE_URL" \
-        "cd /opt/docker/website_backend; sudo docker compose down; cd ..; rm -rf website_backend/"; then
-        echo "ERROR: Failed to clean up old backend on $loc"
-        exit 1
-    fi
-    echo "Old backend containers stopped and code removed on $loc."
+    echo "Stopping backend containers on $loc (without deleting files)..."
+    ssh -o BatchMode=yes "$USER@$loc.$BASE_URL" \
+        "cd /opt/docker/website_backend 2>/dev/null && sudo docker compose down || true"
 
-    # Upload new backend code
+    # Upload new backend code using rsync, excluding .env
     echo ""
-    echo "Uploading fresh backend code to $loc..."
+    echo "Uploading fresh backend code to $loc (preserving .env)..."
     cd ..
-    # Use rsync to avoid overwriting .env on remote
     if ! rsync -av --delete --exclude='.env' website_backend/ "$USER@$loc.$BASE_URL:/opt/docker/website_backend/"; then
         echo "ERROR: Failed to upload backend code to $loc"
         exit 1
@@ -85,65 +78,48 @@ for loc in $selected; do
     cd website_backend
     echo "Backend code uploaded to $loc."
 
-
-    # Ensure .env contains DB/port and secrets
-    ENV_FILE="/opt/docker/website_backend/.env"
-
+    # Ensure .env contains DB/port and secrets (only add if missing)
     ssh -o BatchMode=yes "$USER@$loc.$BASE_URL" bash -c "'
     set -e
     cd /opt/docker/website_backend
 
-    # Make sure .env file exists
     [ -f .env ] || touch .env
-
-    # Normalize line endings to avoid grep issues (convert CRLF to LF)
     tr -d \"\\r\" < .env > .env.tmp && mv .env.tmp .env
 
-    # Function to ensure newline at EOF
     ensure_newline() {
-    [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ] && echo >> .env
+      [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ] && echo >> .env
     }
 
     # --- DATABASE_URL ---
-    if grep -q \"^DATABASE_URL=\" .env; then
-    echo \"DATABASE_URL already set.\"
-    else
-    echo \"Setting DATABASE_URL...\"
-    ensure_newline
-    echo \"DATABASE_URL=postgres://postgres:example@db:5432/mydb\" >> .env
+    if ! grep -q \"^DATABASE_URL=\" .env; then
+      echo \"Setting DATABASE_URL...\"
+      ensure_newline
+      echo \"DATABASE_URL=postgres://postgres:example@db:5432/mydb\" >> .env
     fi
 
     # --- PORT ---
-    if grep -q \"^PORT=\" .env; then
-    echo \"PORT already set.\"
-    else
-    echo \"Setting PORT...\"
-    ensure_newline
-    echo \"PORT=3000\" >> .env
+    if ! grep -q \"^PORT=\" .env; then
+      echo \"Setting PORT...\"
+      ensure_newline
+      echo \"PORT=3000\" >> .env
     fi
 
     # --- JWT_SECRET ---
-    if grep -q \"^JWT_SECRET=\" .env; then
-    echo \"JWT_SECRET already set.\"
-    else
-    echo \"Generating new JWT_SECRET...\"
-    SECRET=\$(openssl rand -base64 48)
-    ensure_newline
-    echo \"JWT_SECRET=\$SECRET\" >> .env
+    if ! grep -q \"^JWT_SECRET=\" .env; then
+      echo \"Generating new JWT_SECRET...\"
+      SECRET=\$(openssl rand -base64 48)
+      ensure_newline
+      echo \"JWT_SECRET=\$SECRET\" >> .env
     fi
 
     # --- INTERNAL_API_KEY ---
-    if grep -q \"^INTERNAL_API_KEY=\" .env; then
-    echo \"INTERNAL_API_KEY already set.\"
-    else
-    echo \"Generating new INTERNAL_API_KEY...\"
-    APIKEY=\$(openssl rand -hex 32)
-    ensure_newline
-    echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
+    if ! grep -q \"^INTERNAL_API_KEY=\" .env; then
+      echo \"Generating new INTERNAL_API_KEY...\"
+      APIKEY=\$(openssl rand -hex 32)
+      ensure_newline
+      echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
     fi
     '"
-
-
 
     # Start backend containers
     echo ""
@@ -153,11 +129,11 @@ for loc in $selected; do
         echo "ERROR: Failed to start backend containers on $loc"
         exit 1
     fi
+
     echo ""
     echo "============================================================"
     echo ">>> Backend deployment completed for: $loc"
     echo "============================================================"
-
 done
 
 echo ""
