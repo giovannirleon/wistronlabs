@@ -149,8 +149,8 @@ function decodeDateCode(code) {
 // Map factory codes in PPID to your DB factory codes
 const FACTORY_MAP = {
   WSJ00: "MX", // Juarez
-  HSI00: "A1", // Hsinchu
-  HUK00: "N2", // Hukou
+  WS900: "A1", // Hsinchu
+  WSM00: "N2", // Hukou
 };
 
 function buildWhereClause(filterGroup, params, tableAliases = {}) {

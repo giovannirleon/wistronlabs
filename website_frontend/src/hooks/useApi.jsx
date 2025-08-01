@@ -247,6 +247,18 @@ function useApi() {
     return fetchJSON(`/systems/snapshot${qs}`);
   };
 
+  /**
+   * Update the PPID of a system
+   * @param {string} tag - service_tag
+   * @param {string} ppid - full PPID string
+   */
+  const updateSystemPPID = (tag, ppid) =>
+    fetchJSON(`/systems/${tag}/ppid`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ppid }),
+    });
+
   return {
     getSystems,
     getHistory,
@@ -267,6 +279,7 @@ function useApi() {
     getHistoryById,
     getServerTime,
     getSnapshot,
+    updateSystemPPID,
   };
 }
 

@@ -22,6 +22,7 @@ import useApi from "../hooks/useApi";
 import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast.jsx";
 import useIsMobile from "../hooks/useIsMobile.jsx";
+import useDetailsModal from "../hooks/useDetailsModal.jsx";
 
 function SystemPage() {
   const FRONTEND_URL = import.meta.env.VITE_URL;
@@ -96,6 +97,11 @@ function SystemPage() {
       (station) => station.station_name === selectedStation
     );
   }
+
+  const { openDetails, closeDetails, modal } = useDetailsModal(
+    showToast,
+    fetchData
+  );
 
   const handleDelete = async () => {
     const confirmed = await confirm({
@@ -247,6 +253,20 @@ function SystemPage() {
     window.open(url);
   };
 
+  const handleDetails = () => {
+    if (system) {
+      openDetails({
+        service_tag: system.service_tag,
+        dpn: system.dpn,
+        manufactured_date: system.manufactured_date,
+        serial: system.serial,
+        rev: system.rev,
+        factory_code: system.factory_code,
+        factory_name: system.factory_name,
+      });
+    }
+  };
+
   // Fetch stations every second
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -273,6 +293,7 @@ function SystemPage() {
   return (
     <>
       <ConfirmDialog />
+      {modal}
       <Toast />
       <main className="md:max-w-10/12  mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         {loading ? (
@@ -311,6 +332,13 @@ function SystemPage() {
                   onClick={handlePrint}
                 >
                   Print Label
+                </button>
+                <button
+                  type="button"
+                  className="bg-gray-600 hover:bg-gray-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
+                  onClick={() => openDetails(system)}
+                >
+                  Details
                 </button>
                 <Tooltip
                   text="Please log in to delete a unit"
