@@ -234,7 +234,9 @@ function SystemPage() {
       await fetchData(); // reload updated history
     } catch (err) {
       console.error(err);
-      showToast("Can not update system", "error", 3000, "bottom-right");
+      // Prefer backend error message
+      const message = err.body?.error || err.message;
+      showToast(message, "error", 3000, "bottom-right");
     } finally {
       setSubmitting(false);
     }

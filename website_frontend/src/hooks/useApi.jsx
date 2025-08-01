@@ -40,14 +40,32 @@ function useApi() {
       headers,
     });
 
-    if (!res.ok) {
-      const msg = `API ${endpoint} failed: ${res.status} ${res.statusText}`;
-      console.error(msg);
-      throw new Error(msg);
+    let data = null;
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      data = await res.json();
+    } else {
+      data = await res.text();
     }
 
-    if (res.status === 204) return null; // no content
-    return res.json();
+    if (!res.ok) {
+      // Extract the error message from JSON or text
+      const errMsg =
+        (data && typeof data === "object" && data.error) ||
+        (data && typeof data === "string" && data) ||
+        res.statusText;
+
+      const error = new Error(
+        `API ${endpoint} failed: ${res.status} ${errMsg}`
+      );
+      error.status = res.status;
+      error.body = data;
+      throw error;
+    }
+
+    // Handle no content
+    if (res.status === 204) return null;
+    return data;
   }
 
   // System API
