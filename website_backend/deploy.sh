@@ -94,6 +94,9 @@ for loc in $selected; do
     # Make sure .env file exists
     [ -f .env ] || touch .env
 
+    # Normalize line endings to avoid grep issues (convert CRLF to LF)
+    tr -d \"\\r\" < .env > .env.tmp && mv .env.tmp .env
+
     # Function to ensure newline at EOF
     ensure_newline() {
     [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ] && echo >> .env
@@ -137,6 +140,7 @@ for loc in $selected; do
     echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
     fi
     '"
+
 
 
     # Start backend containers
