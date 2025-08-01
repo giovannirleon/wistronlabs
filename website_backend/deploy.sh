@@ -94,42 +94,39 @@ for loc in $selected; do
     # Make sure .env file exists
     [ -f .env ] || touch .env
 
-    # --- Always ensure DATABASE_URL and PORT ---
-    if ! grep -q \"^DATABASE_URL=\" .env; then
-        echo \"Setting DATABASE_URL...\"
-        sed -i \"/^DATABASE_URL=/d\" .env
-        echo \"DATABASE_URL=postgres://postgres:example@db:5432/mydb\" >> .env
-    else
-        echo \"DATABASE_URL already set.\"
+    # Always ensure .env ends with a newline before appending
+    tail -c1 .env | read -r _ || echo >> .env
+
+    # --- DATABASE_URL ---
+    if ! grep -q "^DATABASE_URL=" .env; then
+        echo "Setting DATABASE_URL..."
+        sed -i "/^DATABASE_URL=/d" .env
+        echo "DATABASE_URL=postgres://postgres:example@db:5432/mydb" >> .env
     fi
 
-    if ! grep -q \"^PORT=\" .env; then
-        echo \"Setting PORT...\"
-        sed -i \"/^PORT=/d\" .env
-        echo \"PORT=3000\" >> .env
-    else
-        echo \"PORT already set.\"
+    # --- PORT ---
+    if ! grep -q "^PORT=" .env; then
+        echo "Setting PORT..."
+        sed -i "/^PORT=/d" .env
+        echo "PORT=3000" >> .env
     fi
 
-    # --- Generate JWT_SECRET if missing ---
-    if ! grep -q \"^JWT_SECRET=\" .env; then
-        echo \"Generating new JWT_SECRET...\"
-        SECRET=\$(openssl rand -base64 48)
-        sed -i \"/^JWT_SECRET=/d\" .env
-        echo \"JWT_SECRET=\$SECRET\" >> .env
-    else
-        echo \"JWT_SECRET already set.\"
+    # --- JWT_SECRET ---
+    if ! grep -q "^JWT_SECRET=" .env; then
+        echo "Generating new JWT_SECRET..."
+        SECRET=$(openssl rand -base64 48)
+        sed -i "/^JWT_SECRET=/d" .env
+        echo "JWT_SECRET=$SECRET" >> .env
     fi
 
-    # --- Generate INTERNAL_API_KEY if missing ---
-    if ! grep -q \"^INTERNAL_API_KEY=\" .env; then
-        echo \"Generating new INTERNAL_API_KEY...\"
-        APIKEY=\$(openssl rand -hex 32)
-        sed -i \"/^INTERNAL_API_KEY=/d\" .env
-        echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
-    else
-        echo \"INTERNAL_API_KEY already set.\"
+    # --- INTERNAL_API_KEY ---
+    if ! grep -q "^INTERNAL_API_KEY=" .env; then
+        echo "Generating new INTERNAL_API_KEY..."
+        APIKEY=$(openssl rand -hex 32)
+        sed -i "/^INTERNAL_API_KEY=/d" .env
+        echo "INTERNAL_API_KEY=$APIKEY" >> .env
     fi
+
     '"
 
 
