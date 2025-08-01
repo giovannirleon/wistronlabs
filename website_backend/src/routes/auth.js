@@ -15,7 +15,7 @@ function isValidEmail(email) {
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is not set in environment variables");
 }
-const JWT_SECRET = process.env.JWT_SECRET;
+const { JWT_SECRET, INTERNAL_API_KEY } = process.env.JWT_SECRET;
 
 // Helper
 function generateAccessToken(payload) {
@@ -235,21 +235,22 @@ router.get("/me", authenticateToken, (req, res) => {
   res.json({ message: "Authenticated", user: req.user });
 });
 
-// 🔷 Middleware: Authenticate JWT
+// 🔷 Middleware: Authenticate JWT or internal API key
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
-
-  // if (!token) {
-  //   // fallback userId of deleted_user
-  //   req.user = { userId: DELETED_USER_ID };
-  //   return next();
-  // }
 
   if (!token) {
     return res.status(401).json({ error: "Missing token" });
   }
 
+  // Check for internal key first
+  if (token === INTERNAL_API_KEY) {
+    req.user = { userId: -1, username: "internal_script" };
+    return next();
+  }
+
+  // Otherwise, verify as JWT
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       return res.status(403).json({ error: "Invalid or expired token" });
