@@ -77,12 +77,14 @@ for loc in $selected; do
     echo ""
     echo "Uploading fresh backend code to $loc..."
     cd ..
-    if ! scp -r website_backend/ "$USER@$loc.$BASE_URL:/opt/docker"; then
+    # Use rsync to avoid overwriting .env on remote
+    if ! rsync -av --delete --exclude='.env' website_backend/ "$USER@$loc.$BASE_URL:/opt/docker/website_backend/"; then
         echo "ERROR: Failed to upload backend code to $loc"
         exit 1
     fi
     cd website_backend
     echo "Backend code uploaded to $loc."
+
 
     # Ensure .env contains DB/port and secrets
     ENV_FILE="/opt/docker/website_backend/.env"
