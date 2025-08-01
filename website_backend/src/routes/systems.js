@@ -130,7 +130,6 @@ async function assignSystemToPallet(system_id, factory_id, client) {
 
 // ---- PPID HELPERS ----
 
-// Decode Dell PPID date code (e.g., "54I")
 function decodeDateCode(code) {
   if (!code || code.length !== 3) return null;
   const [y, m, d] = code.split("");
@@ -139,11 +138,12 @@ function decodeDateCode(code) {
       ? parseInt(c, 10)
       : c.charCodeAt(0) - "A".charCodeAt(0) + 10;
 
-  return {
-    year: 2020 + parseInt(y, 10),
-    month: decodeChar(m), // no -1
-    day: decodeChar(d), // no -1
-  };
+  const year = 2020 + parseInt(y, 10);
+  const month = decodeChar(m);
+  const day = decodeChar(d);
+
+  // Return a JavaScript Date object
+  return new Date(year, month - 1, day);
 }
 
 // Example:
