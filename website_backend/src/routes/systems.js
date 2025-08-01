@@ -259,7 +259,7 @@ router.get("/", async (req, res) => {
             manufactured_date: "s.manufactured_date",
             serial: "s.serial",
             rev: "s.rev",
-            factory: "f.code", // add factory filter support
+            factory: "f.code",
           })}`
         : "";
   }
@@ -297,6 +297,7 @@ router.get("/", async (req, res) => {
       db.query(
         `
         SELECT 
+          s.id,
           s.service_tag,
           s.issue,
           s.dpn,
@@ -311,7 +312,7 @@ router.get("/", async (req, res) => {
           last_history.changed_at AS date_modified
         FROM system s
         JOIN location l ON s.location_id = l.id
-        LEFT JOIN factory f ON s.factory_id = f.id  -- join factory here
+        LEFT JOIN factory f ON s.factory_id = f.id
 
         -- first history entry per system
         LEFT JOIN LATERAL (
