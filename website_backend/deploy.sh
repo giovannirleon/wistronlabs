@@ -94,46 +94,51 @@ for loc in $selected; do
     # Make sure .env file exists
     [ -f .env ] || touch .env
 
-    # Always ensure .env ends with a newline before appending
-    if [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ]; then
-        echo >> .env
-    fi
+    # Function to ensure newline at EOF
+    ensure_newline() {
+    [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ] && echo >> .env
+    }
 
     # --- DATABASE_URL ---
-    if ! grep -q \"^DATABASE_URL=\" .env; then
-        echo \"Setting DATABASE_URL...\"
-        sed -i \"/^DATABASE_URL=/d\" .env
-        echo \"DATABASE_URL=postgres://postgres:example@db:5432/mydb\" >> .env
+    if grep -q \"^DATABASE_URL=\" .env; then
+    echo \"DATABASE_URL already set.\"
+    else
+    echo \"Setting DATABASE_URL...\"
+    ensure_newline
+    echo \"DATABASE_URL=postgres://postgres:example@db:5432/mydb\" >> .env
     fi
 
     # --- PORT ---
-    if ! grep -q \"^PORT=\" .env; then
-        echo \"Setting PORT...\"
-        sed -i \"/^PORT=/d\" .env
-        echo \"PORT=3000\" >> .env
+    if grep -q \"^PORT=\" .env; then
+    echo \"PORT already set.\"
+    else
+    echo \"Setting PORT...\"
+    ensure_newline
+    echo \"PORT=3000\" >> .env
     fi
 
     # --- JWT_SECRET ---
-    if ! grep -q \"^JWT_SECRET=\" .env; then
-        echo \"Generating new JWT_SECRET...\"
-        SECRET=\$(openssl rand -base64 48)
-        sed -i \"/^JWT_SECRET=/d\" .env
-        # Ensure newline before appending just in case
-        if [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ]; then echo >> .env; fi
-        echo \"JWT_SECRET=\$SECRET\" >> .env
+    if grep -q \"^JWT_SECRET=\" .env; then
+    echo \"JWT_SECRET already set.\"
+    else
+    echo \"Generating new JWT_SECRET...\"
+    SECRET=\$(openssl rand -base64 48)
+    ensure_newline
+    echo \"JWT_SECRET=\$SECRET\" >> .env
     fi
 
     # --- INTERNAL_API_KEY ---
-    if ! grep -q \"^INTERNAL_API_KEY=\" .env; then
-        echo \"Generating new INTERNAL_API_KEY...\"
-        APIKEY=\$(openssl rand -hex 32)
-        sed -i \"/^INTERNAL_API_KEY=/d\" .env
-        # Ensure newline before appending just in case
-        if [ -s .env ] && [ \"\$(tail -c1 .env)\" != \"\" ]; then echo >> .env; fi
-        echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
+    if grep -q \"^INTERNAL_API_KEY=\" .env; then
+    echo \"INTERNAL_API_KEY already set.\"
+    else
+    echo \"Generating new INTERNAL_API_KEY...\"
+    APIKEY=\$(openssl rand -hex 32)
+    ensure_newline
+    echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
     fi
     '"
-    
+
+
     # Start backend containers
     echo ""
     echo "Starting backend containers on $loc..."
