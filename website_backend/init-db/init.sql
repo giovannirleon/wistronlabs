@@ -80,8 +80,10 @@ CREATE TABLE pallet (
         CHECK (status IN ('open','released')),
     doa_number VARCHAR(50),
     created_at TIMESTAMP DEFAULT NOW(),
-    released_at TIMESTAMP
+    released_at TIMESTAMP,
+    dpn TEXT                  
 );
+
 
 -- 📄 Create pallet-system relationship
 CREATE TABLE pallet_system (
@@ -107,3 +109,7 @@ ON system_location_history (system_id, changed_at);
 CREATE INDEX idx_pallet_system_active
   ON pallet_system(pallet_id)
   WHERE removed_at IS NULL;
+
+-- Composite index on factory_id and dpn for fast pallet lookups
+CREATE INDEX IF NOT EXISTS idx_pallet_factory_dpn
+  ON pallet (factory_id, dpn);

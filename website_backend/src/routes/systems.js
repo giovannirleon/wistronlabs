@@ -53,15 +53,18 @@ const RMA_LOCATION_IDS = [6, 7, 8];
 
 /**
  * Generate a pallet number in the format:
- * PAL-[FACTORY]-MMDDYYXX
- * Where XX is sequential per factory per day.
+ * PAL-[FACTORY]-[DPN]-MMDDYYXX
+ * Where XX is sequential per factory+dpn per day.
  */
-async function generatePalletNumber(factory_id, client) {
+async function generatePalletNumber(factory_id, dpn, client) {
   // Get factory code
   const { rows: fRows } = await client.query(
     `SELECT code FROM factory WHERE id = $1`,
     [factory_id]
   );
+  if (!fRows.length) {
+    throw new Error(`Factory with id ${factory_id} not found`);
+  }
   const factoryCode = fRows[0].code;
 
   // Build date string (MMDDYY)
@@ -71,51 +74,68 @@ async function generatePalletNumber(factory_id, client) {
   const yy = String(now.getFullYear()).slice(-2);
   const dateStr = `${mm}${dd}${yy}`;
 
-  // Count pallets for this factory on this day
+  // Count pallets for this factory+dpn on this day
   const { rows: countRows } = await client.query(
     `
     SELECT COUNT(*)::int AS count
     FROM pallet
     WHERE factory_id = $1
-      AND to_char(created_at, 'MMDDYY') = $2
+      AND dpn = $2
+      AND to_char(created_at, 'MMDDYY') = $3
     `,
-    [factory_id, dateStr]
+    [factory_id, dpn, dateStr]
   );
 
   const suffix = String(countRows[0].count + 1).padStart(2, "0");
 
-  return `PAL-${factoryCode}-${dateStr}${suffix}`;
+  // Format: PAL-A1-12345-07312501
+  return `PAL-${factoryCode}-${dpn}-${dateStr}${suffix}`;
 }
 
 /**
  * Assign a system to a pallet (or create a new pallet)
+ * Pallets are segregated by factory_id AND dpn.
  */
-async function assignSystemToPallet(system_id, factory_id, client) {
-  // Try to find an open pallet for this factory with < 9 active systems
+async function assignSystemToPallet(system_id, factory_id, dpn, client) {
+  if (!factory_id) {
+    throw new Error(
+      `Cannot assign system ${system_id} to pallet: factory_id is null`
+    );
+  }
+
+  if (!dpn) {
+    throw new Error(
+      `Cannot assign system ${system_id} to pallet: dpn is missing`
+    );
+  }
+
+  // Try to find an open pallet for this factory_id and dpn
   const { rows } = await client.query(
     `
     SELECT p.id
     FROM pallet p
     LEFT JOIN pallet_system ps
       ON p.id = ps.pallet_id AND ps.removed_at IS NULL
-    WHERE p.status = 'open' AND p.factory_id = $1
+    WHERE p.status = 'open'
+      AND p.factory_id = $1
+      AND p.dpn = $2
     GROUP BY p.id
     HAVING COUNT(ps.id) < 9
     LIMIT 1;
-  `,
-    [factory_id]
+    `,
+    [factory_id, dpn]
   );
 
   let palletId;
   if (rows.length) {
     palletId = rows[0].id;
   } else {
-    // Create a new pallet
-    const palletNum = await generatePalletNumber(factory_id, client);
+    // Create a new pallet (pass dpn to generatePalletNumber)
+    const palletNum = await generatePalletNumber(factory_id, dpn, client);
     const newPallet = await client.query(
-      `INSERT INTO pallet (factory_id, pallet_number)
-       VALUES ($1, $2) RETURNING id`,
-      [factory_id, palletNum]
+      `INSERT INTO pallet (factory_id, pallet_number, dpn)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [factory_id, palletNum, dpn]
     );
     palletId = newPallet.rows[0].id;
   }
@@ -871,6 +891,7 @@ router.get("/:service_tag", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/location
+// PATCH /api/v1/systems/:service_tag/location
 router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { to_location_id, note } = req.body;
@@ -884,10 +905,12 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   try {
     await db.query("BEGIN");
 
+    // Get system details
     const { rows } = await db.query(
       `SELECT id, location_id, factory_id FROM system WHERE service_tag = $1`,
       [service_tag]
     );
+
     if (!rows.length) {
       await db.query("ROLLBACK");
       return res.status(404).json({ error: "System not found" });
@@ -898,6 +921,15 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       location_id: from_location_id,
       factory_id,
     } = rows[0];
+
+    // ** RMA validation check **
+    if (RMA_LOCATION_IDS.includes(to_location_id) && !factory_id) {
+      await db.query("ROLLBACK");
+      return res.status(400).json({
+        error:
+          "Cannot move to an RMA location because factory_id is missing. Update PPID first.",
+      });
+    }
 
     // Update location
     await db.query(`UPDATE system SET location_id = $1 WHERE id = $2`, [
@@ -915,8 +947,13 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
 
     // --- PALLET LOGIC ---
     if (RMA_LOCATION_IDS.includes(to_location_id)) {
-      // Assign to pallet (open or create)
-      await assignSystemToPallet(system_id, factory_id, db);
+      // Get dpn for this system to enforce same-factory & same-dpn pallets
+      const { rows: sysRows } = await db.query(
+        `SELECT dpn FROM system WHERE id = $1`,
+        [system_id]
+      );
+      const dpn = sysRows[0]?.dpn;
+      await assignSystemToPallet(system_id, factory_id, dpn, db);
     } else if (RMA_LOCATION_IDS.includes(from_location_id)) {
       // Leaving RMA -> mark pallet assignment removed (only for open pallets)
       await db.query(
