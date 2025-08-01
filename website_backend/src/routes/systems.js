@@ -229,7 +229,7 @@ function buildWhereClause(filterGroup, params, tableAliases = {}) {
  */
 router.get("/", async (req, res) => {
   const {
-    filters, // JSON string or object with conditions
+    filters,
     page = 1,
     page_size = 50,
     all,
@@ -255,6 +255,7 @@ router.get("/", async (req, res) => {
             manufactured_date: "s.manufactured_date",
             serial: "s.serial",
             rev: "s.rev",
+            factory: "f.code", // add factory filter support
           })}`
         : "";
   }
@@ -268,6 +269,7 @@ router.get("/", async (req, res) => {
     manufactured_date: "s.manufactured_date",
     serial: "s.serial",
     rev: "s.rev",
+    factory: "f.code",
     date_created: "first_history.changed_at",
     date_modified: "last_history.changed_at",
     added_by: "first_user.username",
@@ -298,11 +300,14 @@ router.get("/", async (req, res) => {
           s.serial,
           s.rev,
           l.name AS location,
+          f.code AS factory_code,
+          f.name AS factory_name,
           first_history.changed_at AS date_created,
           first_user.username AS added_by,
           last_history.changed_at AS date_modified
         FROM system s
         JOIN location l ON s.location_id = l.id
+        LEFT JOIN factory f ON s.factory_id = f.id  -- join factory here
 
         -- first history entry per system
         LEFT JOIN LATERAL (
@@ -336,6 +341,7 @@ router.get("/", async (req, res) => {
             SELECT COUNT(*) AS count
             FROM system s
             JOIN location l ON s.location_id = l.id
+            LEFT JOIN factory f ON s.factory_id = f.id
             ${whereSQL}
             `,
             params
@@ -797,15 +803,51 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // GET /api/v1/systems/:service_tag - get single system
+// GET /api/v1/systems/:service_tag - get single system with full details
 router.get("/:service_tag", async (req, res) => {
   const { service_tag } = req.params;
 
   try {
     const result = await db.query(
       `
-      SELECT s.id, s.service_tag, s.issue, l.name AS location
+      SELECT 
+        s.service_tag,
+        s.issue,
+        s.dpn,
+        s.manufactured_date,
+        s.serial,
+        s.rev,
+        l.name AS location,
+        f.code AS factory_code,
+        f.name AS factory_name,
+        -- first history entry
+        first_history.changed_at AS date_created,
+        first_user.username AS added_by,
+        -- last history entry
+        last_history.changed_at AS date_modified
       FROM system s
       JOIN location l ON s.location_id = l.id
+      LEFT JOIN factory f ON s.factory_id = f.id
+
+      -- first history entry per system
+      LEFT JOIN LATERAL (
+        SELECT h.changed_at, h.moved_by
+        FROM system_location_history h
+        WHERE h.system_id = s.id
+        ORDER BY h.changed_at ASC
+        LIMIT 1
+      ) AS first_history ON TRUE
+      LEFT JOIN users first_user ON first_user.id = first_history.moved_by
+
+      -- last history entry per system
+      LEFT JOIN LATERAL (
+        SELECT h.changed_at
+        FROM system_location_history h
+        WHERE h.system_id = s.id
+        ORDER BY h.changed_at DESC
+        LIMIT 1
+      ) AS last_history ON TRUE
+
       WHERE s.service_tag = $1
       `,
       [service_tag]
