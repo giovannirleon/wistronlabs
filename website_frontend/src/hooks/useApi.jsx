@@ -189,12 +189,15 @@ function useApi() {
       body: JSON.stringify(payload),
     });
 
-  const updateStation = (stationName, payload) =>
-    fetchJSON(`/stations/${encodeURIComponent(stationName)}`, {
+  const updateStation = (stationName, payload) => {
+    console.log("PATCH /stations/" + stationName + " payload", payload);
+
+    return fetchJSON(`/stations/${encodeURIComponent(stationName)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+  };
 
   const deleteStation = (stationName) =>
     fetchJSON(`/stations/${encodeURIComponent(stationName)}`, {

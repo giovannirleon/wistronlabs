@@ -203,6 +203,8 @@ function SystemPage() {
     setSubmitting(true);
 
     try {
+      console.log("selectedStation", system);
+
       await updateSystemLocation(serviceTag, {
         to_location_id: parseInt(toLocationId, 10),
         note,

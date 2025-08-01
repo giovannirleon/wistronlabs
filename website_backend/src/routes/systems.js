@@ -815,6 +815,7 @@ router.get("/:service_tag", async (req, res) => {
     const result = await db.query(
       `
       SELECT 
+        s.id,
         s.service_tag,
         s.issue,
         s.dpn,
