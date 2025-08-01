@@ -28,12 +28,26 @@ CREATE TABLE users (
 INSERT INTO users (username, password_hash)
 VALUES ('deleted_user@example.com', '');
 
+-- 📄 Create factory table
+CREATE TABLE factory (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    code VARCHAR(10) UNIQUE NOT NULL
+);
+
+-- 🌱 Seed factory data
+INSERT INTO factory (name, code) VALUES
+('Wistron - Juarez, MX', 'MX'),
+('Wistron - Hsinchu, TW', 'A1'),
+('Wistron - Hukou, TW', 'N2');
+
 -- 📄 Create systems table
 CREATE TABLE system (
     id SERIAL PRIMARY KEY,
     service_tag VARCHAR(100) NOT NULL UNIQUE,
     issue TEXT,
-    location_id INT NOT NULL REFERENCES location(id) ON DELETE RESTRICT
+    location_id INT NOT NULL REFERENCES location(id) ON DELETE RESTRICT,
+    factory_id INT REFERENCES factory(id) ON DELETE RESTRICT
 );
 
 -- 📄 Create system_location_history table
@@ -57,11 +71,39 @@ CREATE TABLE station (
     message VARCHAR(255) DEFAULT ''
 );
 
+-- 📄 Create pallet table
+CREATE TABLE pallet (
+    id SERIAL PRIMARY KEY,
+    factory_id INT NOT NULL REFERENCES factory(id) ON DELETE RESTRICT,
+    pallet_number VARCHAR(50) UNIQUE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open','released')),
+    doa_number VARCHAR(50),
+    created_at TIMESTAMP DEFAULT NOW(),
+    released_at TIMESTAMP
+);
+
+-- 📄 Create pallet-system relationship
+CREATE TABLE pallet_system (
+    id SERIAL PRIMARY KEY,
+    pallet_id INT NOT NULL REFERENCES pallet(id) ON DELETE CASCADE,
+    system_id INT NOT NULL REFERENCES system(id) ON DELETE CASCADE,
+    added_at TIMESTAMP DEFAULT NOW(),
+    removed_at TIMESTAMP
+);
+
 -- 📄 Indexes
 CREATE INDEX idx_system_location_history_system_id ON system_location_history(system_id);
 CREATE INDEX idx_system_location_history_moved_by ON system_location_history(moved_by);
--- 📄 Optional: Non-unique index on location.name (for fast lookups)
+
+-- Non-unique index on location.name (for fast lookups)
 CREATE INDEX IF NOT EXISTS idx_location_name ON location(name);
--- 📄 Additional index for efficient queries by system_id and changed_at
+
+-- Additional index for efficient queries by system_id and changed_at
 CREATE INDEX idx_history_system_changed_at 
 ON system_location_history (system_id, changed_at);
+
+-- Active pallet entries index
+CREATE INDEX idx_pallet_system_active
+  ON pallet_system(pallet_id)
+  WHERE removed_at IS NULL;

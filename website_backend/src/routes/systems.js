@@ -48,6 +48,111 @@ async function getDeletedUserId() {
   return result.rows[0]?.id;
 }
 
+// RMA location IDs (must match DB)
+const RMA_LOCATION_IDS = [6, 7, 8];
+
+/**
+ * Generate a pallet number in the format:
+ * PAL-[FACTORY]-MMDDYYXX
+ * Where XX is sequential per factory per day.
+ */
+async function generatePalletNumber(factory_id, client) {
+  // Get factory code
+  const { rows: fRows } = await client.query(
+    `SELECT code FROM factory WHERE id = $1`,
+    [factory_id]
+  );
+  const factoryCode = fRows[0].code;
+
+  // Build date string (MMDDYY)
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  const dateStr = `${mm}${dd}${yy}`;
+
+  // Count pallets for this factory on this day
+  const { rows: countRows } = await client.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM pallet
+    WHERE factory_id = $1
+      AND to_char(created_at, 'MMDDYY') = $2
+    `,
+    [factory_id, dateStr]
+  );
+
+  const suffix = String(countRows[0].count + 1).padStart(2, "0");
+
+  return `PAL-${factoryCode}-${dateStr}${suffix}`;
+}
+
+/**
+ * Assign a system to a pallet (or create a new pallet)
+ */
+async function assignSystemToPallet(system_id, factory_id, client) {
+  // Try to find an open pallet for this factory with < 9 active systems
+  const { rows } = await client.query(
+    `
+    SELECT p.id
+    FROM pallet p
+    LEFT JOIN pallet_system ps
+      ON p.id = ps.pallet_id AND ps.removed_at IS NULL
+    WHERE p.status = 'open' AND p.factory_id = $1
+    GROUP BY p.id
+    HAVING COUNT(ps.id) < 9
+    LIMIT 1;
+  `,
+    [factory_id]
+  );
+
+  let palletId;
+  if (rows.length) {
+    palletId = rows[0].id;
+  } else {
+    // Create a new pallet
+    const palletNum = await generatePalletNumber(factory_id, client);
+    const newPallet = await client.query(
+      `INSERT INTO pallet (factory_id, pallet_number)
+       VALUES ($1, $2) RETURNING id`,
+      [factory_id, palletNum]
+    );
+    palletId = newPallet.rows[0].id;
+  }
+
+  // Add system to pallet
+  await client.query(
+    `INSERT INTO pallet_system (pallet_id, system_id)
+     VALUES ($1, $2)`,
+    [palletId, system_id]
+  );
+}
+
+// ---- PPID HELPERS ----
+
+// Decode Dell PPID date code (e.g., "53J")
+function decodeDateCode(code) {
+  if (!code || code.length !== 3) return null;
+  const [y, m, d] = code.split("");
+  const decodeChar = (c) =>
+    /[0-9]/.test(c)
+      ? parseInt(c, 10)
+      : c.charCodeAt(0) - "A".charCodeAt(0) + 10;
+
+  const year = 2020 + parseInt(y, 10);
+  const month = decodeChar(m);
+  const day = decodeChar(d);
+
+  return new Date(year, month - 1, day);
+}
+
+// Map factory codes in PPID to your DB factory codes
+const FACTORY_MAP = {
+  WSJ00: "MX", // Juarez
+  HSI00: "A1", // Hsinchu
+  HUK00: "N2", // Hukou
+};
+
 function buildWhereClause(filterGroup, params, tableAliases = {}) {
   const { op = "AND", conditions = [] } = filterGroup;
 
@@ -146,6 +251,10 @@ router.get("/", async (req, res) => {
             issue: "s.issue",
             location_id: "s.location_id",
             location: "l.name",
+            dpn: "s.dpn",
+            manufactured_date: "s.manufactured_date",
+            serial: "s.serial",
+            rev: "s.rev",
           })}`
         : "";
   }
@@ -155,6 +264,10 @@ router.get("/", async (req, res) => {
     service_tag: "s.service_tag",
     issue: "s.issue",
     location: "l.name",
+    dpn: "s.dpn",
+    manufactured_date: "s.manufactured_date",
+    serial: "s.serial",
+    rev: "s.rev",
     date_created: "first_history.changed_at",
     date_modified: "last_history.changed_at",
     added_by: "first_user.username",
@@ -180,6 +293,10 @@ router.get("/", async (req, res) => {
         SELECT 
           s.service_tag,
           s.issue,
+          s.dpn,
+          s.manufactured_date,
+          s.serial,
+          s.rev,
           l.name AS location,
           first_history.changed_at AS date_created,
           first_user.username AS added_by,
@@ -719,34 +836,53 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   try {
     await db.query("BEGIN");
 
-    const systemResult = await db.query(
-      "SELECT id, location_id FROM system WHERE service_tag = $1",
+    const { rows } = await db.query(
+      `SELECT id, location_id, factory_id FROM system WHERE service_tag = $1`,
       [service_tag]
     );
-
-    if (systemResult.rows.length === 0) {
+    if (!rows.length) {
       await db.query("ROLLBACK");
       return res.status(404).json({ error: "System not found" });
     }
 
-    const { id: system_id, location_id: from_location_id } =
-      systemResult.rows[0];
+    const {
+      id: system_id,
+      location_id: from_location_id,
+      factory_id,
+    } = rows[0];
 
-    await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
+    // Update location
+    await db.query(`UPDATE system SET location_id = $1 WHERE id = $2`, [
       to_location_id,
       system_id,
     ]);
 
+    // Log history
     await db.query(
-      `
-      INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note, moved_by)
-      VALUES ($1, $2, $3, $4, $5)
-    `,
+      `INSERT INTO system_location_history
+       (system_id, from_location_id, to_location_id, note, moved_by)
+       VALUES ($1, $2, $3, $4, $5)`,
       [system_id, from_location_id, to_location_id, note, req.user.userId]
     );
 
-    await db.query("COMMIT");
+    // --- PALLET LOGIC ---
+    if (RMA_LOCATION_IDS.includes(to_location_id)) {
+      // Assign to pallet (open or create)
+      await assignSystemToPallet(system_id, factory_id, db);
+    } else if (RMA_LOCATION_IDS.includes(from_location_id)) {
+      // Leaving RMA -> mark pallet assignment removed (only for open pallets)
+      await db.query(
+        `
+        UPDATE pallet_system
+        SET removed_at = NOW()
+        WHERE system_id = $1
+          AND removed_at IS NULL
+          AND pallet_id IN (SELECT id FROM pallet WHERE status = 'open')`,
+        [system_id]
+      );
+    }
 
+    await db.query("COMMIT");
     res.json({ message: "Location updated" });
   } catch (err) {
     await db.query("ROLLBACK");
@@ -778,6 +914,67 @@ router.patch("/:service_tag/issue", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update issue" });
+  }
+});
+
+// PATCH /api/v1/systems/:service_tag/ppid
+router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
+  const { service_tag } = req.params;
+  const { ppid } = req.body;
+
+  if (!ppid || ppid.length < 21) {
+    return res.status(400).json({ error: "Invalid PPID format" });
+  }
+
+  try {
+    // Parse PPID fields
+    const dpn = ppid.substring(3, 8);
+    const factoryCodeRaw = ppid.substring(8, 13);
+    const dateCode = ppid.substring(13, 16);
+    const serial = ppid.substring(16, 20);
+    const rev = ppid.substring(20);
+
+    const manufacturedDate = decodeDateCode(dateCode);
+
+    // Find factory_id based on FACTORY_MAP
+    let factoryId = null;
+    const factoryShortCode = FACTORY_MAP[factoryCodeRaw];
+    if (factoryShortCode) {
+      const { rows } = await db.query(
+        "SELECT id FROM factory WHERE code = $1",
+        [factoryShortCode]
+      );
+      if (rows.length) {
+        factoryId = rows[0].id;
+      }
+    }
+
+    // Build update SET clause
+    const fields = [
+      { column: "dpn", value: dpn },
+      { column: "manufactured_date", value: manufacturedDate },
+      { column: "serial", value: serial },
+      { column: "rev", value: rev },
+    ];
+
+    if (factoryId) {
+      fields.push({ column: "factory_id", value: factoryId });
+    }
+
+    const setClauses = fields
+      .map((f, i) => `${f.column} = $${i + 2}`)
+      .join(", ");
+    const values = fields.map((f) => f.value);
+
+    await db.query(`UPDATE system SET ${setClauses} WHERE service_tag = $1`, [
+      service_tag,
+      ...values,
+    ]);
+
+    res.json({ message: "System PPID fields updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update PPID data" });
   }
 });
 
