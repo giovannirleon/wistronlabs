@@ -15,7 +15,7 @@ function isValidEmail(email) {
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is not set in environment variables");
 }
-const { JWT_SECRET, INTERNAL_API_KEY } = process.env.JWT_SECRET;
+const { JWT_SECRET, INTERNAL_API_KEY } = process.env;
 
 // Helper
 function generateAccessToken(payload) {
