@@ -1,4 +1,5 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Backend deploy script with structured output and fzf location selection
 
@@ -42,7 +43,7 @@ while true; do
     fi
 done
 
-rm -rf node_modules package-lock.json >/dev/null 2>&1
+rm -rf "$SCRIPT_DIR/node_modules" "$SCRIPT_DIR/package-lock.json" >/dev/null 2>&1
 
 # Loop through each selected location
 for loc in $selected; do
