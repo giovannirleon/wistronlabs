@@ -1111,7 +1111,7 @@ router.delete("/:service_tag", authenticateToken, async (req, res) => {
   res.json({ message: "System deleted" });
 });
 
-router.get("/systems/:id/pallet", async (req, res) => {
+router.get("/:id/pallet", async (req, res) => {
   const { id } = req.params;
 
   const result = await db.query(
@@ -1147,7 +1147,7 @@ router.get("/systems/:id/pallet", async (req, res) => {
   res.json(result.rows[0]);
 });
 
-router.get("/systems/:id/pallet-history", async (req, res) => {
+router.get("/:id/pallet-history", async (req, res) => {
   const { id } = req.params;
 
   const result = await db.query(
