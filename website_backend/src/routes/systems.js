@@ -1111,8 +1111,19 @@ router.delete("/:service_tag", authenticateToken, async (req, res) => {
   res.json({ message: "System deleted" });
 });
 
-router.get("/:id/pallet", async (req, res) => {
-  const { id } = req.params;
+router.get("/:service_tag/pallet", async (req, res) => {
+  const { service_tag } = req.params;
+
+  const systemRes = await db.query(
+    `SELECT id FROM system WHERE service_tag = $1`,
+    [service_tag]
+  );
+
+  if (systemRes.rows.length === 0) {
+    return res.status(404).json({ message: "System not found." });
+  }
+
+  const systemId = systemRes.rows[0].id;
 
   const result = await db.query(
     `
@@ -1123,19 +1134,17 @@ router.get("/:id/pallet", async (req, res) => {
       p.status,
       p.created_at,
       f.name AS factory,
-      l.name AS location,
       ps.added_at
     FROM pallet_system ps
     JOIN pallet p ON ps.pallet_id = p.id
     JOIN factory f ON p.factory_id = f.id
-    LEFT JOIN location l ON f.id = l.id
     WHERE ps.system_id = $1
       AND ps.removed_at IS NULL
       AND p.status = 'open'
     ORDER BY ps.added_at DESC
     LIMIT 1
     `,
-    [id]
+    [systemId]
   );
 
   if (result.rows.length === 0) {
@@ -1147,8 +1156,19 @@ router.get("/:id/pallet", async (req, res) => {
   res.json(result.rows[0]);
 });
 
-router.get("/:id/pallet-history", async (req, res) => {
-  const { id } = req.params;
+router.get("/:service_tag/pallet-history", async (req, res) => {
+  const { service_tag } = req.params;
+
+  const systemRes = await db.query(
+    `SELECT id FROM system WHERE service_tag = $1`,
+    [service_tag]
+  );
+
+  if (systemRes.rows.length === 0) {
+    return res.status(404).json({ message: "System not found." });
+  }
+
+  const systemId = systemRes.rows[0].id;
 
   const result = await db.query(
     `
@@ -1167,7 +1187,7 @@ router.get("/:id/pallet-history", async (req, res) => {
     WHERE ps.system_id = $1
     ORDER BY ps.added_at ASC
     `,
-    [id]
+    [systemId]
   );
 
   res.json(result.rows);
