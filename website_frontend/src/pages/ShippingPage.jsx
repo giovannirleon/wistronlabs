@@ -75,7 +75,7 @@ function DroppableSlot({ palletId, idx, children }) {
 
 const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
   const isEmpty = pallet.active_systems.every((s) => s == null);
-  const isReleased = !!releaseFlags[pallet.id];
+  const isReleased = !!releaseFlags[pallet.id]?.released;
 
   useEffect(() => {
     if (isEmpty && releaseFlags[pallet.id]) {
@@ -88,9 +88,27 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
   }, [isEmpty, pallet.id, releaseFlags, setReleaseFlags]);
 
   const toggleRelease = () => {
+    setReleaseFlags((prev) => {
+      const existing = prev[pallet.id];
+      if (existing?.released) {
+        const copy = { ...prev };
+        delete copy[pallet.id];
+        return copy;
+      }
+      return {
+        ...prev,
+        [pallet.id]: { released: true, doa_number: "" },
+      };
+    });
+  };
+
+  const handleDOAChange = (e) => {
     setReleaseFlags((prev) => ({
       ...prev,
-      [pallet.id]: !prev[pallet.id],
+      [pallet.id]: {
+        ...prev[pallet.id],
+        doa_number: e.target.value.trimStart(), // prevent spaces at beginning
+      },
     }));
   };
 
@@ -125,20 +143,30 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
             );
           })}
         </div>
+        <button
+          onClick={toggleRelease}
+          disabled={isEmpty}
+          className={`w-full mt-2 py-2 rounded-lg text-sm font-semibold text-white transition ${
+            isEmpty
+              ? "bg-gray-300 cursor-not-allowed"
+              : isReleased
+              ? "bg-yellow-600 hover:bg-yellow-700"
+              : "bg-green-600 hover:bg-green-700"
+          }`}
+        >
+          {isReleased ? "Undo Release" : "Mark for Release"}
+        </button>
+
+        <input
+          type="text"
+          placeholder="Enter DOA Number"
+          value={releaseFlags[pallet.id]?.doa_number || ""}
+          onChange={handleDOAChange}
+          className={`mt-2 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring focus:ring-blue-200 text-sm ${
+            isReleased ? "" : "invisible"
+          }`}
+        />
       </div>
-      <button
-        onClick={toggleRelease}
-        disabled={isEmpty}
-        className={`w-full mt-2 py-2 rounded-lg text-sm font-semibold text-white transition ${
-          isEmpty
-            ? "bg-gray-300 cursor-not-allowed"
-            : isReleased
-            ? "bg-yellow-600 hover:bg-yellow-700"
-            : "bg-green-600 hover:bg-green-700"
-        }`}
-      >
-        {isReleased ? "Undo Release" : "Mark for Release"}
-      </button>
     </div>
   );
 };
@@ -353,6 +381,20 @@ export default function ShippingPage() {
             <div className="w-full flex justify-end mt-6">
               <button
                 onClick={async () => {
+                  // First validate all released pallets have a DOA number
+                  const palletsMissingDOA = Object.entries(releaseFlags).filter(
+                    ([_, val]) =>
+                      val.released &&
+                      (!val.doa_number || val.doa_number.trim() === "")
+                  );
+
+                  if (palletsMissingDOA.length > 0) {
+                    showToast(
+                      `DOA number is required for ${palletsMissingDOA.length} released pallet(s).`,
+                      "error"
+                    );
+                    return;
+                  }
                   const confirmed = await confirm({
                     message: "Are you sure you want to submit changes?",
                     title: "Confirm Submit",
@@ -405,8 +447,17 @@ export default function ShippingPage() {
                   console.log("Empty pallets:", emptyPallets);
 
                   const releaseList = Object.entries(releaseFlags)
-                    .filter(([_, val]) => val)
-                    .map(([id]) => Number(id));
+                    .filter(
+                      ([_, val]) => val.released && val.doa_number?.trim()
+                    )
+                    .map(([id, val]) => {
+                      const pallet = pallets.find((p) => p.id === Number(id));
+                      return {
+                        id: Number(id),
+                        pallet_number: pallet?.pallet_number || "UNKNOWN",
+                        doa_number: val.doa_number.trim(),
+                      };
+                    });
 
                   console.log("Release Pallet IDs:", releaseList);
 

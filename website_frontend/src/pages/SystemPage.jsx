@@ -201,6 +201,7 @@ function SystemPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (
       !toLocationId ||
       note.trim() === "" ||
@@ -210,42 +211,66 @@ function SystemPage() {
       return;
     }
 
+    if (
+      selectedStationObj &&
+      toLocationId === 5 &&
+      selectedStationObj.system_id
+    ) {
+      setFormError("This station is already occupied.");
+      return;
+    }
+
     setFormError("");
     setSubmitting(true);
 
     try {
-      console.log("selectedStation", system);
-
       await updateSystemLocation(serviceTag, {
         to_location_id: parseInt(toLocationId, 10),
         note,
       });
 
+      // ✅ Update station mapping
       if (selectedStationObj && toLocationId === 5) {
-        if (selectedStationObj.system_id) {
-          setFormError("This station is already occupied.");
-          return;
-        } else {
-          await updateStation(selectedStationObj.station_name, {
-            system_id: system.id,
-          });
-        }
+        await updateStation(selectedStationObj.station_name, {
+          system_id: system.id,
+        });
       }
 
       if (selectedStationObj && system?.location === "In L10") {
         await updateStation(selectedStationObj.station_name, {
-          system_id: null, // clear system_id when moving out of L10
+          system_id: null,
         });
+      }
+
+      // ✅ If RMA destination, print RMA label
+      if (RMA_LOCATION_IDS.includes(parseInt(toLocationId))) {
+        const palletInfo = await getSystemPallet(system.service_tag);
+        const blob = await pdf(
+          <SystemRMALabel
+            systems={[
+              {
+                service_tag: system.service_tag,
+                pallet_number: palletInfo.pallet_number,
+                dpn: palletInfo.dpn,
+                factory_code: palletInfo.factory_code,
+                url: `${FRONTEND_URL}${system.service_tag}`,
+                location: system.location,
+              },
+            ]}
+          />
+        ).toBlob();
+
+        const url = URL.createObjectURL(blob);
+        window.open(url);
       }
 
       setNote("");
       setToLocationId("");
       setSelectedStation("");
       showToast("Updated System Location", "success", 3000, "bottom-right");
-      await fetchData(); // reload updated history
+      await fetchData();
     } catch (err) {
       console.error(err);
-      // Prefer backend error message
       const message = err.body?.error || err.message;
       showToast(message, "error", 3000, "bottom-right");
     } finally {
@@ -280,7 +305,11 @@ function SystemPage() {
           systems={[
             {
               service_tag: system.service_tag,
+              pallet_number: palletInfo.pallet_number,
+              dpn: palletInfo.dpn,
+              factory_code: palletInfo.factory_code,
               url: `${FRONTEND_URL}${system.service_tag}`,
+              location: system.location,
             },
           ]}
         />
