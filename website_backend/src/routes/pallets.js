@@ -4,25 +4,103 @@ const { authenticateToken } = require("./auth");
 
 const router = express.Router();
 
-// GET /api/v1/pallets
 router.get("/", async (req, res) => {
-  try {
-    const pallets = await db.query(
-      `
-      SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status, p.released_at,
-            json_agg(json_build_object(
-              'system_id', ps.system_id,
-              'service_tag', s.service_tag
-            )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
-      FROM pallet p
-      LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-      LEFT JOIN system s ON s.id = ps.system_id
-      GROUP BY p.id, p.released_at
-      ORDER BY p.created_at DESC
-      `
-    );
+  const {
+    filters,
+    page = 1,
+    page_size = 50,
+    all,
+    sort_by,
+    sort_order,
+  } = req.query;
 
-    res.json(pallets.rows);
+  const params = [];
+  let whereSQL = "";
+
+  // Parse filters
+  if (filters) {
+    const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
+
+    whereSQL =
+      parsed && parsed.conditions?.length
+        ? `WHERE ${buildWhereClause(parsed, params, {
+            pallet_number: "p.pallet_number",
+            factory_id: "p.factory_id",
+            dpn: "p.dpn",
+            status: "p.status",
+          })}`
+        : "";
+  }
+
+  // Sorting options
+  const allowedSortColumns = {
+    pallet_number: "p.pallet_number",
+    factory_id: "p.factory_id",
+    dpn: "p.dpn",
+    status: "p.status",
+    released_at: "p.released_at",
+    created_at: "p.created_at",
+  };
+
+  const orderColumn = allowedSortColumns[sort_by] || "p.created_at";
+  const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
+
+  // Pagination
+  let limitOffsetSQL = "";
+  let pageNum, pageSize, offset;
+
+  if (!all || all === "false") {
+    pageNum = Math.max(parseInt(page), 1);
+    pageSize = Math.min(parseInt(page_size), 100);
+    offset = (pageNum - 1) * pageSize;
+    limitOffsetSQL = `LIMIT ${pageSize} OFFSET ${offset}`;
+  }
+
+  try {
+    // Query pallets with aggregated active systems
+    const [dataResult, countResult] = await Promise.all([
+      db.query(
+        `
+        SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
+               p.released_at, p.created_at,
+               json_agg(json_build_object(
+                 'system_id', ps.system_id,
+                 'service_tag', s.service_tag
+               )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
+        FROM pallet p
+        LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
+        LEFT JOIN system s ON s.id = ps.system_id
+        ${whereSQL}
+        GROUP BY p.id, p.released_at, p.created_at
+        ORDER BY ${orderColumn} ${orderDirection}
+        ${limitOffsetSQL}
+        `,
+        params
+      ),
+      !all || all === "false"
+        ? db.query(
+            `
+            SELECT COUNT(*) AS count
+            FROM pallet p
+            ${whereSQL}
+            `,
+            params
+          )
+        : Promise.resolve({ rows: [] }),
+    ]);
+
+    if (all && all !== "false") {
+      return res.json(dataResult.rows);
+    }
+
+    const total_count = parseInt(countResult.rows[0].count);
+
+    res.json({
+      data: dataResult.rows,
+      total_count,
+      page: pageNum,
+      page_size: pageSize,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch pallets" });
@@ -35,17 +113,18 @@ router.get("/:pallet_number", async (req, res) => {
   try {
     const result = await db.query(
       `
-    SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status, p.released_at,
-          json_agg(json_build_object(
-            'system_id', ps.system_id,
-            'service_tag', s.service_tag
-          )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
-    FROM pallet p
-    LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-    LEFT JOIN system s ON s.id = ps.system_id
-    WHERE p.pallet_number = $1
-    GROUP BY p.id, p.released_at
-    `,
+      SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
+            p.released_at, p.created_at,
+            json_agg(json_build_object(
+              'system_id', ps.system_id,
+              'service_tag', s.service_tag
+            )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
+      FROM pallet p
+      LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
+      LEFT JOIN system s ON s.id = ps.system_id
+      WHERE p.pallet_number = $1
+      GROUP BY p.id, p.released_at, p.created_at
+      `,
       [pallet_number]
     );
 
