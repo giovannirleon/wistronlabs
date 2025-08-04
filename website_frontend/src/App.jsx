@@ -15,6 +15,7 @@ import ScrollToTop from "./helpers/ScrollToTop";
 
 import "./styles/datepicker.css";
 import { useEffect } from "react";
+import ShippingPage from "./pages/ShippingPage";
 
 function App() {
   const LOCATION = import.meta.env.VITE_LOCATION;
@@ -32,6 +33,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/tracking" element={<TrackingPage />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/shipping" element={<ShippingPage />} />
           <Route path="/:serviceTag" element={<SystemPage />} />
           <Route
             path="/user"
