@@ -1134,6 +1134,7 @@ router.get("/:service_tag/pallet", async (req, res) => {
       p.status,
       p.created_at,
       f.name AS factory,
+      f.code AS factory_code,
       ps.added_at
     FROM pallet_system ps
     JOIN pallet p ON ps.pallet_id = p.id
@@ -1178,6 +1179,7 @@ router.get("/:service_tag/pallet-history", async (req, res) => {
       p.pallet_number,
       p.dpn,
       f.name AS factory,
+      f.code AS factory_code,
       p.status AS pallet_status,
       ps.added_at,
       ps.removed_at

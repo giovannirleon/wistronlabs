@@ -70,6 +70,7 @@ function SystemPage() {
     deleteLastHistoryEntry,
     getStations,
     updateStation,
+    getSystemPallet,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
@@ -263,7 +264,7 @@ function SystemPage() {
       if (!selected) return; // user exited
       labelType = selected;
     }
-
+    const palletInfo = await getSystemPallet(system.service_tag);
     const blob = await pdf(
       labelType === "id" ? (
         <SystemPDFLabel

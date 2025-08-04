@@ -280,6 +280,12 @@ function useApi() {
       body: JSON.stringify({ ppid }),
     });
 
+  const getSystemPallet = (service_tag) =>
+    fetchJSON(`/systems/${service_tag}/pallet`);
+
+  const getSystemPalletHistory = (service_tag) =>
+    fetchJSON(`/systems/${service_tag}/pallet-history`);
+
   return {
     getSystems,
     getHistory,
@@ -301,6 +307,8 @@ function useApi() {
     getServerTime,
     getSnapshot,
     updateSystemPPID,
+    getSystemPallet,
+    getSystemPalletHistory,
   };
 }
 
