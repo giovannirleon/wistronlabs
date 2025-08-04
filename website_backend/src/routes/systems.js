@@ -112,14 +112,14 @@ async function assignSystemToPallet(system_id, factory_id, dpn, client) {
   // Try to find an open pallet for this factory_id and dpn
   const { rows } = await client.query(
     `
-    SELECT p.id
+    SELECT p.id, p.pallet_number
     FROM pallet p
     LEFT JOIN pallet_system ps
       ON p.id = ps.pallet_id AND ps.removed_at IS NULL
     WHERE p.status = 'open'
       AND p.factory_id = $1
       AND p.dpn = $2
-    GROUP BY p.id
+    GROUP BY p.id, p.pallet_number
     HAVING COUNT(ps.id) < 9
     LIMIT 1;
     `,
@@ -127,25 +127,40 @@ async function assignSystemToPallet(system_id, factory_id, dpn, client) {
   );
 
   let palletId;
-  if (rows.length) {
+  let palletNumber;
+
+  if (rows.length > 0) {
+    // Use existing pallet
     palletId = rows[0].id;
+    palletNumber = rows[0].pallet_number;
   } else {
-    // Create a new pallet (pass dpn to generatePalletNumber)
-    const palletNum = await generatePalletNumber(factory_id, dpn, client);
-    const newPallet = await client.query(
-      `INSERT INTO pallet (factory_id, pallet_number, dpn)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [factory_id, palletNum, dpn]
+    // Generate a consistent new pallet number
+    const newNumber = await generatePalletNumber(factory_id, dpn, client);
+
+    const insertResult = await client.query(
+      `
+      INSERT INTO pallet (factory_id, pallet_number, dpn)
+      VALUES ($1, $2, $3)
+      RETURNING id, pallet_number;
+      `,
+      [factory_id, newNumber, dpn]
     );
-    palletId = newPallet.rows[0].id;
+
+    palletId = insertResult.rows[0].id;
+    palletNumber = insertResult.rows[0].pallet_number;
   }
 
-  // Add system to pallet
+  // Add system to pallet (avoid duplicates with ON CONFLICT DO NOTHING)
   await client.query(
-    `INSERT INTO pallet_system (pallet_id, system_id)
-     VALUES ($1, $2)`,
+    `
+    INSERT INTO pallet_system (pallet_id, system_id)
+    VALUES ($1, $2)
+    ON CONFLICT DO NOTHING;
+    `,
     [palletId, system_id]
   );
+
+  return { pallet_id: palletId, pallet_number: palletNumber };
 }
 
 // ---- PPID HELPERS ----
@@ -891,7 +906,6 @@ router.get("/:service_tag", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/location
-// PATCH /api/v1/systems/:service_tag/location
 router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { to_location_id, note } = req.body;
@@ -902,17 +916,19 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       .json({ error: "to_location_id and note are required" });
   }
 
+  const client = await db.connect();
+
   try {
-    await db.query("BEGIN");
+    await client.query("BEGIN");
 
     // Get system details
-    const { rows } = await db.query(
+    const { rows } = await client.query(
       `SELECT id, location_id, factory_id FROM system WHERE service_tag = $1`,
       [service_tag]
     );
 
     if (!rows.length) {
-      await db.query("ROLLBACK");
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "System not found" });
     }
 
@@ -922,57 +938,73 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       factory_id,
     } = rows[0];
 
-    // ** RMA validation check **
+    // RMA validation
     if (RMA_LOCATION_IDS.includes(to_location_id) && !factory_id) {
-      await db.query("ROLLBACK");
+      await client.query("ROLLBACK");
       return res.status(400).json({
         error:
           "Cannot move to an RMA location because factory_id is missing. Update PPID first.",
       });
     }
 
-    // Update location
-    await db.query(`UPDATE system SET location_id = $1 WHERE id = $2`, [
+    // Update location on system
+    await client.query(`UPDATE system SET location_id = $1 WHERE id = $2`, [
       to_location_id,
       system_id,
     ]);
 
-    // Log history
-    await db.query(
-      `INSERT INTO system_location_history
-       (system_id, from_location_id, to_location_id, note, moved_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [system_id, from_location_id, to_location_id, note, req.user.userId]
-    );
+    // Default to original note
+    let finalNote = note;
 
-    // --- PALLET LOGIC ---
+    // Handle RMA-specific logic
     if (RMA_LOCATION_IDS.includes(to_location_id)) {
-      // Get dpn for this system to enforce same-factory & same-dpn pallets
-      const { rows: sysRows } = await db.query(
+      // Get dpn
+      const { rows: sysRows } = await client.query(
         `SELECT dpn FROM system WHERE id = $1`,
         [system_id]
       );
       const dpn = sysRows[0]?.dpn;
-      await assignSystemToPallet(system_id, factory_id, dpn, db);
+
+      // Assign to pallet and get pallet info
+      const { pallet_number } = await assignSystemToPallet(
+        system_id,
+        factory_id,
+        dpn,
+        client
+      );
+
+      // Append pallet info to note
+      finalNote = `${note} - added to ${pallet_number}`;
     } else if (RMA_LOCATION_IDS.includes(from_location_id)) {
-      // Leaving RMA -> mark pallet assignment removed (only for open pallets)
-      await db.query(
+      // Leaving RMA: remove from open pallet
+      await client.query(
         `
         UPDATE pallet_system
         SET removed_at = NOW()
         WHERE system_id = $1
           AND removed_at IS NULL
-          AND pallet_id IN (SELECT id FROM pallet WHERE status = 'open')`,
+          AND pallet_id IN (SELECT id FROM pallet WHERE status = 'open')
+        `,
         [system_id]
       );
     }
 
-    await db.query("COMMIT");
+    // Log history (after finalNote is set)
+    await client.query(
+      `INSERT INTO system_location_history
+       (system_id, from_location_id, to_location_id, note, moved_by)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [system_id, from_location_id, to_location_id, finalNote, req.user.userId]
+    );
+
+    await client.query("COMMIT");
     res.json({ message: "Location updated" });
   } catch (err) {
-    await db.query("ROLLBACK");
+    await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "Failed to update location" });
+  } finally {
+    client.release();
   }
 });
 
