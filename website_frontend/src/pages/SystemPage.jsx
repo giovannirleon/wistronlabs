@@ -9,7 +9,9 @@ import LoadingSkeleton from "../components/LoadingSkeleton.jsx";
 import { AuthContext } from "../context/AuthContext.jsx";
 
 import { pdf } from "@react-pdf/renderer";
+import usePrintConfirm from "../hooks/usePrintConfirm";
 import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
+import SystemRMALabel from "../components/SystemRMALabel.jsx";
 
 import Station from "../components/Station.jsx";
 import Tooltip from "../components/Tooltip.jsx";
@@ -45,9 +47,17 @@ function SystemPage() {
   const [selectedStation, setSelectedStation] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const { confirmPrint, ConfirPrintmModal } = usePrintConfirm();
+
   const currentLocation = history[0]?.to_location || ""; // most recent location name
 
-  const isSentToL11 = currentLocation === "Sent to L11";
+  const resolvedIDs = [6, 7, 8, 9];
+
+  const resolvedNames = locations
+    ?.filter((loc) => resolvedIDs.includes(loc.id))
+    .map((loc) => loc.name);
+
+  const isResolved = resolvedNames?.includes(currentLocation);
 
   const { token } = useContext(AuthContext);
 
@@ -242,17 +252,40 @@ function SystemPage() {
     }
   };
 
+  const RMA_LOCATION_IDS = [6, 7, 8];
+
   const handlePrint = async () => {
+    const locationId = locations.find((l) => l.name === currentLocation)?.id;
+
+    let labelType = "id";
+    if (RMA_LOCATION_IDS.includes(locationId)) {
+      const selected = await confirmPrint(); // "id" or "rma"
+      if (!selected) return; // user exited
+      labelType = selected;
+    }
+
     const blob = await pdf(
-      <SystemPDFLabel
-        systems={[
-          {
-            service_tag: system.service_tag,
-            url: `${FRONTEND_URL}${system.service_tag}`,
-          },
-        ]} // pass as array
-      />
+      labelType === "id" ? (
+        <SystemPDFLabel
+          systems={[
+            {
+              service_tag: system.service_tag,
+              url: `${FRONTEND_URL}${system.service_tag}`,
+            },
+          ]}
+        />
+      ) : (
+        <SystemRMALabel
+          systems={[
+            {
+              service_tag: system.service_tag,
+              url: `${FRONTEND_URL}${system.service_tag}`,
+            },
+          ]}
+        />
+      )
     ).toBlob();
+
     const url = URL.createObjectURL(blob);
     window.open(url);
   };
@@ -286,19 +319,20 @@ function SystemPage() {
   }, []);
 
   useEffect(() => {
-    if (isSentToL11) {
+    if (isResolved) {
       setFormError(
         "If you need to work on this system again, you must re-add it through the tracking menu"
       );
     } else {
       setFormError(""); // or null
     }
-  }, [isSentToL11]);
+  }, [isResolved]);
   return (
     <>
       <ConfirmDialog />
       {modal}
       <Toast />
+      <ConfirPrintmModal />
       <main className="md:max-w-10/12  mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         {loading ? (
           <LoadingSkeleton rows={6} />
@@ -397,7 +431,7 @@ function SystemPage() {
                       <button
                         type="button"
                         key={loc.id}
-                        disabled={isSentToL11}
+                        disabled={isResolved}
                         onClick={() => setToLocationId(loc.id)}
                         className={`px-4 py-2 rounded-lg shadow text-sm font-medium border
                   ${
@@ -405,13 +439,13 @@ function SystemPage() {
                       ? "bg-blue-600 text-white border-blue-600"
                       : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
                   }
-          ${isSentToL11 ? "opacity-50 cursor-not-allowed" : ""}`}
+          ${isResolved ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         {loc.name}
                       </button>
                     )
                   )}
-                  {isSentToL11 && (
+                  {isResolved && (
                     <button
                       type="button"
                       className="px-4 py-2 rounded-lg shadow text-sm font-medium bg-gray-200 text-gray-700 border-gray-300"
@@ -516,7 +550,7 @@ function SystemPage() {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Required Note"
-                  disabled={isSentToL11}
+                  disabled={isResolved}
                   rows={3} // adjust number of visible rows
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100 resize-none"
                 />
@@ -524,7 +558,7 @@ function SystemPage() {
 
               <button
                 type="submit"
-                disabled={submitting || isSentToL11}
+                disabled={submitting || isResolved}
                 className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow disabled:opacity-50 transition"
               >
                 {submitting ? "Submitting…" : "Update Location"}

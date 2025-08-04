@@ -1111,4 +1111,66 @@ router.delete("/:service_tag", authenticateToken, async (req, res) => {
   res.json({ message: "System deleted" });
 });
 
+app.get("/systems/:id/pallet", async (req, res) => {
+  const { id } = req.params;
+
+  const result = await db.query(
+    `
+    SELECT
+      p.id AS pallet_id,
+      p.pallet_number,
+      p.dpn,
+      p.status,
+      p.created_at,
+      f.name AS factory,
+      l.name AS location,
+      ps.added_at
+    FROM pallet_system ps
+    JOIN pallet p ON ps.pallet_id = p.id
+    JOIN factory f ON p.factory_id = f.id
+    LEFT JOIN location l ON f.id = l.id
+    WHERE ps.system_id = $1
+      AND ps.removed_at IS NULL
+      AND p.status = 'open'
+    ORDER BY ps.added_at DESC
+    LIMIT 1
+    `,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    return res
+      .status(404)
+      .json({ message: "System is not on an active pallet." });
+  }
+
+  res.json(result.rows[0]);
+});
+
+app.get("/systems/:id/pallet-history", async (req, res) => {
+  const { id } = req.params;
+
+  const result = await db.query(
+    `
+    SELECT
+      ps.id AS assignment_id,
+      p.id AS pallet_id,
+      p.pallet_number,
+      p.dpn,
+      f.name AS factory,
+      p.status AS pallet_status,
+      ps.added_at,
+      ps.removed_at
+    FROM pallet_system ps
+    JOIN pallet p ON ps.pallet_id = p.id
+    JOIN factory f ON p.factory_id = f.id
+    WHERE ps.system_id = $1
+    ORDER BY ps.added_at ASC
+    `,
+    [id]
+  );
+
+  res.json(result.rows);
+});
+
 module.exports = router;

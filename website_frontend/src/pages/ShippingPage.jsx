@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import useToast from "../hooks/useToast";
 import useConfirm from "../hooks/useConfirm";
+import { formatDateHumanReadable } from "../utils/date_format";
 import { Link } from "react-router-dom";
 import {
   DndContext,
@@ -16,7 +17,7 @@ import {
 
 function SystemBox({ serviceTag }) {
   return (
-    <div className="w-full h-full flex items-center justify-center rounded-lg text-sm font-semibold transition bg-neutral-100 text-neutral-800 border border-neutral-300 shadow-sm hover:ring-2 hover:ring-neutral-300 hover:bg-neutral-200 cursor-move">
+    <div className="w-full h-full flex items-center justify-center rounded-lg text-sm font-semibold transition bg-neutral-100 text-neutral-800 border border-neutral-300 shadow-sm hover:ring-2 hover:ring-neutral-300 hover:bg-neutral-200 cursor-move select-none">
       {serviceTag}
     </div>
   );
@@ -61,7 +62,7 @@ function DroppableSlot({ palletId, idx, children }) {
   return (
     <div
       ref={setNodeRef}
-      className={`h-16 w-full flex items-center justify-center rounded-lg text-sm font-semibold transition-all duration-150 ${
+      className={`h-16 w-full flex items-center justify-center rounded-lg text-sm font-semibold transition-all duration-150 select-none ${
         children
           ? "bg-neutral-100 text-neutral-800 border border-neutral-300 shadow-sm hover:ring-2 hover:ring-neutral-300"
           : "bg-white text-neutral-400 border border-dashed border-neutral-300 italic"
@@ -76,6 +77,16 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
   const isEmpty = pallet.active_systems.every((s) => s == null);
   const isReleased = !!releaseFlags[pallet.id];
 
+  useEffect(() => {
+    if (isEmpty && releaseFlags[pallet.id]) {
+      setReleaseFlags((prev) => {
+        const copy = { ...prev };
+        delete copy[pallet.id];
+        return copy;
+      });
+    }
+  }, [isEmpty, pallet.id, releaseFlags, setReleaseFlags]);
+
   const toggleRelease = () => {
     setReleaseFlags((prev) => ({
       ...prev,
@@ -86,9 +97,14 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
   return (
     <div className="border border-gray-300 rounded-2xl shadow-md hover:shadow-lg transition p-4 bg-white flex flex-col justify-between">
       <div>
-        <h2 className="text-md font-medium text-gray-700 mb-2">
-          {pallet.pallet_number}
-        </h2>
+        <div className="mb-2">
+          <h2 className="text-md font-medium text-gray-700">
+            {pallet.pallet_number}
+          </h2>
+          <p className="text-xs text-gray-500">
+            Created on {formatDateHumanReadable(pallet.created_at)}
+          </p>
+        </div>
         <div className="grid grid-cols-3 grid-rows-3 gap-2 mb-4">
           {Array.from({ length: 9 }).map((_, idx) => {
             const system = pallet.active_systems[idx];
@@ -134,6 +150,7 @@ export default function ShippingPage() {
   const [initialPallets, setInitialPallets] = useState([]);
   const [activeDragData, setActiveDragData] = useState(null);
   const [releaseFlags, setReleaseFlags] = useState({});
+  const [tab, setTab] = useState("active");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -148,11 +165,13 @@ export default function ShippingPage() {
     const startingPallets = [
       {
         id: 4,
+        created_at: "2025-08-04T04:57:54.967Z",
         pallet_number: "PAL-A1-TESTY-08042502",
         active_systems: [{ system_id: 562, service_tag: "TEST10" }],
       },
       {
         id: 3,
+        created_at: "2025-08-04T04:57:54.967Z",
         pallet_number: "PAL-A1-TESTY-08042501",
         active_systems: [
           { system_id: 560, service_tag: "TEST09" },
@@ -168,16 +187,19 @@ export default function ShippingPage() {
       },
       {
         id: 2,
+        created_at: "2025-08-04T04:57:54.967Z",
         pallet_number: "PAL-A1-RRFGY-08012501",
         active_systems: [{ system_id: 541, service_tag: "GJQZS64" }],
       },
       {
         id: 20,
+        created_at: "2025-08-04T04:57:54.967Z",
         pallet_number: "PAL-A1-RRFGY-08012501",
         active_systems: [{ system_id: 541, service_tag: "GZQZS64" }],
       },
       {
         id: 10,
+        created_at: "2025-08-04T04:57:54.967Z",
         pallet_number: "PAL-N2-RRFGY-08012501",
         active_systems: [{ system_id: 541, service_tag: "GJQXS64" }],
       },
@@ -263,6 +285,10 @@ export default function ShippingPage() {
         if (currentTags[j] !== initialTags[j]) return true;
       }
     }
+
+    const hasAnyRelease = Object.keys(releaseFlags).length > 0;
+    if (hasAnyRelease) return true;
+
     return false;
   })();
 
@@ -272,120 +298,154 @@ export default function ShippingPage() {
       <ConfirmDialog />
       <main className="md:max-w-10/12 mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         <h1 className="text-3xl font-semibold text-gray-800">
-          Current Pallets
+          Shipping Manager
         </h1>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={(e) => setActiveDragData(e.active.data.current)}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {pallets.map((pallet) => (
-              <PalletGrid
-                key={pallet.id}
-                pallet={pallet}
-                releaseFlags={releaseFlags}
-                setReleaseFlags={setReleaseFlags}
-              />
-            ))}
-          </div>
 
-          <DragOverlay>
-            {activeDragData ? (
-              <SystemBox serviceTag={activeDragData.system.service_tag} />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-
-        <div className="w-full flex justify-end mt-6">
+        {/* Tabs */}
+        <div className="flex gap-4 mt-2 border-b border-gray-200">
           <button
-            onClick={async () => {
-              const confirmed = await confirm({
-                message: "Are you sure you want to submit changes?",
-                title: "Confirm Submit",
-                confirmText: "Yes, submit",
-                cancelText: "Cancel",
-                confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
-                cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
-              });
-
-              if (!confirmed) return;
-              const moves = [];
-
-              for (const initial of initialPallets) {
-                const current = pallets.find((p) => p.id === initial.id);
-                if (!current) continue;
-
-                initial.active_systems.forEach((system, idx) => {
-                  if (!system) return;
-
-                  const currentPallet = pallets.find((p) =>
-                    p.active_systems.some(
-                      (s) => s?.service_tag === system.service_tag
-                    )
-                  );
-
-                  const currentIndex = currentPallet?.active_systems.findIndex(
-                    (s) => s?.service_tag === system.service_tag
-                  );
-
-                  if (!currentPallet || currentPallet.id === initial.id) return;
-
-                  moves.push({
-                    service_tag: system.service_tag,
-                    from_pallet_id: initial.id,
-                    to_pallet_id: currentPallet.id,
-                  });
-                });
-              }
-
-              const emptyPallets = pallets
-                .filter((p) => p.active_systems.every((s) => s == null))
-                .map((p) => ({
-                  id: p.id,
-                  pallet_number: p.pallet_number,
-                }));
-
-              console.log("Moves:", moves);
-              console.log("Empty pallets:", emptyPallets);
-
-              const releaseList = Object.entries(releaseFlags)
-                .filter(([_, val]) => val)
-                .map(([id]) => Number(id));
-
-              console.log("Release Pallet IDs:", releaseList);
-
-              showToast(
-                `Detected ${moves.length} move(s), ${emptyPallets.length} empty pallet(s).`,
-                "info"
-              );
-            }}
-            disabled={!palletsChanged}
-            className={`px-6 py-2 rounded-lg font-semibold text-white transition ${
-              palletsChanged
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "bg-gray-400 cursor-not-allowed"
+            onClick={() => setTab("active")}
+            className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 ${
+              tab === "active"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
-            Submit Changes
+            Active Pallets
           </button>
           <button
-            onClick={() => {
-              setPallets(structuredClone(initialPallets));
-              setReleaseFlags({});
-              showToast("Changes have been reverted.", "info");
-            }}
-            disabled={!palletsChanged}
-            className={`ml-2 px-4 py-2 rounded font-semibold transition ${
-              palletsChanged
-                ? "bg-gray-500 text-white hover:bg-gray-600"
-                : "bg-gray-300 text-gray-400 cursor-not-allowed"
+            onClick={() => setTab("inactive")}
+            className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 ${
+              tab === "inactive"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
-            Reset
+            Inactive Pallets
           </button>
         </div>
+        {tab === "active" ? (
+          <>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(e) => setActiveDragData(e.active.data.current)}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {pallets.map((pallet) => (
+                  <PalletGrid
+                    key={`${pallet.id}-${!!releaseFlags[pallet.id]}`}
+                    pallet={pallet}
+                    releaseFlags={releaseFlags}
+                    setReleaseFlags={setReleaseFlags}
+                  />
+                ))}
+              </div>
+
+              <DragOverlay>
+                {activeDragData ? (
+                  <SystemBox serviceTag={activeDragData.system.service_tag} />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+
+            <div className="w-full flex justify-end mt-6">
+              <button
+                onClick={async () => {
+                  const confirmed = await confirm({
+                    message: "Are you sure you want to submit changes?",
+                    title: "Confirm Submit",
+                    confirmText: "Yes, submit",
+                    cancelText: "Cancel",
+                    confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
+                    cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
+                  });
+
+                  if (!confirmed) return;
+                  const moves = [];
+
+                  for (const initial of initialPallets) {
+                    const current = pallets.find((p) => p.id === initial.id);
+                    if (!current) continue;
+
+                    initial.active_systems.forEach((system, idx) => {
+                      if (!system) return;
+
+                      const currentPallet = pallets.find((p) =>
+                        p.active_systems.some(
+                          (s) => s?.service_tag === system.service_tag
+                        )
+                      );
+
+                      const currentIndex =
+                        currentPallet?.active_systems.findIndex(
+                          (s) => s?.service_tag === system.service_tag
+                        );
+
+                      if (!currentPallet || currentPallet.id === initial.id)
+                        return;
+
+                      moves.push({
+                        service_tag: system.service_tag,
+                        from_pallet_id: initial.id,
+                        to_pallet_id: currentPallet.id,
+                      });
+                    });
+                  }
+
+                  const emptyPallets = pallets
+                    .filter((p) => p.active_systems.every((s) => s == null))
+                    .map((p) => ({
+                      id: p.id,
+                      pallet_number: p.pallet_number,
+                    }));
+
+                  console.log("Moves:", moves);
+                  console.log("Empty pallets:", emptyPallets);
+
+                  const releaseList = Object.entries(releaseFlags)
+                    .filter(([_, val]) => val)
+                    .map(([id]) => Number(id));
+
+                  console.log("Release Pallet IDs:", releaseList);
+
+                  showToast(
+                    `Detected ${moves.length} move(s), ${emptyPallets.length} empty pallet(s).`,
+                    "info"
+                  );
+                }}
+                disabled={!palletsChanged}
+                className={`px-6 py-2 rounded-lg font-semibold text-white transition ${
+                  palletsChanged
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-gray-400 cursor-not-allowed"
+                }`}
+              >
+                Submit Changes
+              </button>
+              <button
+                onClick={() => {
+                  setPallets(structuredClone(initialPallets));
+                  setReleaseFlags({});
+                  showToast("Changes have been reverted.", "info");
+                }}
+                disabled={!palletsChanged}
+                className={`ml-2 px-4 py-2 rounded font-semibold transition ${
+                  palletsChanged
+                    ? "bg-gray-500 text-white hover:bg-gray-600"
+                    : "bg-gray-300 text-gray-400 cursor-not-allowed"
+                }`}
+              >
+                Reset
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="text-gray-600 italic text-sm mt-6">
+            Inactive pallets view will be implemented soon.
+          </div>
+        )}
       </main>
     </>
   );
