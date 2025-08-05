@@ -50,12 +50,19 @@ export default function useDetailsModal(showToast, onUpdated) {
       }
     } catch (err) {
       console.error("Failed to update PPID", err);
-      showToast?.(
-        "Cannot update system, please make sure PPID is correct",
-        "error",
-        3000,
-        "bottom-right"
-      );
+
+      let message = "Cannot update system, please make sure PPID is correct";
+
+      // If the error was thrown by useApi and contains the backend error in err.message
+      if (err?.message?.includes("failed:")) {
+        // Extract the backend error part after the status code
+        const parts = err.message.split(/failed:\s*\d+\s*/);
+        if (parts.length > 1) {
+          message = parts[1];
+        }
+      }
+
+      showToast?.(message, "error", 5000, "bottom-right");
     } finally {
       setLoading(false);
     }

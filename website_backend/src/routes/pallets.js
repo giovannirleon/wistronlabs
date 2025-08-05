@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("../db");
 const { authenticateToken } = require("./auth");
+const { buildWhereClause } = require("../utils/buildWhereClause");
 
 const router = express.Router();
 

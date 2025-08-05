@@ -198,13 +198,26 @@ export default function ShippingPage() {
     })
   );
 
-  const { getPallets, moveSystemBetweenPallets, releasePallet, deletePallet } =
-    useApi();
+  const {
+    getSystem,
+    getPallets,
+    moveSystemBetweenPallets,
+    releasePallet,
+    deletePallet,
+  } = useApi();
 
   useEffect(() => {
     const loadPallets = async () => {
       try {
-        const data = await getPallets({ status: "open" });
+        const data = await getPallets({
+          filters: [
+            {
+              field: "status",
+              op: "=",
+              values: ["open"],
+            },
+          ],
+        });
 
         // validate the response shape
         const result = Array.isArray(data?.data) ? data.data : [];
@@ -366,7 +379,9 @@ export default function ShippingPage() {
       });
 
     const systemRMALabelData = moves.map((move) => {
-      const toPallet = pallets.find((p) => p.id === move.to_pallet_id);
+      const toPallet = pallets.find(
+        (p) => p.pallet_number === move.to_pallet_number
+      );
       const dpn = toPallet?.pallet_number.split("-")[2] || "UNKNOWN";
       const factory_code = toPallet?.pallet_number.split("-")[1] || "UNKNOWN";
       return {
@@ -430,21 +445,51 @@ export default function ShippingPage() {
         window.open(URL.createObjectURL(labelBlob));
       }
 
-      const rawPallet = {
-        pallet_number: "PAL-A1-TESTY-08042501",
-        doa_number: "DOA-250804-001",
-        date_released: "2025-08-04",
-        dpn: "TESTY",
-        factory_id: "A1",
-        systems: [
-          { service_tag: "5CWZS64", ppid: "TW0RRFGYWS90057BA0BCA00" },
-          { service_tag: "GJQZS64", ppid: "TW0RRFGYWS900578A0E8A00" },
-          { service_tag: "1FY3T64", ppid: "TW0DKCFXWSM0054U00EAA00" },
-        ],
-      };
-      const enriched = enrichPalletWithBarcodes(rawPallet);
-      const palletBlob = await pdf(<PalletPaper pallet={enriched} />).toBlob();
-      window.open(URL.createObjectURL(palletBlob));
+      // For each released pallet, fetch system details for its active systems
+      for (const release of releaseList) {
+        const palletData = pallets.find(
+          (p) => p.pallet_number === release.pallet_number
+        );
+        if (!palletData) continue;
+
+        // Fetch all system details in parallel using getSystem
+        const systemsWithDetails = await Promise.all(
+          (palletData.active_systems || []).filter(Boolean).map(async (sys) => {
+            try {
+              const systemDetails = await getSystem(sys.service_tag);
+              return {
+                service_tag: systemDetails.service_tag,
+                ppid: systemDetails.ppid || "",
+              };
+            } catch (err) {
+              console.error(
+                `Failed to fetch details for ${sys.service_tag}`,
+                err
+              );
+              return {
+                service_tag: sys.service_tag,
+                ppid: "",
+              };
+            }
+          })
+        );
+
+        // Shape the pallet for PalletPaper
+        const rawPallet = {
+          pallet_number: palletData.pallet_number,
+          doa_number: release.doa_number,
+          date_released: new Date().toISOString().split("T")[0],
+          dpn: palletData.pallet_number.split("-")[2] || "",
+          factory_id: palletData.pallet_number.split("-")[1] || "",
+          systems: systemsWithDetails,
+        };
+
+        const enriched = enrichPalletWithBarcodes(rawPallet);
+        const palletBlob = await pdf(
+          <PalletPaper pallet={enriched} />
+        ).toBlob();
+        window.open(URL.createObjectURL(palletBlob));
+      }
     } catch (err) {
       showToast(`Failed to generate PDF: ${err.message}`, "error");
       return;
