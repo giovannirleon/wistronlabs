@@ -905,6 +905,7 @@ router.get("/:service_tag", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/location
+// PATCH /api/v1/systems/:service_tag/location
 router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { to_location_id, note } = req.body;
@@ -922,7 +923,17 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
 
     // Get system details
     const { rows } = await client.query(
-      `SELECT id, location_id, factory_id FROM system WHERE service_tag = $1`,
+      `SELECT 
+         id, 
+         location_id, 
+         factory_id, 
+         ppid, 
+         dpn, 
+         manufactured_date, 
+         serial, 
+         rev
+       FROM system 
+       WHERE service_tag = $1`,
       [service_tag]
     );
 
@@ -935,15 +946,32 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       id: system_id,
       location_id: from_location_id,
       factory_id,
+      ppid,
+      dpn,
+      manufactured_date,
+      serial,
+      rev,
     } = rows[0];
 
     // RMA validation
-    if (RMA_LOCATION_IDS.includes(to_location_id) && !factory_id) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({
-        error:
-          "Cannot move to an RMA location because factory_id is missing. Update PPID first.",
-      });
+    if (RMA_LOCATION_IDS.includes(to_location_id)) {
+      const missingFields = [];
+
+      if (!factory_id) missingFields.push("factory_id");
+      if (!ppid) missingFields.push("ppid");
+      if (!dpn) missingFields.push("dpn");
+      if (!manufactured_date) missingFields.push("manufactured_date");
+      if (!serial) missingFields.push("serial");
+      if (!rev) missingFields.push("rev");
+
+      if (missingFields.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: `Cannot move to an RMA location because the following fields are missing: ${missingFields.join(
+            ", "
+          )}. Update PPID first.`,
+        });
+      }
     }
 
     // Update location on system
@@ -957,25 +985,14 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
 
     // Handle RMA-specific logic
     if (RMA_LOCATION_IDS.includes(to_location_id)) {
-      // Get dpn
-      const { rows: sysRows } = await client.query(
-        `SELECT dpn FROM system WHERE id = $1`,
-        [system_id]
-      );
-      const dpn = sysRows[0]?.dpn;
-
-      // Assign to pallet and get pallet info
       const { pallet_number } = await assignSystemToPallet(
         system_id,
         factory_id,
         dpn,
         client
       );
-
-      // Append pallet info to note
       finalNote = `${note} - added to ${pallet_number}`;
     } else if (RMA_LOCATION_IDS.includes(from_location_id)) {
-      // Leaving RMA: remove from open pallet
       await client.query(
         `
         UPDATE pallet_system
@@ -988,7 +1005,7 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       );
     }
 
-    // Log history (after finalNote is set)
+    // Log history
     await client.query(
       `INSERT INTO system_location_history
        (system_id, from_location_id, to_location_id, note, moved_by)
