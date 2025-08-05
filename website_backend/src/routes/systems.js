@@ -1054,48 +1054,76 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { ppid } = req.body;
 
-  if (!ppid || ppid.length < 21) {
-    return res.status(400).json({ error: "Invalid PPID format" });
+  // Length check
+  if (!ppid || ppid.length !== 23) {
+    return res
+      .status(400)
+      .json({ error: "PPID must be exactly 23 characters" });
+  }
+
+  // Allowed chars check
+  if (!/^[A-Z0-9]+$/.test(ppid)) {
+    return res
+      .status(400)
+      .json({ error: "PPID must be uppercase alphanumeric" });
+  }
+
+  // Parse fields
+  const prefix = ppid.substring(0, 3);
+  const dpn = ppid.substring(3, 8);
+  const factoryCodeRaw = ppid.substring(8, 13);
+  const dateCode = ppid.substring(13, 16);
+  const serial = ppid.substring(16, 20);
+  const rev = ppid.substring(20, 23);
+
+  // Validate each part
+  if (!/^[A-Z0-9]{3}$/.test(prefix)) {
+    return res.status(400).json({ error: "Invalid prefix format" });
+  }
+  if (!/^[A-Z0-9]{5}$/.test(dpn)) {
+    return res.status(400).json({ error: "Invalid DPN format" });
+  }
+  if (!/^[A-Z0-9]{5}$/.test(factoryCodeRaw) || !FACTORY_MAP[factoryCodeRaw]) {
+    return res
+      .status(400)
+      .json({ error: `Unknown or invalid factory code: ${factoryCodeRaw}` });
+  }
+  if (!/^[A-Z0-9]{3}$/.test(dateCode)) {
+    return res.status(400).json({ error: "Invalid date code format" });
+  }
+  const manufacturedDate = decodeDateCode(dateCode);
+  if (!manufacturedDate || isNaN(manufacturedDate.getTime())) {
+    return res.status(400).json({ error: "Invalid date code (cannot decode)" });
+  }
+  if (!/^[A-Z0-9]{4}$/.test(serial)) {
+    return res.status(400).json({ error: "Invalid serial format" });
+  }
+  if (!/^[A-Z0-9]{3}$/.test(rev)) {
+    return res.status(400).json({ error: "Invalid revision format" });
   }
 
   try {
-    // Parse PPID fields
-    const dpn = ppid.substring(3, 8);
-    const factoryCodeRaw = ppid.substring(8, 13);
-    const dateCode = ppid.substring(13, 16);
-    const serial = ppid.substring(16, 20);
-    const rev = ppid.substring(20);
-
-    const manufacturedDate = decodeDateCode(dateCode);
-
-    // Find factory_id based on FACTORY_MAP
-    let factoryId = null;
+    // Get factory_id from FACTORY_MAP
     const factoryShortCode = FACTORY_MAP[factoryCodeRaw];
-    if (factoryShortCode) {
-      const { rows } = await db.query(
-        "SELECT id FROM factory WHERE code = $1",
-        [factoryShortCode]
-      );
-      if (rows.length) {
-        factoryId = rows[0].id;
-      }
-    }
+    const { rows } = await db.query("SELECT id FROM factory WHERE code = $1", [
+      factoryShortCode,
+    ]);
+    const factoryId = rows.length ? rows[0].id : null;
 
     // Build update SET clause
     const fields = [
-      { column: "ppid", value: ppid }, // ✅ Add PPID explicitly
+      { column: "ppid", value: ppid },
       { column: "dpn", value: dpn },
       { column: "manufactured_date", value: manufacturedDate },
       { column: "serial", value: serial },
       { column: "rev", value: rev },
     ];
-
     if (factoryId) {
       fields.push({ column: "factory_id", value: factoryId });
     }
 
     const setClauses = fields
-      .map((f, i) => `${f.column} = $${i + 2}`) // Starts from $2
+      .map((f, i) => `${f.column} = $${i + 2}`)
       .join(", ");
     const values = fields.map((f) => f.value);
 
