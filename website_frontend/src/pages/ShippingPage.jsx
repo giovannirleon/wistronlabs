@@ -7,6 +7,8 @@ import SystemRMALabel from "../components/SystemRMALabel.jsx";
 import { enrichPalletWithBarcodes } from "../utils/enrichPalletWithBarcodes";
 import PalletPaper from "../components/PalletPaper";
 import { Link } from "react-router-dom";
+import useApi from "../hooks/useApi";
+
 import {
   DndContext,
   closestCenter,
@@ -194,51 +196,22 @@ export default function ShippingPage() {
     })
   );
 
+  const { getPallets, moveSystemBetweenPallets, releasePallet, deletePallet } =
+    useApi();
+
   useEffect(() => {
-    const startingPallets = [
-      {
-        id: 4,
-        created_at: "2025-08-04T04:57:54.967Z",
-        pallet_number: "PAL-A1-TESTY-08042502",
-        active_systems: [{ system_id: 562, service_tag: "TEST10" }],
-      },
-      {
-        id: 3,
-        created_at: "2025-08-04T04:57:54.967Z",
-        pallet_number: "PAL-A1-TESTY-08042501",
-        active_systems: [
-          { system_id: 560, service_tag: "TEST09" },
-          { system_id: 559, service_tag: "TEST08" },
-          { system_id: 558, service_tag: "TEST07" },
-          { system_id: 557, service_tag: "TEST06" },
-          { system_id: 556, service_tag: "TEST05" },
-          { system_id: 555, service_tag: "TEST04" },
-          { system_id: 554, service_tag: "TEST03" },
-          { system_id: 553, service_tag: "TEST02" },
-          { system_id: 552, service_tag: "TEST01" },
-        ],
-      },
-      {
-        id: 2,
-        created_at: "2025-08-04T04:57:54.967Z",
-        pallet_number: "PAL-A1-RRFGY-08012501",
-        active_systems: [{ system_id: 541, service_tag: "GJQZS64" }],
-      },
-      {
-        id: 20,
-        created_at: "2025-08-04T04:57:54.967Z",
-        pallet_number: "PAL-A1-RRFGY-08012501",
-        active_systems: [{ system_id: 541, service_tag: "GZQZS64" }],
-      },
-      {
-        id: 10,
-        created_at: "2025-08-04T04:57:54.967Z",
-        pallet_number: "PAL-N2-RRFGY-08012501",
-        active_systems: [{ system_id: 541, service_tag: "GJQXS64" }],
-      },
-    ];
-    setPallets(startingPallets);
-    setInitialPallets(structuredClone(startingPallets));
+    const loadPallets = async () => {
+      try {
+        const data = await getPallets({ status: "open" });
+        setPallets(data.data || []);
+        setInitialPallets(structuredClone(data.data || []));
+      } catch (err) {
+        console.error("Failed to load pallets:", err);
+        showToast("Failed to load pallets", "error");
+      }
+    };
+
+    loadPallets();
   }, []);
 
   const handleDragEnd = (event) => {
@@ -325,6 +298,167 @@ export default function ShippingPage() {
     return false;
   })();
 
+  const handleSubmit = async () => {
+    const palletsMissingDOA = Object.entries(releaseFlags).filter(
+      ([_, val]) =>
+        val.released && (!val.doa_number || val.doa_number.trim() === "")
+    );
+
+    if (palletsMissingDOA.length > 0) {
+      showToast(
+        `DOA number is required for ${palletsMissingDOA.length} released pallet(s).`,
+        "error"
+      );
+      return;
+    }
+
+    const confirmed = await confirm({
+      message: "Are you sure you want to submit changes?",
+      title: "Confirm Submit",
+      confirmText: "Yes, submit",
+      cancelText: "Cancel",
+      confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
+      cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
+    });
+
+    if (!confirmed) return;
+
+    const moves = [];
+    for (const initial of initialPallets) {
+      const current = pallets.find((p) => p.id === initial.id);
+      if (!current) continue;
+
+      initial.active_systems.forEach((system) => {
+        if (!system) return;
+
+        const currentPallet = pallets.find((p) =>
+          p.active_systems.some((s) => s?.service_tag === system.service_tag)
+        );
+
+        if (!currentPallet || currentPallet.id === initial.id) return;
+
+        moves.push({
+          service_tag: system.service_tag,
+          from_pallet_number: initial.pallet_number,
+          to_pallet_number: currentPallet.pallet_number,
+        });
+      });
+    }
+
+    const emptyPallets = pallets
+      .filter((p) => p.active_systems.every((s) => s == null))
+      .map((p) => ({ id: p.id, pallet_number: p.pallet_number }));
+
+    const releaseList = Object.entries(releaseFlags)
+      .filter(([_, val]) => val.released && val.doa_number?.trim())
+      .map(([palletId, val]) => {
+        const pallet = pallets.find((p) => p.id === Number(palletId));
+        return {
+          pallet_number: pallet?.pallet_number,
+          doa_number: val.doa_number.trim(),
+        };
+      });
+
+    const systemRMALabelData = moves.map((move) => {
+      const toPallet = pallets.find((p) => p.id === move.to_pallet_id);
+      const dpn = toPallet?.pallet_number.split("-")[2] || "UNKNOWN";
+      const factory_code = toPallet?.pallet_number.split("-")[1] || "UNKNOWN";
+      return {
+        service_tag: move.service_tag,
+        pallet_number: toPallet?.pallet_number || "UNKNOWN",
+        dpn,
+        factory_code,
+        url: `${FRONTEND_URL}${move.service_tag}`,
+      };
+    });
+
+    // STEP 1: Move systems
+    for (const move of moves) {
+      try {
+        await moveSystemBetweenPallets({
+          service_tag: move.service_tag,
+          from_pallet_number: move.from_pallet_number,
+          to_pallet_number: move.to_pallet_number,
+        });
+      } catch (err) {
+        showToast(
+          `Move failed for ${move.service_tag}: ${err.message}`,
+          "error"
+        );
+        return;
+      }
+    }
+
+    // STEP 2: Delete empty pallets
+    for (const pallet of emptyPallets) {
+      try {
+        await deletePallet(pallet.pallet_number);
+      } catch (err) {
+        showToast(
+          `Delete failed for ${pallet.pallet_number}: ${err.message}`,
+          "error"
+        );
+        return;
+      }
+    }
+
+    // STEP 3: Release pallets
+    for (const release of releaseList) {
+      try {
+        await releasePallet(release.pallet_number, release.doa_number);
+      } catch (err) {
+        showToast(
+          `Release failed for pallet ${release.pallet_number}: ${err.message}`,
+          "error"
+        );
+        return;
+      }
+    }
+
+    // STEP 4: Print PDFs
+    try {
+      if (systemRMALabelData.length > 0) {
+        const labelBlob = await pdf(
+          <SystemRMALabel systems={systemRMALabelData} />
+        ).toBlob();
+        window.open(URL.createObjectURL(labelBlob));
+      }
+
+      const rawPallet = {
+        pallet_number: "PAL-A1-TESTY-08042501",
+        doa_number: "DOA-250804-001",
+        date_released: "2025-08-04",
+        dpn: "TESTY",
+        factory_id: "A1",
+        systems: [
+          { service_tag: "5CWZS64", ppid: "TW0RRFGYWS90057BA0BCA00" },
+          { service_tag: "GJQZS64", ppid: "TW0RRFGYWS900578A0E8A00" },
+          { service_tag: "1FY3T64", ppid: "TW0DKCFXWSM0054U00EAA00" },
+        ],
+      };
+      const enriched = enrichPalletWithBarcodes(rawPallet);
+      const palletBlob = await pdf(<PalletPaper pallet={enriched} />).toBlob();
+      window.open(URL.createObjectURL(palletBlob));
+    } catch (err) {
+      showToast(`Failed to generate PDF: ${err.message}`, "error");
+      return;
+    }
+
+    // STEP 5: Refetch pallets
+    try {
+      const refreshed = await getPallets({ status: "open" });
+      setPallets(refreshed);
+      setInitialPallets(structuredClone(refreshed));
+      setReleaseFlags({});
+      showToast(
+        `Submitted ${moves.length} move(s), deleted ${emptyPallets.length} empty pallet(s).`,
+        "info"
+      );
+    } catch (err) {
+      showToast(`Failed to refresh pallets: ${err.message}`, "error");
+    }
+  };
+
   return (
     <>
       <Toast />
@@ -385,180 +519,7 @@ export default function ShippingPage() {
 
             <div className="w-full flex justify-end mt-6">
               <button
-                onClick={async () => {
-                  // First validate all released pallets have a DOA number
-                  const palletsMissingDOA = Object.entries(releaseFlags).filter(
-                    ([_, val]) =>
-                      val.released &&
-                      (!val.doa_number || val.doa_number.trim() === "")
-                  );
-
-                  if (palletsMissingDOA.length > 0) {
-                    showToast(
-                      `DOA number is required for ${palletsMissingDOA.length} released pallet(s).`,
-                      "error"
-                    );
-                    return;
-                  }
-
-                  const confirmed = await confirm({
-                    message: "Are you sure you want to submit changes?",
-                    title: "Confirm Submit",
-                    confirmText: "Yes, submit",
-                    cancelText: "Cancel",
-                    confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
-                    cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
-                  });
-
-                  if (!confirmed) return;
-
-                  const moves = [];
-
-                  for (const initial of initialPallets) {
-                    const current = pallets.find((p) => p.id === initial.id);
-                    if (!current) continue;
-
-                    initial.active_systems.forEach((system, idx) => {
-                      if (!system) return;
-
-                      const currentPallet = pallets.find((p) =>
-                        p.active_systems.some(
-                          (s) => s?.service_tag === system.service_tag
-                        )
-                      );
-
-                      const currentIndex =
-                        currentPallet?.active_systems.findIndex(
-                          (s) => s?.service_tag === system.service_tag
-                        );
-
-                      if (!currentPallet || currentPallet.id === initial.id)
-                        return;
-
-                      moves.push({
-                        service_tag: system.service_tag,
-                        from_pallet_id: initial.id,
-                        from_pallet_number: initial.pallet_number,
-                        to_pallet_id: currentPallet.id,
-                        to_pallet_nummber: currentPallet.pallet_number,
-                      });
-                    });
-                  }
-
-                  const emptyPallets = pallets
-                    .filter((p) => p.active_systems.every((s) => s == null))
-                    .map((p) => ({
-                      id: p.id,
-                      pallet_number: p.pallet_number,
-                    }));
-
-                  console.log("Moves:", moves);
-                  console.log("Empty pallets:", emptyPallets);
-
-                  // 🟩 Move releaseList declaration up before use
-                  const releaseList = Object.entries(releaseFlags)
-                    .filter(
-                      ([_, val]) => val.released && val.doa_number?.trim()
-                    )
-                    .map(([id, val]) => {
-                      const pallet = pallets.find((p) => p.id === Number(id));
-                      return {
-                        id: Number(id),
-                        pallet_number: pallet?.pallet_number || "UNKNOWN",
-                        doa_number: val.doa_number.trim(),
-                      };
-                    });
-
-                  console.log("Release Pallet IDs:", releaseList);
-
-                  const systemRMALabelData = [];
-
-                  for (const move of moves) {
-                    const toPallet = pallets.find(
-                      (p) => p.id === move.to_pallet_id
-                    );
-                    if (!toPallet) continue;
-
-                    const dpn = toPallet.pallet_number.split("-")[2];
-                    const factory_code = toPallet.pallet_number.split("-")[1];
-
-                    systemRMALabelData.push({
-                      service_tag: move.service_tag,
-                      pallet_number: toPallet.pallet_number,
-                      dpn,
-                      factory_code,
-                      url: `${FRONTEND_URL}${move.service_tag}`,
-                    });
-                  }
-
-                  if (systemRMALabelData.length > 0) {
-                    const blob = await pdf(
-                      <SystemRMALabel systems={systemRMALabelData} />
-                    ).toBlob();
-                    const url = URL.createObjectURL(blob);
-                    window.open(url);
-                  }
-
-                  if (systemRMALabelData.length > 0) {
-                    const rawPallet = {
-                      pallet_number: "PAL-A1-TESTY-08042501",
-                      doa_number: "DOA-250804-001",
-                      date_released: "2025-08-04",
-                      dpn: "TESTY",
-                      factory_id: "A1",
-                      systems: [
-                        {
-                          service_tag: "5CWZS64",
-                          ppid: "TW0RRFGYWS90057BA0BCA00",
-                        },
-                        {
-                          service_tag: "GJQZS64",
-                          ppid: "TW0RRFGYWS900578A0E8A00",
-                        },
-                        {
-                          service_tag: "1FY3T64",
-                          ppid: "TW0DKCFXWSM0054U00EAA00",
-                        },
-                        {
-                          service_tag: "5CWZS64",
-                          ppid: "TW0RRFGYWS90057BA0BCA00",
-                        },
-                        {
-                          service_tag: "GJQZS64",
-                          ppid: "TW0RRFGYWS900578A0E8A00",
-                        },
-                        {
-                          service_tag: "1FY3T64",
-                          ppid: "TW0DKCFXWSM0054U00EAA00",
-                        },
-                        {
-                          service_tag: "5CWZS64",
-                          ppid: "TW0RRFGYWS90057BA0BCA00",
-                        },
-                        {
-                          service_tag: "GJQZS64",
-                          ppid: "TW0RRFGYWS900578A0E8A00",
-                        },
-                        {
-                          service_tag: "1FY3T64",
-                          ppid: "TW0DKCFXWSM0054U00EAA00",
-                        },
-                      ],
-                    };
-
-                    const enrichedPallet = enrichPalletWithBarcodes(rawPallet);
-
-                    const blob = await pdf(
-                      <PalletPaper pallet={enrichedPallet} />
-                    ).toBlob();
-                    const url = URL.createObjectURL(blob);
-                    window.open(url);
-                  }
-                  showToast(
-                    `Detected ${moves.length} move(s), ${emptyPallets.length} empty pallet(s).`,
-                    "info"
-                  );
-                }}
+                onClick={handleSubmit}
                 disabled={!palletsChanged}
                 className={`px-6 py-2 rounded-lg font-semibold text-white transition ${
                   palletsChanged

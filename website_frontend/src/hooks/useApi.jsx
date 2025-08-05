@@ -286,6 +286,71 @@ function useApi() {
   const getSystemPalletHistory = (service_tag) =>
     fetchJSON(`/systems/${service_tag}/pallet-history`);
 
+  const moveSystemBetweenPallets = ({
+    service_tag,
+    from_pallet_number,
+    to_pallet_number,
+  }) =>
+    fetchJSON(`/pallets/move`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_tag,
+        from_pallet_number,
+        to_pallet_number,
+      }),
+    });
+
+  const releasePallet = (pallet_number, doa_number) =>
+    fetchJSON(`/pallets/${pallet_number}/release`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doa_number }),
+    });
+
+  const deletePallet = (pallet_number) =>
+    fetchJSON(`/pallets/${pallet_number}`, {
+      method: "DELETE",
+    });
+
+  const getPallets = ({
+    filters, // advanced filters JSON string or object
+    pallet_number,
+    factory_id,
+    dpn,
+    status,
+    page,
+    page_size,
+    all,
+    sort_by,
+    sort_order,
+  } = {}) => {
+    const params = {
+      page,
+      page_size,
+      all,
+      sort_by,
+      sort_order,
+    };
+
+    if (filters) {
+      params.filters =
+        typeof filters === "string" ? filters : JSON.stringify(filters);
+    } else {
+      // fallback legacy filter support
+      if (pallet_number) params.pallet_number = pallet_number;
+      if (factory_id) params.factory_id = factory_id;
+      if (dpn) params.dpn = dpn;
+      if (status) params.status = status;
+    }
+
+    const qs = buildQueryString(params);
+    return fetchJSON(`/pallets${qs}`);
+  };
+
+  const getPallet = (pallet_number) =>
+    fetchJSON(`/pallets/${encodeURIComponent(pallet_number)}`);
+
   return {
     getSystems,
     getHistory,
@@ -309,6 +374,11 @@ function useApi() {
     updateSystemPPID,
     getSystemPallet,
     getSystemPalletHistory,
+    moveSystemBetweenPallets,
+    releasePallet,
+    deletePallet,
+    getPallets,
+    getPallet,
   };
 }
 

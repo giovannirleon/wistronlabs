@@ -140,32 +140,46 @@ router.get("/:pallet_number", async (req, res) => {
 });
 
 router.patch("/move", authenticateToken, async (req, res) => {
-  const { system_id, from_pallet_id, to_pallet_id } = req.body;
+  const { service_tag, from_pallet_number, to_pallet_number } = req.body;
 
-  if (!system_id || !from_pallet_id || !to_pallet_id) {
+  if (!service_tag || !from_pallet_number || !to_pallet_number) {
     return res.status(400).json({
-      error: "system_id, from_pallet_id, and to_pallet_id are required",
+      error:
+        "service_tag, from_pallet_number, and to_pallet_number are required",
     });
   }
 
-  if (from_pallet_id === to_pallet_id) {
-    return res
-      .status(400)
-      .json({ error: "Source and destination pallets must be different" });
+  if (from_pallet_number === to_pallet_number) {
+    return res.status(400).json({
+      error: "Source and destination pallet numbers must be different",
+    });
   }
 
   const client = await db.connect();
   try {
     await client.query("BEGIN");
 
-    // 1. Get both pallets
+    // 1. Look up system ID by service tag
+    const { rows: systemRows } = await client.query(
+      `SELECT id, location_id FROM system WHERE service_tag = $1`,
+      [service_tag]
+    );
+
+    if (systemRows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "System not found" });
+    }
+
+    const system_id = systemRows[0].id;
+
+    // 2. Look up pallet IDs by pallet_number
     const { rows: pallets } = await client.query(
       `
-      SELECT id, status, factory_id, dpn
+      SELECT id, pallet_number, status, factory_id, dpn
       FROM pallet
-      WHERE id = ANY($1::int[])
+      WHERE pallet_number = ANY($1)
       `,
-      [[from_pallet_id, to_pallet_id]]
+      [[from_pallet_number, to_pallet_number]]
     );
 
     if (pallets.length !== 2) {
@@ -173,10 +187,17 @@ router.patch("/move", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "One or both pallets not found" });
     }
 
-    const fromPallet = pallets.find((p) => p.id == from_pallet_id);
-    const toPallet = pallets.find((p) => p.id == to_pallet_id);
+    const fromPallet = pallets.find(
+      (p) => p.pallet_number === from_pallet_number
+    );
+    const toPallet = pallets.find((p) => p.pallet_number === to_pallet_number);
 
-    // 2. Ensure both pallets are open
+    if (!fromPallet || !toPallet) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Could not resolve pallet(s)" });
+    }
+
+    // 3. Ensure both pallets are open
     if (fromPallet.status !== "open" || toPallet.status !== "open") {
       await client.query("ROLLBACK");
       return res
@@ -184,7 +205,7 @@ router.patch("/move", authenticateToken, async (req, res) => {
         .json({ error: "Cannot move from/to a released pallet" });
     }
 
-    // 3. Same factory_id and dpn
+    // 4. Same factory_id and dpn
     if (
       fromPallet.factory_id !== toPallet.factory_id ||
       fromPallet.dpn !== toPallet.dpn
@@ -195,14 +216,13 @@ router.patch("/move", authenticateToken, async (req, res) => {
         .json({ error: "Pallets must have the same factory_id and DPN" });
     }
 
-    // 4. Confirm system is currently in from_pallet
+    // 5. Confirm system is in source pallet
     const { rowCount: inPallet } = await client.query(
       `
-      SELECT 1
-      FROM pallet_system
+      SELECT 1 FROM pallet_system
       WHERE pallet_id = $1 AND system_id = $2 AND removed_at IS NULL
       `,
-      [from_pallet_id, system_id]
+      [fromPallet.id, system_id]
     );
 
     if (inPallet === 0) {
@@ -212,7 +232,7 @@ router.patch("/move", authenticateToken, async (req, res) => {
         .json({ error: "System is not in the source pallet" });
     }
 
-    // 5. Confirm system's location is RMA
+    // 6. Confirm system's location is RMA
     const { rows: locationRows } = await client.query(
       `
       SELECT l.name AS location_name
@@ -225,7 +245,7 @@ router.patch("/move", authenticateToken, async (req, res) => {
 
     if (locationRows.length === 0) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ error: "System not found" });
+      return res.status(404).json({ error: "System location not found" });
     }
 
     const locationName = locationRows[0].location_name;
@@ -236,27 +256,23 @@ router.patch("/move", authenticateToken, async (req, res) => {
         .json({ error: "System is not in an RMA location" });
     }
 
-    // 6. Mark removed from source pallet
+    // 7. Mark system as removed from source pallet
     await client.query(
       `
       UPDATE pallet_system
       SET removed_at = NOW()
       WHERE pallet_id = $1 AND system_id = $2 AND removed_at IS NULL
       `,
-      [from_pallet_id, system_id]
+      [fromPallet.id, system_id]
     );
 
-    // 7. Add to destination pallet
+    // 8. Add system to destination pallet
     await client.query(
-      `
-      INSERT INTO pallet_system (pallet_id, system_id)
-      VALUES ($1, $2)
-      `,
-      [to_pallet_id, system_id]
+      `INSERT INTO pallet_system (pallet_id, system_id) VALUES ($1, $2)`,
+      [toPallet.id, system_id]
     );
 
     await client.query("COMMIT");
-
     res.json({ message: "System moved to new pallet" });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -267,9 +283,8 @@ router.patch("/move", authenticateToken, async (req, res) => {
   }
 });
 
-// PATCH /api/v1/pallets/:id/release
-router.patch("/:id/release", authenticateToken, async (req, res) => {
-  const { id } = req.params;
+router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
+  const { pallet_number } = req.params;
   const { doa_number } = req.body;
 
   if (!doa_number) {
@@ -282,21 +297,21 @@ router.patch("/:id/release", authenticateToken, async (req, res) => {
     // Check current pallet status and count active systems
     const { rows } = await db.query(
       `
-      SELECT p.status,
+      SELECT p.id, p.status,
              COUNT(ps.id) FILTER (WHERE ps.removed_at IS NULL) AS active_count
       FROM pallet p
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-      WHERE p.id = $1
-      GROUP BY p.status
+      WHERE p.pallet_number = $1
+      GROUP BY p.id, p.status
       `,
-      [id]
+      [pallet_number]
     );
 
     if (rows.length === 0) {
       return res.status(404).json({ error: "Pallet not found" });
     }
 
-    const { status, active_count } = rows[0];
+    const { id, status, active_count } = rows[0];
 
     if (status !== "open") {
       return res.status(400).json({ error: "Pallet is already released" });
@@ -326,42 +341,38 @@ router.patch("/:id/release", authenticateToken, async (req, res) => {
 });
 
 // DELETE /api/v1/pallets/:id
-router.delete("/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;
+router.delete("/:pallet_number", authenticateToken, async (req, res) => {
+  const { pallet_number } = req.params;
 
   try {
-    // Check pallet status and count of active systems
     const { rows } = await db.query(
       `
-      SELECT p.status,
+      SELECT p.id, p.status,
              COUNT(ps.id) FILTER (WHERE ps.removed_at IS NULL) AS active_count
       FROM pallet p
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-      WHERE p.id = $1
-      GROUP BY p.status
+      WHERE p.pallet_number = $1
+      GROUP BY p.id, p.status
       `,
-      [id]
+      [pallet_number]
     );
 
     if (rows.length === 0) {
       return res.status(404).json({ error: "Pallet not found" });
     }
 
-    const { status, active_count } = rows[0];
+    const { id, status, active_count } = rows[0];
 
-    // Must be open
     if (status !== "open") {
       return res.status(400).json({ error: "Cannot delete a released pallet" });
     }
 
-    // Must have no active systems
     if (parseInt(active_count, 10) > 0) {
       return res
         .status(400)
         .json({ error: "Cannot delete a pallet with active systems" });
     }
 
-    // Safe to delete
     await db.query("DELETE FROM pallet WHERE id = $1", [id]);
 
     res.json({ message: "Pallet deleted" });
