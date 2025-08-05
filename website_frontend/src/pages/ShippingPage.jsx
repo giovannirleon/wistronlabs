@@ -189,6 +189,82 @@ export default function ShippingPage() {
   const [tab, setTab] = useState("active");
   const FRONTEND_URL = import.meta.env.VITE_URL;
 
+  const fetchReleasedPallets = async ({
+    page,
+    page_size,
+    sort_by,
+    sort_order,
+    search,
+  }) => {
+    const res = await getPallets({
+      page,
+      page_size,
+      sort_by,
+      sort_order,
+      search,
+      filters: {
+        conditions: [{ field: "status", op: "=", values: ["released"] }],
+      },
+    });
+
+    const palletsWithLinks = await Promise.all(
+      (res.data || []).map(async (pallet) => {
+        try {
+          const systemsWithDetails = await Promise.all(
+            (pallet.active_systems || []).filter(Boolean).map(async (sys) => {
+              try {
+                const systemDetails = await getSystem(sys.service_tag);
+                return {
+                  service_tag: systemDetails.service_tag || "UNKNOWN-ST",
+                  ppid: systemDetails.ppid?.trim() || "MISSING-PPID", // Safe default
+                };
+              } catch {
+                return {
+                  service_tag: sys.service_tag || "UNKNOWN-ST",
+                  ppid: "MISSING-PPID",
+                };
+              }
+            })
+          );
+
+          const rawPallet = {
+            pallet_number: pallet.pallet_number,
+            doa_number: pallet.doa_number,
+            date_released: pallet.released_at?.split("T")[0] || "",
+            dpn: pallet.pallet_number.split("-")[2] || "",
+            factory_id: pallet.pallet_number.split("-")[1] || "",
+            systems: systemsWithDetails,
+          };
+
+          const enriched = enrichPalletWithBarcodes(rawPallet);
+          const palletBlob = await pdf(
+            <PalletPaper pallet={enriched} />
+          ).toBlob();
+          const pdfUrl = URL.createObjectURL(palletBlob);
+
+          return {
+            ...pallet,
+            created_at: formatDateHumanReadable(pallet.created_at),
+            released_at: formatDateHumanReadable(pallet.released_at),
+            pallet_number_title: "Pallet Number",
+            doa_number_title: "DOA Number",
+            created_at_title: "Created On",
+            released_at_title: "Released On",
+            href: pdfUrl,
+          };
+        } catch (err) {
+          console.error(
+            `PDF generation failed for ${pallet.pallet_number}`,
+            err
+          );
+          return { ...pallet, href: "#" };
+        }
+      })
+    );
+
+    return { data: palletsWithLinks, total_count: res.total_count };
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
@@ -461,7 +537,7 @@ export default function ShippingPage() {
               const systemDetails = await getSystem(sys.service_tag);
               return {
                 service_tag: systemDetails.service_tag,
-                ppid: systemDetails.ppid || "",
+                ppid: systemDetails.ppid || "UNKNOWN",
               };
             } catch (err) {
               console.error(
@@ -606,34 +682,19 @@ export default function ShippingPage() {
             title="Released Pallets"
             displayOrder={[
               "pallet_number",
-              "dpn",
-              "factory_id",
               "doa_number",
-              "date_released",
+              "created_at",
+              "released_at",
             ]}
-            defaultSortBy="date_released"
-            defaultSortAsc={false}
-            linkType="internal"
-            truncate={true}
-            itemsPerPage={10}
-            fetchData={({ page, page_size, sort_by, sort_order, search }) =>
-              getPallets({
-                page,
-                page_size,
-                sort_by,
-                sort_order,
-                search,
-                filters: {
-                  conditions: [
-                    {
-                      field: "status",
-                      op: "=",
-                      values: ["released"],
-                    },
-                  ],
-                },
-              })
-            }
+            visibleFields={[
+              "pallet_number",
+              "doa_number",
+              "created_at",
+              "released_at",
+            ]}
+            linkType="external"
+            fetchData={fetchReleasedPallets}
+            truncate={false}
           />
         )}
       </main>
