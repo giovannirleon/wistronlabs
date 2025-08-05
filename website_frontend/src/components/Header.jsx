@@ -42,6 +42,12 @@ function Header() {
         >
           Tracking
         </Link>
+        <Link
+          to="/shipping"
+          className={`${linkBase} ${pathname === "/shipping" ? active : ""}`}
+        >
+          Shipping
+        </Link>
         {token ? (
           <Link
             to="/user"
@@ -91,6 +97,12 @@ function Header() {
             onClick={() => setMenuOpen(false)}
           >
             Tracking
+          </Link>
+          <Link
+            to="/shipping"
+            className={`${linkBase} ${pathname === "/shipping" ? active : ""}`}
+          >
+            Shipping
           </Link>
           {token ? (
             <Link
