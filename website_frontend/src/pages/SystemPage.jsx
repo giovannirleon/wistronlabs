@@ -284,12 +284,14 @@ function SystemPage() {
     const locationId = locations.find((l) => l.name === currentLocation)?.id;
 
     let labelType = "id";
+    let palletInfo = [];
     if (RMA_LOCATION_IDS.includes(locationId)) {
+      console.log("in RMA");
       const selected = await confirmPrint(); // "id" or "rma"
       if (!selected) return; // user exited
       labelType = selected;
+      palletInfo = await getSystemPallet(system.service_tag);
     }
-    const palletInfo = await getSystemPallet(system.service_tag);
     const blob = await pdf(
       labelType === "id" ? (
         <SystemPDFLabel
