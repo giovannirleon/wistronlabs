@@ -296,14 +296,22 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
   const { pallet_number } = req.params;
   const { doa_number } = req.body;
 
+  // 1. DOA number required
   if (!doa_number) {
     return res
       .status(400)
       .json({ error: "doa_number is required to release a pallet" });
   }
 
+  // 2. DOA number must be at least 5 characters
+  if (doa_number.trim().length < 5) {
+    return res
+      .status(400)
+      .json({ error: "doa_number must be at least 5 characters long" });
+  }
+
   try {
-    // Check current pallet status and count active systems
+    // 3. Check current pallet status and count active systems
     const { rows } = await db.query(
       `
       SELECT p.id, p.status,
@@ -322,15 +330,37 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
 
     const { id, status, active_count } = rows[0];
 
+    // 4. Must be open
     if (status !== "open") {
       return res.status(400).json({ error: "Pallet is already released" });
     }
 
+    // 5. Must not be empty
     if (parseInt(active_count, 10) === 0) {
       return res.status(400).json({ error: "Cannot release an empty pallet" });
     }
 
-    // Update pallet to released
+    // 6. All active systems must have a PPID
+    const { rows: ppidCheckRows } = await db.query(
+      `
+      SELECT s.service_tag
+      FROM pallet_system ps
+      JOIN system s ON ps.system_id = s.id
+      WHERE ps.pallet_id = $1
+        AND ps.removed_at IS NULL
+        AND (s.ppid IS NULL OR TRIM(s.ppid) = '')
+      `,
+      [id]
+    );
+
+    if (ppidCheckRows.length > 0) {
+      const missingTags = ppidCheckRows.map((r) => r.service_tag).join(", ");
+      return res.status(400).json({
+        error: `Cannot release pallet: the following systems have missing PPID: ${missingTags}`,
+      });
+    }
+
+    // 7. Update pallet to released
     await db.query(
       `
       UPDATE pallet
@@ -339,7 +369,7 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
           released_at = NOW()
       WHERE id = $2
       `,
-      [doa_number, id]
+      [doa_number.trim(), id]
     );
 
     res.json({ message: "Pallet released successfully" });

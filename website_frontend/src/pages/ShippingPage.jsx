@@ -575,7 +575,11 @@ export default function ShippingPage() {
 
     // STEP 5: Refetch pallets
     try {
-      const data = await getPallets({ status: "open" });
+      const data = await getPallets({
+        filters: {
+          conditions: [{ field: "status", op: "=", values: ["open"] }],
+        },
+      });
       const refreshed = Array.isArray(data?.data) ? data.data : [];
       setPallets(refreshed);
       setInitialPallets(structuredClone(refreshed));

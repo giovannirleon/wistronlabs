@@ -644,75 +644,82 @@ router.delete(
   authenticateToken,
   async (req, res) => {
     const { service_tag } = req.params;
+    const client = await db.connect();
 
     try {
-      // 1️ Find system by service_tag
-      const systemResult = await db.query(
+      await client.query("BEGIN");
+
+      // 1. Find system by service_tag
+      const systemResult = await client.query(
         "SELECT id FROM system WHERE service_tag = $1",
         [service_tag]
       );
-
       if (systemResult.rows.length === 0) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ error: "System not found" });
       }
-
       const system_id = systemResult.rows[0].id;
 
-      // 2️ Get all history entries for this system, ordered newest to oldest
-      const historyResult = await db.query(
+      // 2. Get history entries newest → oldest
+      const historyResult = await client.query(
         `
-      SELECT id, moved_by
-      FROM system_location_history
-      WHERE system_id = $1
-      ORDER BY changed_at DESC
-      `,
+        SELECT id, moved_by, to_location_id
+        FROM system_location_history
+        WHERE system_id = $1
+        ORDER BY changed_at DESC
+        `,
         [system_id]
       );
-
       if (historyResult.rows.length === 0) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ error: "No history entries found" });
       }
-
       if (historyResult.rows.length === 1) {
+        await client.query("ROLLBACK");
         return res
           .status(400)
           .json({ error: "Cannot delete the first history entry" });
       }
 
-      const { id: history_id, moved_by } = historyResult.rows[0];
+      const {
+        id: history_id,
+        moved_by,
+        to_location_id: deletedToLocationId,
+      } = historyResult.rows[0];
 
-      // 3️ Get deleted_user id
-      const deletedUserIdResult = await db.query(
+      // 3. Get deleted_user id
+      const deletedUserIdResult = await client.query(
         `SELECT id FROM users WHERE username = 'deleted_user@example.com'`
       );
       const deletedUserId = deletedUserIdResult.rows[0]?.id;
-
       if (!deletedUserId) {
+        await client.query("ROLLBACK");
         return res.status(500).json({ error: "Deleted user not configured" });
       }
 
-      // 4️ Check authorization: must be the mover OR deleted_user OR admin
+      // 4. Authorization check
       if (moved_by !== deletedUserId && moved_by !== req.user.userId) {
+        await client.query("ROLLBACK");
         return res.status(403).json({
           error:
             "You are not authorized to delete this history entry. Only the original mover or any authenticated user if done by deleted_user can delete.",
         });
       }
 
-      // 5️ Delete the latest history entry
-      await db.query("DELETE FROM system_location_history WHERE id = $1", [
+      // 5. Delete latest history entry
+      await client.query("DELETE FROM system_location_history WHERE id = $1", [
         history_id,
       ]);
 
-      // 6️ Roll back system.location_id to the new latest history entry
-      const latestRemaining = await db.query(
+      // 6. Roll back system.location_id to new latest entry
+      const latestRemaining = await client.query(
         `
-      SELECT to_location_id
-      FROM system_location_history
-      WHERE system_id = $1
-      ORDER BY changed_at DESC
-      LIMIT 1
-      `,
+        SELECT to_location_id
+        FROM system_location_history
+        WHERE system_id = $1
+        ORDER BY changed_at DESC
+        LIMIT 1
+        `,
         [system_id]
       );
 
@@ -721,18 +728,43 @@ router.delete(
           ? latestRemaining.rows[0].to_location_id
           : null;
 
-      await db.query("UPDATE system SET location_id = $1 WHERE id = $2", [
+      await client.query("UPDATE system SET location_id = $1 WHERE id = $2", [
         rollbackLocation,
         system_id,
       ]);
 
+      // 7. If we are LEAVING an RMA location, remove from any open pallet
+      if (
+        deletedToLocationId &&
+        RMA_LOCATION_IDS.includes(deletedToLocationId)
+      ) {
+        await client.query(
+          `
+          UPDATE pallet_system
+          SET removed_at = NOW()
+          WHERE system_id = $1
+            AND removed_at IS NULL
+            AND pallet_id IN (SELECT id FROM pallet WHERE status = 'open')
+          `,
+          [system_id]
+        );
+      }
+
+      await client.query("COMMIT");
       res.json({
-        message: "Last history entry deleted, system location rolled back",
+        message:
+          "Last history entry deleted, system location rolled back" +
+          (deletedToLocationId && RMA_LOCATION_IDS.includes(deletedToLocationId)
+            ? " and removed from open pallet"
+            : ""),
         new_location_id: rollbackLocation,
       });
     } catch (err) {
+      await client.query("ROLLBACK");
       console.error(err);
       res.status(500).json({ error: "Failed to delete last history entry" });
+    } finally {
+      client.release();
     }
   }
 );
