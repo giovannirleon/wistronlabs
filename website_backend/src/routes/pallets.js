@@ -19,6 +19,7 @@ router.get("/", async (req, res) => {
   let whereSQL = "";
 
   // Parse filters
+  // Parse filters
   if (filters) {
     const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
 
@@ -29,6 +30,9 @@ router.get("/", async (req, res) => {
             factory_id: "p.factory_id",
             dpn: "p.dpn",
             status: "p.status",
+            doa_number: "p.doa_number",
+            released_at: "p.released_at",
+            created_at: "p.created_at",
           })}`
         : "";
   }
@@ -39,6 +43,7 @@ router.get("/", async (req, res) => {
     factory_id: "p.factory_id",
     dpn: "p.dpn",
     status: "p.status",
+    doa_number: "p.doa_number",
     released_at: "p.released_at",
     created_at: "p.created_at",
   };
@@ -62,17 +67,18 @@ router.get("/", async (req, res) => {
     const [dataResult, countResult] = await Promise.all([
       db.query(
         `
-        SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
-               p.released_at, p.created_at,
-               json_agg(json_build_object(
-                 'system_id', ps.system_id,
-                 'service_tag', s.service_tag
-               )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
+       SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
+              p.doa_number,
+              p.released_at, p.created_at,
+              json_agg(json_build_object(
+                'system_id', ps.system_id,
+                'service_tag', s.service_tag
+              )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
         FROM pallet p
         LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
         LEFT JOIN system s ON s.id = ps.system_id
         ${whereSQL}
-        GROUP BY p.id, p.released_at, p.created_at
+        GROUP BY p.id, p.doa_number, p.released_at, p.created_at
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
         `,
@@ -115,16 +121,18 @@ router.get("/:pallet_number", async (req, res) => {
     const result = await db.query(
       `
       SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
-            p.released_at, p.created_at,
-            json_agg(json_build_object(
-              'system_id', ps.system_id,
-              'service_tag', s.service_tag
-            )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
+        p.doa_number,
+        p.released_at, p.created_at,
+        json_agg(json_build_object(
+          'system_id', ps.system_id,
+          'service_tag', s.service_tag
+        )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
       FROM pallet p
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
       LEFT JOIN system s ON s.id = ps.system_id
       WHERE p.pallet_number = $1
-      GROUP BY p.id, p.released_at, p.created_at
+      GROUP BY p.id, p.doa_number, p.released_at, p.created_at
+
       `,
       [pallet_number]
     );

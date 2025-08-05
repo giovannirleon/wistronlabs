@@ -8,7 +8,7 @@ import { enrichPalletWithBarcodes } from "../utils/enrichPalletWithBarcodes";
 import PalletPaper from "../components/PalletPaper";
 import { Link } from "react-router-dom";
 import useApi from "../hooks/useApi";
-
+import SearchContainerSS from "../components/SearchContainerSS.jsx";
 import {
   DndContext,
   closestCenter,
@@ -210,13 +210,15 @@ export default function ShippingPage() {
     const loadPallets = async () => {
       try {
         const data = await getPallets({
-          filters: [
-            {
-              field: "status",
-              op: "=",
-              values: ["open"],
-            },
-          ],
+          filters: {
+            conditions: [
+              {
+                field: "status",
+                op: "=",
+                values: ["open"],
+              },
+            ],
+          },
         });
 
         // validate the response shape
@@ -600,9 +602,39 @@ export default function ShippingPage() {
             </div>
           </>
         ) : (
-          <div className="text-gray-600 italic text-sm mt-6">
-            Inactive pallets view will be implemented soon.
-          </div>
+          <SearchContainerSS
+            title="Released Pallets"
+            displayOrder={[
+              "pallet_number",
+              "dpn",
+              "factory_id",
+              "doa_number",
+              "date_released",
+            ]}
+            defaultSortBy="date_released"
+            defaultSortAsc={false}
+            linkType="internal"
+            truncate={true}
+            itemsPerPage={10}
+            fetchData={({ page, page_size, sort_by, sort_order, search }) =>
+              getPallets({
+                page,
+                page_size,
+                sort_by,
+                sort_order,
+                search,
+                filters: {
+                  conditions: [
+                    {
+                      field: "status",
+                      op: "=",
+                      values: ["released"],
+                    },
+                  ],
+                },
+              })
+            }
+          />
         )}
       </main>
     </>
