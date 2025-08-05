@@ -905,7 +905,6 @@ router.get("/:service_tag", async (req, res) => {
 });
 
 // PATCH /api/v1/systems/:service_tag/location
-// PATCH /api/v1/systems/:service_tag/location
 router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { to_location_id, note } = req.body;
