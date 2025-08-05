@@ -117,8 +117,13 @@ CREATE INDEX idx_pallet_system_active
   ON pallet_system(pallet_id)
   WHERE removed_at IS NULL;
 
+-- ✅ Enforce only one active pallet per system
+CREATE UNIQUE INDEX unique_active_system_per_pallet
+  ON pallet_system(system_id)
+  WHERE removed_at IS NULL;
+
 -- Composite index on factory_id and dpn for fast pallet lookups
 CREATE INDEX IF NOT EXISTS idx_pallet_factory_dpn
   ON pallet (factory_id, dpn);
 
-  CREATE INDEX idx_system_ppid ON system(ppid);
+CREATE INDEX idx_system_ppid ON system(ppid);

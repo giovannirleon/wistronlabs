@@ -80,7 +80,7 @@ function DroppableSlot({ palletId, idx, children }) {
 }
 
 const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
-  const isEmpty = pallet.active_systems.every((s) => s == null);
+  const isEmpty = (pallet.active_systems || []).every((s) => s == null);
   const isReleased = !!releaseFlags[pallet.id]?.released;
 
   useEffect(() => {
@@ -118,6 +118,8 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
     }));
   };
 
+  const systems = pallet.active_systems || [];
+
   return (
     <div className="border border-gray-300 rounded-2xl shadow-md hover:shadow-lg transition p-4 bg-white flex flex-col justify-between">
       <div>
@@ -131,7 +133,7 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
         </div>
         <div className="grid grid-cols-3 grid-rows-3 gap-2 mb-4">
           {Array.from({ length: 9 }).map((_, idx) => {
-            const system = pallet.active_systems[idx];
+            const system = systems[idx];
             return (
               <DroppableSlot
                 key={`${pallet.id}-${idx}`}
@@ -203,8 +205,12 @@ export default function ShippingPage() {
     const loadPallets = async () => {
       try {
         const data = await getPallets({ status: "open" });
-        setPallets(data.data || []);
-        setInitialPallets(structuredClone(data.data || []));
+
+        // validate the response shape
+        const result = Array.isArray(data?.data) ? data.data : [];
+
+        setPallets(result);
+        setInitialPallets(structuredClone(result));
       } catch (err) {
         console.error("Failed to load pallets:", err);
         showToast("Failed to load pallets", "error");
@@ -276,12 +282,12 @@ export default function ShippingPage() {
       const initial = initialPallets.find((p) => p.id === current.id);
       if (!initial) return true;
 
-      const currentTags = current.active_systems
+      const currentTags = (current.active_systems || [])
         .filter(Boolean)
         .map((s) => s.service_tag)
         .sort();
 
-      const initialTags = initial.active_systems
+      const initialTags = (initial.active_systems || [])
         .filter(Boolean)
         .map((s) => s.service_tag)
         .sort();
@@ -328,7 +334,7 @@ export default function ShippingPage() {
       const current = pallets.find((p) => p.id === initial.id);
       if (!current) continue;
 
-      initial.active_systems.forEach((system) => {
+      (initial.active_systems || []).forEach((system) => {
         if (!system) return;
 
         const currentPallet = pallets.find((p) =>
@@ -346,7 +352,7 @@ export default function ShippingPage() {
     }
 
     const emptyPallets = pallets
-      .filter((p) => p.active_systems.every((s) => s == null))
+      .filter((p) => (p.active_systems || []).every((s) => s == null))
       .map((p) => ({ id: p.id, pallet_number: p.pallet_number }));
 
     const releaseList = Object.entries(releaseFlags)
@@ -446,7 +452,8 @@ export default function ShippingPage() {
 
     // STEP 5: Refetch pallets
     try {
-      const refreshed = await getPallets({ status: "open" });
+      const data = await getPallets({ status: "open" });
+      const refreshed = Array.isArray(data?.data) ? data.data : [];
       setPallets(refreshed);
       setInitialPallets(structuredClone(refreshed));
       setReleaseFlags({});
@@ -500,14 +507,15 @@ export default function ShippingPage() {
               onDragEnd={handleDragEnd}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {pallets.map((pallet) => (
-                  <PalletGrid
-                    key={`${pallet.id}-${!!releaseFlags[pallet.id]}`}
-                    pallet={pallet}
-                    releaseFlags={releaseFlags}
-                    setReleaseFlags={setReleaseFlags}
-                  />
-                ))}
+                {Array.isArray(pallets) &&
+                  pallets.map((pallet) => (
+                    <PalletGrid
+                      key={`${pallet.id}-${!!releaseFlags[pallet.id]}`}
+                      pallet={pallet}
+                      releaseFlags={releaseFlags}
+                      setReleaseFlags={setReleaseFlags}
+                    />
+                  ))}
               </div>
 
               <DragOverlay>
