@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { formatDateHumanReadable } from "../utils/date_format";
 import useApi from "./useApi";
+import { DateTime } from "luxon";
 
 export default function useDetailsModal(showToast, onUpdated) {
   const [isOpen, setIsOpen] = useState(false);
@@ -96,11 +97,9 @@ export default function useDetailsModal(showToast, onUpdated) {
             <div className="flex justify-between">
               <span className="font-medium">Manufactured Date:</span>
               <span>
-                {
-                  formatDateHumanReadable(details.manufactured_date).split(
-                    ","
-                  )[0]
-                }
+                {DateTime.fromISO(details.manufactured_date, {
+                  zone: "utc",
+                }).toFormat("MM/dd/yyyy")}
               </span>
             </div>
           </div>

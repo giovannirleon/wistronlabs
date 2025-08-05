@@ -47,7 +47,14 @@ CREATE TABLE system (
     service_tag VARCHAR(100) NOT NULL UNIQUE,
     issue TEXT,
     location_id INT NOT NULL REFERENCES location(id) ON DELETE RESTRICT,
-    factory_id INT REFERENCES factory(id) ON DELETE RESTRICT
+    factory_id INT REFERENCES factory(id) ON DELETE RESTRICT,
+    dpn VARCHAR(100),
+    manufactured_date DATE,
+    serial VARCHAR(100),
+    rev VARCHAR(50),
+    ppid VARCHAR(100),
+    
+    CONSTRAINT system_ppid_key UNIQUE (ppid)
 );
 
 -- 📄 Create system_location_history table
@@ -113,3 +120,5 @@ CREATE INDEX idx_pallet_system_active
 -- Composite index on factory_id and dpn for fast pallet lookups
 CREATE INDEX IF NOT EXISTS idx_pallet_factory_dpn
   ON pallet (factory_id, dpn);
+
+  CREATE INDEX idx_system_ppid ON system(ppid);

@@ -2,6 +2,10 @@ import React, { useEffect, useState } from "react";
 import useToast from "../hooks/useToast";
 import useConfirm from "../hooks/useConfirm";
 import { formatDateHumanReadable } from "../utils/date_format";
+import { pdf } from "@react-pdf/renderer";
+import SystemRMALabel from "../components/SystemRMALabel.jsx";
+import { enrichPalletWithBarcodes } from "../utils/enrichPalletWithBarcodes";
+import PalletPaper from "../components/PalletPaper";
 import { Link } from "react-router-dom";
 import {
   DndContext,
@@ -179,6 +183,7 @@ export default function ShippingPage() {
   const [activeDragData, setActiveDragData] = useState(null);
   const [releaseFlags, setReleaseFlags] = useState({});
   const [tab, setTab] = useState("active");
+  const FRONTEND_URL = import.meta.env.VITE_URL;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -395,6 +400,7 @@ export default function ShippingPage() {
                     );
                     return;
                   }
+
                   const confirmed = await confirm({
                     message: "Are you sure you want to submit changes?",
                     title: "Confirm Submit",
@@ -405,6 +411,7 @@ export default function ShippingPage() {
                   });
 
                   if (!confirmed) return;
+
                   const moves = [];
 
                   for (const initial of initialPallets) {
@@ -431,7 +438,9 @@ export default function ShippingPage() {
                       moves.push({
                         service_tag: system.service_tag,
                         from_pallet_id: initial.id,
+                        from_pallet_number: initial.pallet_number,
                         to_pallet_id: currentPallet.id,
+                        to_pallet_nummber: currentPallet.pallet_number,
                       });
                     });
                   }
@@ -446,6 +455,7 @@ export default function ShippingPage() {
                   console.log("Moves:", moves);
                   console.log("Empty pallets:", emptyPallets);
 
+                  // 🟩 Move releaseList declaration up before use
                   const releaseList = Object.entries(releaseFlags)
                     .filter(
                       ([_, val]) => val.released && val.doa_number?.trim()
@@ -461,6 +471,89 @@ export default function ShippingPage() {
 
                   console.log("Release Pallet IDs:", releaseList);
 
+                  const systemRMALabelData = [];
+
+                  for (const move of moves) {
+                    const toPallet = pallets.find(
+                      (p) => p.id === move.to_pallet_id
+                    );
+                    if (!toPallet) continue;
+
+                    const dpn = toPallet.pallet_number.split("-")[2];
+                    const factory_code = toPallet.pallet_number.split("-")[1];
+
+                    systemRMALabelData.push({
+                      service_tag: move.service_tag,
+                      pallet_number: toPallet.pallet_number,
+                      dpn,
+                      factory_code,
+                      url: `${FRONTEND_URL}${move.service_tag}`,
+                    });
+                  }
+
+                  if (systemRMALabelData.length > 0) {
+                    const blob = await pdf(
+                      <SystemRMALabel systems={systemRMALabelData} />
+                    ).toBlob();
+                    const url = URL.createObjectURL(blob);
+                    window.open(url);
+                  }
+
+                  if (systemRMALabelData.length > 0) {
+                    const rawPallet = {
+                      pallet_number: "PAL-A1-TESTY-08042501",
+                      doa_number: "DOA-250804-001",
+                      date_released: "2025-08-04",
+                      dpn: "TESTY",
+                      factory_id: "A1",
+                      systems: [
+                        {
+                          service_tag: "5CWZS64",
+                          ppid: "TW0RRFGYWS90057BA0BCA00",
+                        },
+                        {
+                          service_tag: "GJQZS64",
+                          ppid: "TW0RRFGYWS900578A0E8A00",
+                        },
+                        {
+                          service_tag: "1FY3T64",
+                          ppid: "TW0DKCFXWSM0054U00EAA00",
+                        },
+                        {
+                          service_tag: "5CWZS64",
+                          ppid: "TW0RRFGYWS90057BA0BCA00",
+                        },
+                        {
+                          service_tag: "GJQZS64",
+                          ppid: "TW0RRFGYWS900578A0E8A00",
+                        },
+                        {
+                          service_tag: "1FY3T64",
+                          ppid: "TW0DKCFXWSM0054U00EAA00",
+                        },
+                        {
+                          service_tag: "5CWZS64",
+                          ppid: "TW0RRFGYWS90057BA0BCA00",
+                        },
+                        {
+                          service_tag: "GJQZS64",
+                          ppid: "TW0RRFGYWS900578A0E8A00",
+                        },
+                        {
+                          service_tag: "1FY3T64",
+                          ppid: "TW0DKCFXWSM0054U00EAA00",
+                        },
+                      ],
+                    };
+
+                    const enrichedPallet = enrichPalletWithBarcodes(rawPallet);
+
+                    const blob = await pdf(
+                      <PalletPaper pallet={enrichedPallet} />
+                    ).toBlob();
+                    const url = URL.createObjectURL(blob);
+                    window.open(url);
+                  }
                   showToast(
                     `Detected ${moves.length} move(s), ${emptyPallets.length} empty pallet(s).`,
                     "info"

@@ -181,10 +181,6 @@ function decodeDateCode(code) {
   return new Date(year, month - 1, day);
 }
 
-// Example:
-console.log(decodeDateCode("54I"));
-// { year: 2025, month: 4, day: 18 }
-
 // Map factory codes in PPID to your DB factory codes
 const FACTORY_MAP = {
   WSJ00: "MX", // Juarez
@@ -295,6 +291,7 @@ router.get("/", async (req, res) => {
             serial: "s.serial",
             rev: "s.rev",
             factory: "f.code",
+            ppid: "s.ppid",
           })}`
         : "";
   }
@@ -339,6 +336,7 @@ router.get("/", async (req, res) => {
           s.manufactured_date,
           s.serial,
           s.rev,
+          s.ppid,
           l.name AS location,
           f.code AS factory_code,
           f.name AS factory_name,
@@ -858,6 +856,7 @@ router.get("/:service_tag", async (req, res) => {
         s.manufactured_date,
         s.serial,
         s.rev,
+        s.ppid,
         l.name AS location,
         f.code AS factory_code,
         f.name AS factory_name,
@@ -1034,7 +1033,6 @@ router.patch("/:service_tag/issue", authenticateToken, async (req, res) => {
   }
 });
 
-// PATCH /api/v1/systems/:service_tag/ppid
 router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { ppid } = req.body;
@@ -1068,6 +1066,7 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
 
     // Build update SET clause
     const fields = [
+      { column: "ppid", value: ppid }, // ✅ Add PPID explicitly
       { column: "dpn", value: dpn },
       { column: "manufactured_date", value: manufacturedDate },
       { column: "serial", value: serial },
@@ -1079,7 +1078,7 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
     }
 
     const setClauses = fields
-      .map((f, i) => `${f.column} = $${i + 2}`)
+      .map((f, i) => `${f.column} = $${i + 2}`) // Starts from $2
       .join(", ");
     const values = fields.map((f) => f.value);
 
