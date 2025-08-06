@@ -1139,9 +1139,6 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
   }
 });
 
-// RMA location IDs
-const RMA_LOCATION_IDS = [6, 7, 8];
-
 // PATCH /api/v1/systems/:service_tag/add-to-pallet
 router.patch(
   "/:service_tag/add-to-pallet",
