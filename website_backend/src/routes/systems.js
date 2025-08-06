@@ -1139,6 +1139,88 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
   }
 });
 
+// RMA location IDs
+const RMA_LOCATION_IDS = [6, 7, 8];
+
+// PATCH /api/v1/systems/:service_tag/add-to-pallet
+router.patch(
+  "/:service_tag/add-to-pallet",
+  authenticateToken,
+  async (req, res) => {
+    const { service_tag } = req.params;
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+
+      // 1. Get system details including location_id and ppid
+      const { rows } = await client.query(
+        `
+        SELECT id, factory_id, dpn, location_id, ppid
+        FROM system
+        WHERE service_tag = $1
+        `,
+        [service_tag]
+      );
+
+      if (!rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "System not found" });
+      }
+
+      const { id: system_id, factory_id, dpn, location_id, ppid } = rows[0];
+
+      // 2. Validate RMA location
+      if (!RMA_LOCATION_IDS.includes(location_id)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error:
+            "System must be in an RMA location before being added to a pallet",
+        });
+      }
+
+      // 3. Validate PPID
+      if (!ppid || !ppid.trim()) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "System must have a valid PPID before being added to a pallet",
+        });
+      }
+
+      // 4. Validate factory_id and dpn
+      if (!factory_id || !dpn) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error:
+            "System must have factory_id and dpn set before being added to a pallet",
+        });
+      }
+
+      // 5. Assign to pallet
+      const { pallet_id, pallet_number } = await assignSystemToPallet(
+        system_id,
+        factory_id,
+        dpn,
+        client
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: `System ${service_tag} added to pallet ${pallet_number}`,
+        pallet_id,
+        pallet_number,
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      res.status(500).json({ error: "Failed to add system to pallet" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 // DELETE /api/v1/systems/:service_tag
 router.delete("/:service_tag", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
