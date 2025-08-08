@@ -186,7 +186,7 @@ const PalletGrid = ({
           Created on {formatDateHumanReadable(pallet.created_at)}
         </p>
 
-        {/* Lock chip + stage/clear button */}
+        {/* Lock chip  stage/clear button */}
         <div className="absolute top-0 right-0 flex items-center gap-2">
           <span
             className={`px-2 py-1 text-xs font-semibold rounded-md border ${stateStyles[stateKey]}`}
@@ -266,6 +266,7 @@ export default function ShippingPage() {
   const [pallets, setPallets] = useState([]);
   const [initialPallets, setInitialPallets] = useState([]);
   const [activeDragData, setActiveDragData] = useState(null);
+  const [downloadingReport, setDownloadingReport] = useState(false);
 
   // NEW: staged lock changes
   const [lockFlags, setLockFlags] = useState({});
@@ -410,6 +411,80 @@ export default function ShippingPage() {
     );
   };
 
+  const handleDownloadLockedReport = async () => {
+    try {
+      setDownloadingReport(true);
+
+      // Use effective lock (staged lock takes precedence if present)
+      const lockedPallets = pallets.filter(
+        (p) => (lockFlags[p.id] ?? p.locked) === true
+      );
+
+      if (lockedPallets.length === 0) {
+        showToast("No locked pallets to report.", "info");
+        return;
+      }
+
+      // Build rows: Pallet Number, Service Tag, PPID
+      const rows = [["pallet_number", "service_tag", "ppid"]];
+
+      for (const pallet of lockedPallets) {
+        const systems = (pallet.active_systems || []).filter(Boolean);
+        if (systems.length === 0) continue;
+
+        // fetch PPIDs in parallel for this pallet
+        const details = await Promise.all(
+          systems.map(async (s) => {
+            try {
+              const d = await getSystem(s.service_tag);
+              return { st: s.service_tag, ppid: (d?.ppid || "").trim() };
+            } catch {
+              return { st: s.service_tag, ppid: "" };
+            }
+          })
+        );
+
+        for (const d of details) {
+          rows.push([pallet.pallet_number, d.st, d.ppid || ""]);
+        }
+      }
+
+      // Convert to CSV
+      const csv = rows
+        .map((r) =>
+          r
+            .map((cell) => {
+              const v = String(cell ?? "");
+              // escape quotes, wrap in quotes if needed
+              const needsQuotes = /[",\n]/.test(v);
+              const escaped = v.replace(/"/g, '""');
+              return needsQuotes ? `"${escaped}"` : escaped;
+            })
+            .join(",")
+        )
+        .join("\n");
+
+      // Download
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      a.href = url;
+      a.download = `locked-pallet-report-${ts}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      showToast("Locked Pallet Report downloaded.", "info");
+    } catch (err) {
+      console.error(err);
+      showToast(`Failed to build report: ${err.message || err}`, "error");
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
     setActiveDragData(null);
@@ -426,6 +501,15 @@ export default function ShippingPage() {
     if (fromId === toId && fromIdx === toIdx) return;
 
     const system = active.data.current.system;
+
+    // Client-side lock guard (mirrors backend rule)
+    const fromPalletObj = pallets.find((p) => p.id === fromId);
+    const toPalletObj = pallets.find((p) => p.id === toId);
+    if (!fromPalletObj || !toPalletObj) return;
+    if (fromPalletObj.locked || toPalletObj.locked) {
+      showToast("Cannot move systems when either pallet is locked", "error");
+      return;
+    }
 
     setPallets((prev) => {
       const copy = structuredClone(prev);
@@ -525,6 +609,10 @@ export default function ShippingPage() {
     });
 
     if (!confirmed) return;
+
+    // Snapshot lock counts at time of submission
+    const lockedCount = pallets.filter((p) => p.locked === true).length;
+    const unlockedCount = pallets.filter((p) => p.locked === false).length;
 
     const moves = [];
     for (const initial of initialPallets) {
@@ -721,10 +809,21 @@ export default function ShippingPage() {
       setInitialPallets(structuredClone(refreshed));
       setReleaseFlags({});
       setLockFlags({}); // clear staged lock changes
-      showToast(
-        `Submitted ${moves.length} move(s), deleted ${emptyPallets.length} empty pallet(s).`,
-        "info"
-      );
+      const parts = [];
+
+      if (moves.length > 0) {
+        parts.push(`Submitted ${moves.length} move(s)`);
+      }
+
+      if (emptyPallets.length > 0) {
+        parts.push(`Deleted ${emptyPallets.length} empty pallet(s)`);
+      }
+
+      if (lockedCount > 0 || unlockedCount > 0) {
+        parts.push(`Locks: ${lockedCount} locked / ${unlockedCount} unlocked`);
+      }
+
+      showToast(parts.join(", "), "info");
     } catch (err) {
       showToast(`Failed to refresh pallets: ${err.message}`, "error");
     }
@@ -762,8 +861,26 @@ export default function ShippingPage() {
             Inactive Pallets
           </button>
         </div>
+
         {tab === "active" ? (
           <>
+            <div className="flex justify-end mt-3">
+              <button
+                onClick={handleDownloadLockedReport}
+                disabled={downloadingReport}
+                className={`px-4 py-2 text-sm font-semibold rounded-md border
+                   ${
+                     downloadingReport
+                       ? "bg-gray-200 text-gray-500 cursor-wait"
+                       : "bg-white hover:bg-neutral-50 text-blue-700 border-blue-200"
+                   }`}
+                title="Download CSV of units (ST  PPID) on locked pallets"
+              >
+                {downloadingReport
+                  ? "Generating..."
+                  : "Download Locked Pallet Report"}
+              </button>
+            </div>
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -790,7 +907,7 @@ export default function ShippingPage() {
               </div>
 
               <DragOverlay>
-                {activeDragData ? (
+                {activeDragData?.system ? (
                   <SystemBox serviceTag={activeDragData.system.service_tag} />
                 ) : null}
               </DragOverlay>
