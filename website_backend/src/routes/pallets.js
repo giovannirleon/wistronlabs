@@ -199,7 +199,7 @@ router.patch("/:pallet_number/lock", authenticateToken, async (req, res) => {
       `UPDATE pallet
          SET locked = $1,
              locked_at = CASE WHEN $1 THEN NOW() ELSE NULL END,
-             locked_by = CASE WHEN $1 THEN $2 ELSE NULL END
+             locked_by = CASE WHEN $1 THEN $2::integer ELSE NULL::integer END
        WHERE id = $3
        RETURNING id, pallet_number, locked, locked_at, locked_by`,
       [locked, userId, id]
