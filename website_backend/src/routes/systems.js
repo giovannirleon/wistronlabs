@@ -35,6 +35,7 @@ const express = require("express");
 const db = require("../db");
 const { authenticateToken } = require("./auth");
 const { buildWhereClause } = require("../utils/buildWhereClause");
+const { systemOnLockedPallet } = require("../utils/systemOnLockedPallet");
 
 const NodeCache = require("node-cache");
 const snapshotCache = new NodeCache({ stdTTL: 8 * 60 * 60 }); // 8 hours
@@ -117,7 +118,7 @@ async function assignSystemToPallet(system_id, factory_id, dpn, client) {
     FROM pallet p
     LEFT JOIN pallet_system ps
       ON p.id = ps.pallet_id AND ps.removed_at IS NULL
-    WHERE p.status = 'open'
+     WHERE p.status = 'open' AND p.locked = FALSE
       AND p.factory_id = $1
       AND p.dpn = $2
     GROUP BY p.id, p.pallet_number
@@ -706,6 +707,14 @@ router.delete(
         });
       }
 
+      const onLocked = await systemOnLockedPallet(client, system_id);
+      if (onLocked) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "System is on a locked pallet — cannot roll back history",
+        });
+      }
+
       // 5. Delete latest history entry
       await client.query("DELETE FROM system_location_history WHERE id = $1", [
         history_id,
@@ -953,6 +962,16 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       rev,
     } = rows[0];
 
+    //check if system is on a locked pallet
+    const onLocked = await systemOnLockedPallet(client, system_id);
+    if (onLocked) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        error:
+          "System is on a locked pallet — location changes are not allowed",
+      });
+    }
+
     // RMA validation
     if (RMA_LOCATION_IDS.includes(to_location_id)) {
       const missingFields = [];
@@ -1153,10 +1172,10 @@ router.patch(
       // 1. Get system details including location_id and ppid
       const { rows } = await client.query(
         `
-        SELECT id, factory_id, dpn, location_id, ppid
-        FROM system
-        WHERE service_tag = $1
-        `,
+      SELECT id, factory_id, dpn, location_id, ppid
+      FROM system
+      WHERE service_tag = $1
+      `,
         [service_tag]
       );
 
@@ -1193,7 +1212,30 @@ router.patch(
         });
       }
 
-      // 5. Assign to pallet
+      // 4.5 Block if already on an active pallet (covers locked pallets too)
+      const { rows: activePalletRows } = await client.query(
+        `
+      SELECT p.pallet_number, p.locked
+      FROM pallet_system ps
+      JOIN pallet p ON p.id = ps.pallet_id
+      WHERE ps.system_id = $1
+        AND ps.removed_at IS NULL
+        AND p.status = 'open'
+      LIMIT 1
+      `,
+        [system_id]
+      );
+      if (activePalletRows.length > 0) {
+        const { pallet_number, locked } = activePalletRows[0];
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: `System is already on active pallet ${pallet_number}${
+            locked ? " (locked)" : ""
+          }`,
+        });
+      }
+
+      // 5. Assign to pallet (your helper already ignores locked pallets)
       const { pallet_id, pallet_number } = await assignSystemToPallet(
         system_id,
         factory_id,

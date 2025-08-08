@@ -53,7 +53,7 @@ CREATE TABLE system (
     serial VARCHAR(100),
     rev VARCHAR(50),
     ppid VARCHAR(100),
-    
+
     CONSTRAINT system_ppid_key UNIQUE (ppid)
 );
 
@@ -88,9 +88,12 @@ CREATE TABLE pallet (
     doa_number VARCHAR(50),
     created_at TIMESTAMP DEFAULT NOW(),
     released_at TIMESTAMP,
-    dpn TEXT                  
+    dpn TEXT,
+    -- 🔒 Locking fields
+    locked BOOLEAN NOT NULL DEFAULT FALSE,
+    locked_at TIMESTAMP,
+    locked_by INT REFERENCES users(id)
 );
-
 
 -- 📄 Create pallet-system relationship
 CREATE TABLE pallet_system (
@@ -109,7 +112,7 @@ CREATE INDEX idx_system_location_history_moved_by ON system_location_history(mov
 CREATE INDEX IF NOT EXISTS idx_location_name ON location(name);
 
 -- Additional index for efficient queries by system_id and changed_at
-CREATE INDEX idx_history_system_changed_at 
+CREATE INDEX idx_history_system_changed_at
 ON system_location_history (system_id, changed_at);
 
 -- Active pallet entries index
@@ -125,5 +128,8 @@ CREATE UNIQUE INDEX unique_active_system_per_pallet
 -- Composite index on factory_id and dpn for fast pallet lookups
 CREATE INDEX IF NOT EXISTS idx_pallet_factory_dpn
   ON pallet (factory_id, dpn);
+
+-- 🔒 Lock flag index (helps filter/sort by lock state)
+CREATE INDEX IF NOT EXISTS idx_pallet_locked ON pallet(locked);
 
 CREATE INDEX idx_system_ppid ON system(ppid);

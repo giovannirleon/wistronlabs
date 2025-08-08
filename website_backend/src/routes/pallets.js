@@ -33,6 +33,9 @@ router.get("/", async (req, res) => {
             doa_number: "p.doa_number",
             released_at: "p.released_at",
             created_at: "p.created_at",
+            locked: "p.locked",
+            locked_at: "p.locked_at",
+            locked_by: "p.locked_by",
           })}`
         : "";
   }
@@ -46,6 +49,9 @@ router.get("/", async (req, res) => {
     doa_number: "p.doa_number",
     released_at: "p.released_at",
     created_at: "p.created_at",
+    locked: "p.locked",
+    locked_at: "p.locked_at",
+    locked_by: "p.locked_by",
   };
 
   const orderColumn = allowedSortColumns[sort_by] || "p.created_at";
@@ -70,6 +76,7 @@ router.get("/", async (req, res) => {
        SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
               p.doa_number,
               p.released_at, p.created_at,
+              p.locked, p.locked_at, p.locked_by,
               json_agg(json_build_object(
                 'system_id', ps.system_id,
                 'service_tag', s.service_tag
@@ -78,7 +85,7 @@ router.get("/", async (req, res) => {
         LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
         LEFT JOIN system s ON s.id = ps.system_id
         ${whereSQL}
-        GROUP BY p.id, p.doa_number, p.released_at, p.created_at
+        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
         `,
@@ -123,6 +130,7 @@ router.get("/:pallet_number", async (req, res) => {
       SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
         p.doa_number,
         p.released_at, p.created_at,
+        p.locked, p.locked_at, p.locked_by,
         json_agg(json_build_object(
           'system_id', ps.system_id,
           'service_tag', s.service_tag
@@ -131,7 +139,7 @@ router.get("/:pallet_number", async (req, res) => {
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
       LEFT JOIN system s ON s.id = ps.system_id
       WHERE p.pallet_number = $1
-      GROUP BY p.id, p.doa_number, p.released_at, p.created_at
+      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by
 
       `,
       [pallet_number]
@@ -145,6 +153,52 @@ router.get("/:pallet_number", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch pallet" });
+  }
+});
+
+// PATCH /api/v1/pallets/:pallet_number/lock  { locked: boolean }
+router.patch("/:pallet_number/lock", authenticateToken, async (req, res) => {
+  const { pallet_number } = req.params;
+  const { locked } = req.body;
+
+  if (typeof locked !== "boolean") {
+    return res.status(400).json({ error: "locked must be boolean" });
+  }
+
+  try {
+    const { rows } = await db.query(
+      `SELECT id, status, locked FROM pallet WHERE pallet_number = $1`,
+      [pallet_number]
+    );
+    if (!rows.length)
+      return res.status(404).json({ error: "Pallet not found" });
+
+    const { id, status } = rows[0];
+
+    // Only open pallets can be (un)locked.
+    if (status !== "open") {
+      return res
+        .status(400)
+        .json({ error: "Only open pallets can be locked/unlocked" });
+    }
+
+    const upd = await db.query(
+      `UPDATE pallet
+         SET locked = $1,
+             locked_at = CASE WHEN $1 THEN NOW() ELSE NULL END,
+             locked_by = CASE WHEN $1 THEN $2 ELSE NULL END
+       WHERE id = $3
+       RETURNING id, pallet_number, locked, locked_at, locked_by`,
+      [locked, req.user?.userId || 1, id]
+    );
+
+    res.json({
+      message: locked ? "Pallet locked" : "Pallet unlocked",
+      pallet: upd.rows[0],
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to update lock state" });
   }
 });
 
@@ -184,7 +238,7 @@ router.patch("/move", authenticateToken, async (req, res) => {
     // 2. Look up pallet IDs by pallet_number
     const { rows: pallets } = await client.query(
       `
-      SELECT id, pallet_number, status, factory_id, dpn
+      SELECT id, pallet_number, status, factory_id, dpn, locked
       FROM pallet
       WHERE pallet_number = ANY($1)
       `,
@@ -212,6 +266,14 @@ router.patch("/move", authenticateToken, async (req, res) => {
       return res
         .status(400)
         .json({ error: "Cannot move from/to a released pallet" });
+    }
+
+    // 3b. Block moves involving locked pallets
+    if (fromPallet.locked || toPallet.locked) {
+      await client.query("ROLLBACK");
+      return res
+        .status(400)
+        .json({ error: "Cannot move systems when either pallet is locked" });
     }
 
     // 4. Same factory_id and dpn
@@ -366,8 +428,11 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
       UPDATE pallet
       SET status = 'released',
           doa_number = $1,
-          released_at = NOW()
-      WHERE id = $2
+          released_at = NOW(),
+          locked = FALSE,
+          locked_at = NULL,
+          locked_by = NULL
+          WHERE id = $2
       `,
       [doa_number.trim(), id]
     );
