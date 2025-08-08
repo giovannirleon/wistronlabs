@@ -170,10 +170,11 @@ router.patch("/:pallet_number/lock", authenticateToken, async (req, res) => {
       `SELECT id, status, locked FROM pallet WHERE pallet_number = $1`,
       [pallet_number]
     );
-    if (!rows.length)
+    if (!rows.length) {
       return res.status(404).json({ error: "Pallet not found" });
+    }
 
-    const { id, status } = rows[0];
+    const { id, status, locked: currentLocked } = rows[0];
 
     // Only open pallets can be (un)locked.
     if (status !== "open") {
@@ -182,6 +183,18 @@ router.patch("/:pallet_number/lock", authenticateToken, async (req, res) => {
         .json({ error: "Only open pallets can be locked/unlocked" });
     }
 
+    // Optional: short-circuit if no change requested
+    if (currentLocked === locked) {
+      return res.json({
+        message: locked ? "Pallet already locked" : "Pallet already unlocked",
+        pallet: rows[0],
+      });
+    }
+
+    const rawUserId = req.user?.userId;
+    const parsed = Number.parseInt(rawUserId, 10);
+    const userId = Number.isFinite(parsed) ? parsed : 1; // ensure integer fallback
+
     const upd = await db.query(
       `UPDATE pallet
          SET locked = $1,
@@ -189,7 +202,7 @@ router.patch("/:pallet_number/lock", authenticateToken, async (req, res) => {
              locked_by = CASE WHEN $1 THEN $2 ELSE NULL END
        WHERE id = $3
        RETURNING id, pallet_number, locked, locked_at, locked_by`,
-      [locked, req.user?.userId || 1, id]
+      [locked, userId, id]
     );
 
     res.json({

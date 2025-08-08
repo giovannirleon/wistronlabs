@@ -351,6 +351,18 @@ function useApi() {
   const getPallet = (pallet_number) =>
     fetchJSON(`/pallets/${encodeURIComponent(pallet_number)}`);
 
+  // PATCH /api/v1/pallets/:pallet_number/lock  { locked: boolean }
+  const setPalletLock = (pallet_number, locked) =>
+    fetchJSON(`/pallets/${encodeURIComponent(pallet_number)}/lock`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locked }),
+    });
+
+  // tiny convenience wrappers
+  const lockPallet = (pallet_number) => setPalletLock(pallet_number, true);
+  const unlockPallet = (pallet_number) => setPalletLock(pallet_number, false);
+
   return {
     getSystems,
     getHistory,
@@ -379,6 +391,9 @@ function useApi() {
     deletePallet,
     getPallets,
     getPallet,
+    setPalletLock,
+    lockPallet,
+    unlockPallet,
   };
 }
 

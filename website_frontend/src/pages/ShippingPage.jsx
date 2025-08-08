@@ -40,7 +40,7 @@ function DraggableSystem({ palletId, index, system }) {
     transform: transform
       ? `translate(${transform.x}px, ${transform.y}px)`
       : undefined,
-    opacity: isDragging ? 0.5 : 1, // <-- dim source
+    opacity: isDragging ? 0.5 : 1,
     pointerEvents: isDragging ? "none" : "auto",
   };
 
@@ -79,7 +79,16 @@ function DroppableSlot({ palletId, idx, children }) {
   );
 }
 
-const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
+const PalletGrid = ({
+  pallet,
+  releaseFlags,
+  setReleaseFlags,
+  onLockUpdated, // kept for backwards-compat (unused now; lock applied on submit)
+  setPalletLock, // kept for backwards-compat (used on submit)
+  showToast,
+  lockFlags, // NEW
+  setLockFlags, // NEW
+}) => {
   const isEmpty = (pallet.active_systems || []).every((s) => s == null);
   const isReleased = !!releaseFlags[pallet.id]?.released;
 
@@ -113,24 +122,95 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
       ...prev,
       [pallet.id]: {
         ...prev[pallet.id],
-        doa_number: e.target.value.trimStart(), // prevent spaces at beginning
+        doa_number: e.target.value.trimStart(),
       },
     }));
   };
 
   const systems = pallet.active_systems || [];
 
+  // ---- STAGED LOCK TOGGLE (no server call here) ----
+  const currentLocked = !!pallet.locked;
+  const pending = lockFlags[pallet.id]; // undefined | boolean (desired)
+  const hasPending = pending !== undefined;
+  const effectiveLocked = hasPending ? pending : currentLocked;
+
+  const stateKey = hasPending
+    ? effectiveLocked
+      ? "LOCKED_PENDING"
+      : "UNLOCKED_PENDING"
+    : currentLocked
+    ? "LOCKED_CURRENT"
+    : "UNLOCKED_CURRENT";
+
+  const stateStyles = {
+    LOCKED_CURRENT: "bg-red-50 text-red-700 border-red-200",
+    UNLOCKED_CURRENT: "bg-green-50 text-green-700 border-green-200",
+    LOCKED_PENDING: "bg-amber-50 text-amber-700 border-amber-200",
+    UNLOCKED_PENDING: "bg-blue-50 text-blue-700 border-blue-200",
+  };
+
+  const stateLabel = {
+    LOCKED_CURRENT: "Locked",
+    UNLOCKED_CURRENT: "Unlocked",
+    LOCKED_PENDING: "Locked (pending)",
+    UNLOCKED_PENDING: "Unlocked (pending)",
+  };
+
+  const toggleLockStaged = () => {
+    // If no pending flag, stage the opposite of current
+    if (!hasPending) {
+      setLockFlags((prev) => ({ ...prev, [pallet.id]: !currentLocked }));
+      //showToast(
+      // `Staged: ${!currentLocked ? "Lock" : "Unlock"} ${pallet.pallet_number}`,
+      //   "info"
+      // );
+      return;
+    }
+    // If pending exists, clear it (back to "no change")
+    setLockFlags((prev) => {
+      const copy = { ...prev };
+      delete copy[pallet.id];
+      return copy;
+    });
+    //showToast(`Cleared staged change for ${pallet.pallet_number}`, "info");
+  };
+
   return (
     <div className="border border-gray-300 rounded-2xl shadow-md hover:shadow-lg transition p-4 bg-white flex flex-col justify-between">
-      <div>
-        <div className="mb-2">
-          <h2 className="text-md font-medium text-gray-700">
-            {pallet.pallet_number}
-          </h2>
-          <p className="text-xs text-gray-500">
-            Created on {formatDateHumanReadable(pallet.created_at)}
-          </p>
+      <div className="mb-2 relative">
+        <h2 className="text-md font-medium text-gray-700 pr-32">
+          {pallet.pallet_number}
+        </h2>
+        <p className="text-xs text-gray-500">
+          Created on {formatDateHumanReadable(pallet.created_at)}
+        </p>
+
+        {/* Lock chip + stage/clear button */}
+        <div className="absolute top-0 right-0 flex items-center gap-2">
+          <span
+            className={`px-2 py-1 text-xs font-semibold rounded-md border ${stateStyles[stateKey]}`}
+            title={
+              hasPending
+                ? "Pending lock change (applied on Submit Changes)"
+                : "Current lock state"
+            }
+          >
+            {stateLabel[stateKey]}
+          </span>
+          <button
+            onClick={toggleLockStaged}
+            className="px-2 py-1 text-xs font-semibold rounded-md border border-neutral-300 hover:bg-neutral-50"
+            title={
+              hasPending
+                ? "Clear staged lock change"
+                : "Stage a lock/unlock change (applied on Submit Changes)"
+            }
+          >
+            {hasPending ? "Clear Pending" : "Toggle Lock"}
+          </button>
         </div>
+
         <div className="grid grid-cols-3 grid-rows-3 gap-2 mb-4">
           {Array.from({ length: 9 }).map((_, idx) => {
             const system = systems[idx];
@@ -151,6 +231,7 @@ const PalletGrid = ({ pallet, releaseFlags, setReleaseFlags }) => {
             );
           })}
         </div>
+
         <button
           onClick={toggleRelease}
           disabled={isEmpty}
@@ -185,6 +266,10 @@ export default function ShippingPage() {
   const [pallets, setPallets] = useState([]);
   const [initialPallets, setInitialPallets] = useState([]);
   const [activeDragData, setActiveDragData] = useState(null);
+
+  // NEW: staged lock changes
+  const [lockFlags, setLockFlags] = useState({});
+
   const [releaseFlags, setReleaseFlags] = useState({});
   const [tab, setTab] = useState("active");
   const FRONTEND_URL = import.meta.env.VITE_URL;
@@ -216,7 +301,7 @@ export default function ShippingPage() {
                 const systemDetails = await getSystem(sys.service_tag);
                 return {
                   service_tag: systemDetails.service_tag || "UNKNOWN-ST",
-                  ppid: systemDetails.ppid?.trim() || "MISSING-PPID", // Safe default
+                  ppid: systemDetails.ppid?.trim() || "MISSING-PPID",
                 };
               } catch {
                 return {
@@ -280,6 +365,7 @@ export default function ShippingPage() {
     moveSystemBetweenPallets,
     releasePallet,
     deletePallet,
+    setPalletLock,
   } = useApi();
 
   useEffect(() => {
@@ -297,7 +383,6 @@ export default function ShippingPage() {
           },
         });
 
-        // validate the response shape
         const result = Array.isArray(data?.data) ? data.data : [];
 
         setPallets(result);
@@ -310,6 +395,20 @@ export default function ShippingPage() {
 
     loadPallets();
   }, []);
+
+  const handleLockUpdated = (updatedPallet) => {
+    // kept for compatibility; still used if you refactor to instant updates elsewhere
+    setPallets((prev) =>
+      prev.map((p) =>
+        p.id === updatedPallet.id ? { ...p, ...updatedPallet } : p
+      )
+    );
+    setInitialPallets((prev) =>
+      prev.map((p) =>
+        p.id === updatedPallet.id ? { ...p, ...updatedPallet } : p
+      )
+    );
+  };
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -391,6 +490,13 @@ export default function ShippingPage() {
 
     const hasAnyRelease = Object.keys(releaseFlags).length > 0;
     if (hasAnyRelease) return true;
+
+    // NEW: consider staged lock changes
+    const hasAnyLockChange = pallets.some((p) => {
+      if (lockFlags[p.id] === undefined) return false;
+      return lockFlags[p.id] !== !!p.locked;
+    });
+    if (hasAnyLockChange) return true;
 
     return false;
   })();
@@ -523,14 +629,12 @@ export default function ShippingPage() {
         window.open(URL.createObjectURL(labelBlob));
       }
 
-      // For each released pallet, fetch system details for its active systems
       for (const release of releaseList) {
         const palletData = pallets.find(
           (p) => p.pallet_number === release.pallet_number
         );
         if (!palletData) continue;
 
-        // Fetch all system details in parallel using getSystem
         const systemsWithDetails = await Promise.all(
           (palletData.active_systems || []).filter(Boolean).map(async (sys) => {
             try {
@@ -552,7 +656,6 @@ export default function ShippingPage() {
           })
         );
 
-        // Shape the pallet for PalletPaper
         const rawPallet = {
           pallet_number: palletData.pallet_number,
           doa_number: release.doa_number,
@@ -573,6 +676,39 @@ export default function ShippingPage() {
       return;
     }
 
+    // STEP 4.5: Apply staged lock changes (AFTER moves/deletes/releases)
+    const pendingLockUpdates = pallets
+      .filter(
+        (p) => lockFlags[p.id] !== undefined && lockFlags[p.id] !== !!p.locked
+      )
+      .map((p) => ({
+        pallet_number: p.pallet_number,
+        desired: lockFlags[p.id],
+        id: p.id,
+      }));
+
+    for (const upd of pendingLockUpdates) {
+      try {
+        const res = await setPalletLock(upd.pallet_number, upd.desired);
+        // keep local state in sync if you don't refetch below
+        setPallets((prev) =>
+          prev.map((p) =>
+            p.id === upd.id
+              ? { ...p, ...(res?.pallet || { locked: upd.desired }) }
+              : p
+          )
+        );
+      } catch (err) {
+        showToast(
+          `Failed to ${upd.desired ? "lock" : "unlock"} ${upd.pallet_number}: ${
+            err.message
+          }`,
+          "error"
+        );
+        return;
+      }
+    }
+
     // STEP 5: Refetch pallets
     try {
       const data = await getPallets({
@@ -584,6 +720,7 @@ export default function ShippingPage() {
       setPallets(refreshed);
       setInitialPallets(structuredClone(refreshed));
       setReleaseFlags({});
+      setLockFlags({}); // clear staged lock changes
       showToast(
         `Submitted ${moves.length} move(s), deleted ${emptyPallets.length} empty pallet(s).`,
         "info"
@@ -637,10 +774,17 @@ export default function ShippingPage() {
                 {Array.isArray(pallets) &&
                   pallets.map((pallet) => (
                     <PalletGrid
-                      key={`${pallet.id}-${!!releaseFlags[pallet.id]}`}
+                      key={`${pallet.id}-${!!releaseFlags[pallet.id]}-${
+                        lockFlags[pallet.id] ?? "nc"
+                      }`}
                       pallet={pallet}
                       releaseFlags={releaseFlags}
                       setReleaseFlags={setReleaseFlags}
+                      onLockUpdated={handleLockUpdated}
+                      setPalletLock={setPalletLock}
+                      showToast={showToast}
+                      lockFlags={lockFlags}
+                      setLockFlags={setLockFlags}
                     />
                   ))}
               </div>
@@ -668,6 +812,7 @@ export default function ShippingPage() {
                 onClick={() => {
                   setPallets(structuredClone(initialPallets));
                   setReleaseFlags({});
+                  setLockFlags({});
                   showToast("Changes have been reverted.", "info");
                 }}
                 disabled={!palletsChanged}
