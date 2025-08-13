@@ -406,7 +406,7 @@ function TrackingPage() {
           lastReceivedMap.set(tag, lastReceivedEvent.changed_at);
         }
       }
-
+      console.log(reportData);
       const report = reportData.map((unit) => {
         const unitData = filteredSystems.find(
           (fs) => fs.service_tag === unit.service_tag
@@ -418,10 +418,13 @@ function TrackingPage() {
           "Last Received On": lastReceivedMap.has(unit.service_tag)
             ? formatDateHumanReadable(lastReceivedMap.get(unit.service_tag))
             : null,
+          PIC:
+            unit.location.slice(0, 3) === "RMA" ? unit.location.slice(4) : "",
+          From: unit.factory_code,
+          Status: unit.location,
           "Service Tag": unit.service_tag,
           Issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
-          Location: unit.location,
-          "Last Note": unit.note,
+          "Last Note (Analysis)": unit.note,
         };
       });
 

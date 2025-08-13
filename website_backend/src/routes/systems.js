@@ -419,6 +419,7 @@ router.get("/snapshot", async (req, res) => {
       `
       SELECT 
         s.service_tag,
+        s.factory_code,
         s.issue,
         l.name AS location,
         h.changed_at AS as_of
