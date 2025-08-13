@@ -420,7 +420,7 @@ function TrackingPage() {
             : null,
           PIC:
             unit.location.slice(0, 3) === "RMA" ? unit.location.slice(4) : "",
-          From: unit.factory_code,
+          From: unit.factory_code ? unit.factory_code : "Not Set",
           Status: unit.location,
           "Service Tag": unit.service_tag,
           Issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
