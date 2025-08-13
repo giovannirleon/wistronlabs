@@ -386,7 +386,6 @@ router.get("/snapshot", async (req, res) => {
 
   const includeNoteFlag =
     includeNote === "true" || includeNote === "1" || includeNote === true;
-
   const noCacheFlag = noCache === "true" || noCache === "1" || noCache === true;
 
   const cacheKey = `${date}:${locations || ""}:${includeNoteFlag}`;
@@ -419,7 +418,7 @@ router.get("/snapshot", async (req, res) => {
       `
       SELECT 
         s.service_tag,
-        s.factory_code,
+        COALESCE(f.code, 'Not Entered Yet') AS factory_code,
         s.issue,
         l.name AS location,
         h.changed_at AS as_of
@@ -436,6 +435,7 @@ router.get("/snapshot", async (req, res) => {
         ORDER BY h.system_id, h.changed_at DESC
       ) h ON h.system_id = s.id
       JOIN location l ON h.to_location_id = l.id
+      LEFT JOIN factory f ON s.factory_id = f.id
       WHERE 1=1
       ${locationFilterSQL.join(" ")}
       ORDER BY s.service_tag
