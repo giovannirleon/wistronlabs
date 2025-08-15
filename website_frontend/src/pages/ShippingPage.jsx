@@ -425,8 +425,17 @@ export default function ShippingPage() {
         return;
       }
 
-      // Build rows: Pallet Number, Service Tag, PPID
-      const rows = [["pallet_number", "service_tag", "ppid"]];
+      // Build rows: Pallet Number, Service Tag, PPID, Issue, Location, Factory Code
+      const rows = [
+        [
+          "pallet_number",
+          "service_tag",
+          "ppid",
+          "issue",
+          "location",
+          "factory_code",
+        ],
+      ];
 
       for (const pallet of lockedPallets) {
         const systems = (pallet.active_systems || []).filter(Boolean);
@@ -437,15 +446,34 @@ export default function ShippingPage() {
           systems.map(async (s) => {
             try {
               const d = await getSystem(s.service_tag);
-              return { st: s.service_tag, ppid: (d?.ppid || "").trim() };
+              return {
+                st: s.service_tag,
+                ppid: (d?.ppid || "").trim(),
+                issue: d?.issue ?? "",
+                location: d?.location ?? "",
+                factory_code: d?.factory_code ?? "",
+              };
             } catch {
-              return { st: s.service_tag, ppid: "" };
+              return {
+                st: s.service_tag,
+                ppid: "",
+                issue: "",
+                location: "",
+                factory_code: "",
+              };
             }
           })
         );
 
         for (const d of details) {
-          rows.push([pallet.pallet_number, d.st, d.ppid || ""]);
+          rows.push([
+            pallet.pallet_number,
+            d.st,
+            d.ppid || "",
+            d.issue,
+            d.location,
+            d.factory_code,
+          ]);
         }
       }
 
