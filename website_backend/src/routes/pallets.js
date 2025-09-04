@@ -435,7 +435,17 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
       });
     }
 
-    // 7. Update pallet to released
+    // 7.1 Mark all active assignments on this pallet as removed
+    await db.query(
+      `
+      UPDATE pallet_system
+      SET removed_at = COALESCE(removed_at, NOW())
+      WHERE pallet_id = $1 AND removed_at IS NULL
+      `,
+      [id]
+    );
+
+    // 7.2 Now update pallet to released
     await db.query(
       `
       UPDATE pallet
@@ -445,7 +455,7 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
           locked = FALSE,
           locked_at = NULL,
           locked_by = NULL
-          WHERE id = $2
+      WHERE id = $2
       `,
       [doa_number.trim(), id]
     );

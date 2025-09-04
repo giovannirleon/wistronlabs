@@ -202,20 +202,14 @@ function SystemPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (
-      !toLocationId ||
-      note.trim() === "" ||
-      (toLocationId === 5 && !selectedStation)
-    ) {
+    const toId = Number.parseInt(toLocationId, 10);
+
+    if (!toId || note.trim() === "" || (toId === 5 && !selectedStation)) {
       setFormError("You must fill out all fields.");
       return;
     }
 
-    if (
-      selectedStationObj &&
-      toLocationId === 5 &&
-      selectedStationObj.system_id
-    ) {
+    if (selectedStationObj && toId === 5 && selectedStationObj.system_id) {
       setFormError("This station is already occupied.");
       return;
     }
@@ -224,13 +218,14 @@ function SystemPage() {
     setSubmitting(true);
 
     try {
-      await updateSystemLocation(serviceTag, {
-        to_location_id: parseInt(toLocationId, 10),
+      // ⬅️ Backend now returns { message, pallet_number?, dpn?, factory_code? } when moving into RMA
+      const resp = await updateSystemLocation(serviceTag, {
+        to_location_id: toId,
         note,
       });
 
       // ✅ Update station mapping
-      if (selectedStationObj && toLocationId === 5) {
+      if (selectedStationObj && toId === 5) {
         await updateStation(selectedStationObj.station_name, {
           system_id: system.id,
         });
@@ -242,26 +237,51 @@ function SystemPage() {
         });
       }
 
-      // ✅ If RMA destination, print RMA label
-      if (RMA_LOCATION_IDS.includes(parseInt(toLocationId))) {
-        const palletInfo = await getSystemPallet(system.service_tag);
-        const blob = await pdf(
-          <SystemRMALabel
-            systems={[
-              {
-                service_tag: system.service_tag,
-                pallet_number: palletInfo.pallet_number,
-                dpn: palletInfo.dpn,
-                factory_code: palletInfo.factory_code,
-                url: `${FRONTEND_URL}${system.service_tag}`,
-                location: system.location,
-              },
-            ]}
-          />
-        ).toBlob();
+      // ✅ If RMA destination, print RMA label (prefer backend response)
+      if (RMA_LOCATION_IDS.includes(toId)) {
+        // Prefer values from response; fall back to current system or a single read of getSystemPallet()
+        let palletNumber = resp?.pallet_number || null;
+        let dpn = resp?.dpn ?? system?.dpn ?? null;
+        let factoryCode = resp?.factory_code ?? system?.factory_code ?? null;
 
-        const url = URL.createObjectURL(blob);
-        window.open(url);
+        if (!palletNumber || !dpn || !factoryCode) {
+          try {
+            const palletInfo = await getSystemPallet(system.service_tag);
+            palletNumber = palletNumber || palletInfo?.pallet_number || null;
+            dpn = dpn ?? palletInfo?.dpn ?? null;
+            factoryCode = factoryCode ?? palletInfo?.factory_code ?? null;
+          } catch {
+            // ignore — we’ll handle the “no palletNumber” case below
+          }
+        }
+
+        if (palletNumber) {
+          const blob = await pdf(
+            <SystemRMALabel
+              systems={[
+                {
+                  service_tag: system.service_tag,
+                  pallet_number: palletNumber,
+                  dpn,
+                  factory_code: factoryCode,
+                  url: `${FRONTEND_URL}${serviceTag}`,
+                  // You just moved it; avoid stale system.location:
+                  location: "RMA",
+                },
+              ]}
+            />
+          ).toBlob();
+
+          const url = URL.createObjectURL(blob);
+          window.open(url);
+        } else {
+          showToast(
+            "Moved to RMA, but pallet number isn’t available yet. Check backend logs.",
+            "error",
+            4000,
+            "bottom-right"
+          );
+        }
       }
 
       setNote("");
