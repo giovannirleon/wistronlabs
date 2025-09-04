@@ -18,8 +18,6 @@ router.get("/", async (req, res) => {
   const params = [];
   let whereSQL = "";
 
-  // Parse filters
-  // Parse filters
   if (filters) {
     const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
 
@@ -40,7 +38,6 @@ router.get("/", async (req, res) => {
         : "";
   }
 
-  // Sorting options
   const allowedSortColumns = {
     pallet_number: "p.pallet_number",
     factory_id: "p.factory_id",
@@ -57,35 +54,89 @@ router.get("/", async (req, res) => {
   const orderColumn = allowedSortColumns[sort_by] || "p.created_at";
   const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
 
-  // Pagination
   let limitOffsetSQL = "";
   let pageNum, pageSize, offset;
 
   if (!all || all === "false") {
-    pageNum = Math.max(parseInt(page), 1);
-    pageSize = Math.min(parseInt(page_size), 100);
+    pageNum = Math.max(parseInt(page, 10), 1);
+    pageSize = Math.min(parseInt(page_size, 10), 100);
     offset = (pageNum - 1) * pageSize;
     limitOffsetSQL = `LIMIT ${pageSize} OFFSET ${offset}`;
   }
 
   try {
-    // Query pallets with aggregated active systems
     const [dataResult, countResult] = await Promise.all([
       db.query(
         `
-       SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
-              p.doa_number,
-              p.released_at, p.created_at,
-              p.locked, p.locked_at, p.locked_by,
-              json_agg(json_build_object(
+        SELECT
+          p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
+          p.doa_number, p.released_at, p.created_at,
+          p.locked, p.locked_at, p.locked_by,
+
+          -- Back-compat: active systems only (empty array for released)
+          COALESCE(
+            json_agg(
+              json_build_object(
                 'system_id', ps.system_id,
                 'service_tag', s.service_tag
-              )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
+              )
+            ) FILTER (WHERE ps.removed_at IS NULL),
+            '[]'::json
+          ) AS active_systems,
+
+          -- LATERAL: full membership (for released pallets)
+          rel.systems_json  AS released_systems,
+          rel.systems_count AS released_count,
+
+          -- Canonical field for UI:
+          CASE
+            WHEN p.status = 'released' THEN COALESCE(rel.systems_json, '[]'::jsonb)
+            ELSE COALESCE(
+              json_agg(
+                json_build_object(
+                  'system_id', ps.system_id,
+                  'service_tag', s.service_tag,
+                  'added_at', ps.added_at,
+                  'removed_at', ps.removed_at
+                )
+              ) FILTER (WHERE ps.removed_at IS NULL),
+              '[]'::json
+            )::jsonb
+          END AS systems,
+
+          CASE
+            WHEN p.status = 'released' THEN COALESCE(rel.systems_count, 0)
+            ELSE COUNT(ps.id) FILTER (WHERE ps.removed_at IS NULL)
+          END AS systems_count
+
         FROM pallet p
+        -- active rows for open pallets
         LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-        LEFT JOIN system s ON s.id = ps.system_id
+        LEFT JOIN system s        ON s.id = ps.system_id
+
+        -- LATERAL subquery: compute full membership once per pallet row
+        LEFT JOIN LATERAL (
+          SELECT
+            json_agg(
+              json_build_object(
+                'system_id', ps2.system_id,
+                'service_tag', s2.service_tag,
+                'added_at', ps2.added_at,
+                'removed_at', ps2.removed_at
+              )
+              ORDER BY ps2.added_at ASC
+            )::jsonb AS systems_json,
+            COUNT(*)::int AS systems_count
+          FROM pallet_system ps2
+          JOIN system s2 ON s2.id = ps2.system_id
+          WHERE ps2.pallet_id = p.id
+        ) AS rel ON TRUE
+
         ${whereSQL}
-        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by
+        GROUP BY
+          p.id, p.doa_number, p.released_at, p.created_at,
+          p.locked, p.locked_at, p.locked_by,
+          rel.systems_json, rel.systems_count
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
         `,
@@ -107,7 +158,7 @@ router.get("/", async (req, res) => {
       return res.json(dataResult.rows);
     }
 
-    const total_count = parseInt(countResult.rows[0].count);
+    const total_count = parseInt(countResult.rows[0].count, 10);
 
     res.json({
       data: dataResult.rows,
@@ -121,26 +172,78 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/v1/pallets/:pallet_number
 router.get("/:pallet_number", async (req, res) => {
   const { pallet_number } = req.params;
   try {
     const result = await db.query(
       `
-      SELECT p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
-        p.doa_number,
-        p.released_at, p.created_at,
+      SELECT
+        p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
+        p.doa_number, p.released_at, p.created_at,
         p.locked, p.locked_at, p.locked_by,
-        json_agg(json_build_object(
-          'system_id', ps.system_id,
-          'service_tag', s.service_tag
-        )) FILTER (WHERE ps.removed_at IS NULL) AS active_systems
+
+        -- Back-compat: active systems only (empty array for released)
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'system_id', ps.system_id,
+              'service_tag', s.service_tag
+            )
+          ) FILTER (WHERE ps.removed_at IS NULL),
+          '[]'::json
+        ) AS active_systems,
+
+        -- LATERAL: full membership (for released pallets)
+        rel.systems_json  AS released_systems,
+        rel.systems_count AS released_count,
+
+        -- Canonical field for UI
+        CASE
+          WHEN p.status = 'released' THEN COALESCE(rel.systems_json, '[]'::jsonb)
+          ELSE COALESCE(
+            json_agg(
+              json_build_object(
+                'system_id', ps.system_id,
+                'service_tag', s.service_tag,
+                'added_at', ps.added_at,
+                'removed_at', ps.removed_at
+              )
+            ) FILTER (WHERE ps.removed_at IS NULL),
+            '[]'::json
+          )::jsonb
+        END AS systems,
+
+        CASE
+          WHEN p.status = 'released' THEN COALESCE(rel.systems_count, 0)
+          ELSE COUNT(ps.id) FILTER (WHERE ps.removed_at IS NULL)
+        END AS systems_count
+
       FROM pallet p
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-      LEFT JOIN system s ON s.id = ps.system_id
-      WHERE p.pallet_number = $1
-      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by
+      LEFT JOIN system s        ON s.id = ps.system_id
 
+      LEFT JOIN LATERAL (
+        SELECT
+          json_agg(
+            json_build_object(
+              'system_id', ps2.system_id,
+              'service_tag', s2.service_tag,
+              'added_at', ps2.added_at,
+              'removed_at', ps2.removed_at
+            )
+            ORDER BY ps2.added_at ASC
+          )::jsonb AS systems_json,
+          COUNT(*)::int AS systems_count
+        FROM pallet_system ps2
+        JOIN system s2 ON s2.id = ps2.system_id
+        WHERE ps2.pallet_id = p.id
+      ) AS rel ON TRUE
+
+      WHERE p.pallet_number = $1
+      GROUP BY
+        p.id, p.doa_number, p.released_at, p.created_at,
+        p.locked, p.locked_at, p.locked_by,
+        rel.systems_json, rel.systems_count
       `,
       [pallet_number]
     );

@@ -297,7 +297,7 @@ export default function ShippingPage() {
       (res.data || []).map(async (pallet) => {
         try {
           const systemsWithDetails = await Promise.all(
-            (pallet.active_systems || []).filter(Boolean).map(async (sys) => {
+            (pallet.systems || []).filter(Boolean).map(async (sys) => {
               try {
                 const systemDetails = await getSystem(sys.service_tag);
                 return {
@@ -385,9 +385,14 @@ export default function ShippingPage() {
         });
 
         const result = Array.isArray(data?.data) ? data.data : [];
-
-        setPallets(result);
-        setInitialPallets(structuredClone(result));
+        const normalized = result.map((p) => ({
+          ...p,
+          // backend may send only `systems`; keep your DnD code happy
+          active_systems: p.active_systems ?? p.systems ?? [],
+          systems: p.systems ?? p.active_systems ?? [],
+        }));
+        setPallets(normalized);
+        setInitialPallets(structuredClone(normalized));
       } catch (err) {
         console.error("Failed to load pallets:", err);
         showToast("Failed to load pallets", "error");
@@ -438,7 +443,9 @@ export default function ShippingPage() {
       ];
 
       for (const pallet of lockedPallets) {
-        const systems = (pallet.active_systems || []).filter(Boolean);
+        const systems = (pallet.systems ?? pallet.active_systems ?? []).filter(
+          Boolean
+        );
         if (systems.length === 0) continue;
 
         // fetch PPIDs in parallel for this pallet
@@ -752,24 +759,26 @@ export default function ShippingPage() {
         if (!palletData) continue;
 
         const systemsWithDetails = await Promise.all(
-          (palletData.active_systems || []).filter(Boolean).map(async (sys) => {
-            try {
-              const systemDetails = await getSystem(sys.service_tag);
-              return {
-                service_tag: systemDetails.service_tag,
-                ppid: systemDetails.ppid || "UNKNOWN",
-              };
-            } catch (err) {
-              console.error(
-                `Failed to fetch details for ${sys.service_tag}`,
-                err
-              );
-              return {
-                service_tag: sys.service_tag,
-                ppid: "",
-              };
-            }
-          })
+          (palletData.systems ?? palletData.active_systems ?? [])
+            .filter(Boolean)
+            .map(async (sys) => {
+              try {
+                const systemDetails = await getSystem(sys.service_tag);
+                return {
+                  service_tag: systemDetails.service_tag,
+                  ppid: systemDetails.ppid || "UNKNOWN",
+                };
+              } catch (err) {
+                console.error(
+                  `Failed to fetch details for ${sys.service_tag}`,
+                  err
+                );
+                return {
+                  service_tag: sys.service_tag,
+                  ppid: "",
+                };
+              }
+            })
         );
 
         const rawPallet = {
