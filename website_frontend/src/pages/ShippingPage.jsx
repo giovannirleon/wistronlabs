@@ -50,7 +50,7 @@ function DraggableSystem({ palletId, index, system }) {
       {...attributes}
       {...listeners}
       style={style}
-      className={`w-full h-full flex items-center justify-center `}
+      className="w-full h-full flex items-center justify-center"
     >
       <Link to={`/${system.service_tag}`} className="w-full h-full">
         <SystemBox serviceTag={system.service_tag} />
@@ -83,13 +83,15 @@ const PalletGrid = ({
   pallet,
   releaseFlags,
   setReleaseFlags,
-  onLockUpdated, // kept for backwards-compat (unused now; lock applied on submit)
-  setPalletLock, // kept for backwards-compat (used on submit)
+  onLockUpdated, // kept for backwards-compat
+  setPalletLock, // kept for backwards-compat
   showToast,
-  lockFlags, // NEW
-  setLockFlags, // NEW
+  lockFlags,
+  setLockFlags,
 }) => {
-  const isEmpty = (pallet.active_systems || []).every((s) => s == null);
+  // Use unified field so the grid also works for released pallets if reused.
+  const systems = pallet.systems ?? pallet.active_systems ?? [];
+  const isEmpty = systems.every((s) => s == null);
   const isReleased = !!releaseFlags[pallet.id]?.released;
 
   useEffect(() => {
@@ -127,11 +129,9 @@ const PalletGrid = ({
     }));
   };
 
-  const systems = pallet.active_systems || [];
-
-  // ---- STAGED LOCK TOGGLE (no server call here) ----
+  // ---- STAGED LOCK TOGGLE ----
   const currentLocked = !!pallet.locked;
-  const pending = lockFlags[pallet.id]; // undefined | boolean (desired)
+  const pending = lockFlags[pallet.id]; // undefined | boolean
   const hasPending = pending !== undefined;
   const effectiveLocked = hasPending ? pending : currentLocked;
 
@@ -158,22 +158,15 @@ const PalletGrid = ({
   };
 
   const toggleLockStaged = () => {
-    // If no pending flag, stage the opposite of current
     if (!hasPending) {
       setLockFlags((prev) => ({ ...prev, [pallet.id]: !currentLocked }));
-      //showToast(
-      // `Staged: ${!currentLocked ? "Lock" : "Unlock"} ${pallet.pallet_number}`,
-      //   "info"
-      // );
       return;
     }
-    // If pending exists, clear it (back to "no change")
     setLockFlags((prev) => {
       const copy = { ...prev };
       delete copy[pallet.id];
       return copy;
     });
-    //showToast(`Cleared staged change for ${pallet.pallet_number}`, "info");
   };
 
   return (
@@ -268,13 +261,29 @@ export default function ShippingPage() {
   const [activeDragData, setActiveDragData] = useState(null);
   const [downloadingReport, setDownloadingReport] = useState(false);
 
-  // NEW: staged lock changes
+  // staged lock changes
   const [lockFlags, setLockFlags] = useState({});
-
   const [releaseFlags, setReleaseFlags] = useState({});
   const [tab, setTab] = useState("active");
   const FRONTEND_URL = import.meta.env.VITE_URL;
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 150, tolerance: 5 },
+    })
+  );
+
+  const {
+    getSystem,
+    getPallets,
+    moveSystemBetweenPallets,
+    releasePallet,
+    deletePallet,
+    setPalletLock,
+  } = useApi();
+
+  // ---- Released tab data fetcher ----
   const fetchReleasedPallets = async ({
     page,
     page_size,
@@ -297,28 +306,39 @@ export default function ShippingPage() {
       (res.data || []).map(async (pallet) => {
         try {
           const systemsWithDetails = await Promise.all(
-            (pallet.systems || []).filter(Boolean).map(async (sys) => {
-              try {
-                const systemDetails = await getSystem(sys.service_tag);
-                return {
-                  service_tag: systemDetails.service_tag || "UNKNOWN-ST",
-                  ppid: systemDetails.ppid?.trim() || "MISSING-PPID",
-                };
-              } catch {
-                return {
-                  service_tag: sys.service_tag || "UNKNOWN-ST",
-                  ppid: "MISSING-PPID",
-                };
-              }
-            })
+            (
+              pallet.systems ??
+              pallet.released_systems ??
+              pallet.active_systems ??
+              []
+            )
+              .filter(Boolean)
+              .map(async (sys) => {
+                try {
+                  const systemDetails = await getSystem(sys.service_tag);
+                  return {
+                    service_tag: systemDetails.service_tag || "UNKNOWN-ST",
+                    ppid: systemDetails.ppid?.trim() || "MISSING-PPID",
+                  };
+                } catch {
+                  return {
+                    service_tag: sys.service_tag || "UNKNOWN-ST",
+                    ppid: "MISSING-PPID",
+                  };
+                }
+              })
           );
+
+          const parts = pallet.pallet_number.split("-");
+          const factory_id = parts[1] || "";
+          const dpn = parts[2] || "";
 
           const rawPallet = {
             pallet_number: pallet.pallet_number,
             doa_number: pallet.doa_number,
             date_released: pallet.released_at?.split("T")[0] || "",
-            dpn: pallet.pallet_number.split("-")[2] || "",
-            factory_id: pallet.pallet_number.split("-")[1] || "",
+            dpn,
+            factory_id,
             systems: systemsWithDetails,
           };
 
@@ -351,46 +371,24 @@ export default function ShippingPage() {
     return { data: palletsWithLinks, total_count: res.total_count };
   };
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 150, tolerance: 5 },
-    })
-  );
-
-  const {
-    getSystem,
-    getPallets,
-    moveSystemBetweenPallets,
-    releasePallet,
-    deletePallet,
-    setPalletLock,
-  } = useApi();
-
+  // ---- Initial load (open pallets) ----
   useEffect(() => {
     const loadPallets = async () => {
       try {
         const data = await getPallets({
           filters: {
-            conditions: [
-              {
-                field: "status",
-                op: "=",
-                values: ["open"],
-              },
-            ],
+            conditions: [{ field: "status", op: "=", values: ["open"] }],
           },
         });
 
         const result = Array.isArray(data?.data) ? data.data : [];
+        // Normalize both fields for DnD + unified reads
         const normalized = result.map((p) => ({
           ...p,
-          // backend may send only `systems`; keep your DnD code happy
           active_systems: p.active_systems ?? p.systems ?? [],
           systems: p.systems ?? p.active_systems ?? [],
         }));
+
         setPallets(normalized);
         setInitialPallets(structuredClone(normalized));
       } catch (err) {
@@ -403,7 +401,6 @@ export default function ShippingPage() {
   }, []);
 
   const handleLockUpdated = (updatedPallet) => {
-    // kept for compatibility; still used if you refactor to instant updates elsewhere
     setPallets((prev) =>
       prev.map((p) =>
         p.id === updatedPallet.id ? { ...p, ...updatedPallet } : p
@@ -420,17 +417,15 @@ export default function ShippingPage() {
     try {
       setDownloadingReport(true);
 
-      // Use effective lock (staged lock takes precedence if present)
+      // Prefer live members for active pallets
       const lockedPallets = pallets.filter(
         (p) => (lockFlags[p.id] ?? p.locked) === true
       );
-
       if (lockedPallets.length === 0) {
         showToast("No locked pallets to report.", "info");
         return;
       }
 
-      // Build rows: Pallet Number, Service Tag, PPID, Issue, Location, Factory Code
       const rows = [
         [
           "pallet_number",
@@ -443,12 +438,11 @@ export default function ShippingPage() {
       ];
 
       for (const pallet of lockedPallets) {
-        const systems = (pallet.systems ?? pallet.active_systems ?? []).filter(
+        const systems = (pallet.active_systems ?? pallet.systems ?? []).filter(
           Boolean
         );
         if (systems.length === 0) continue;
 
-        // fetch PPIDs in parallel for this pallet
         const details = await Promise.all(
           systems.map(async (s) => {
             try {
@@ -484,13 +478,11 @@ export default function ShippingPage() {
         }
       }
 
-      // Convert to CSV
       const csv = rows
         .map((r) =>
           r
             .map((cell) => {
               const v = String(cell ?? "");
-              // escape quotes, wrap in quotes if needed
               const needsQuotes = /[",\n]/.test(v);
               const escaped = v.replace(/"/g, '""');
               return needsQuotes ? `"${escaped}"` : escaped;
@@ -499,7 +491,6 @@ export default function ShippingPage() {
         )
         .join("\n");
 
-      // Download
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -537,7 +528,7 @@ export default function ShippingPage() {
 
     const system = active.data.current.system;
 
-    // Client-side lock guard (mirrors backend rule)
+    // Client-side lock guard
     const fromPalletObj = pallets.find((p) => p.id === fromId);
     const toPalletObj = pallets.find((p) => p.id === toId);
     if (!fromPalletObj || !toPalletObj) return;
@@ -552,8 +543,8 @@ export default function ShippingPage() {
       const toPallet = copy.find((p) => p.id === toId);
       if (!fromPallet || !toPallet) return prev;
 
-      const getDPN = (p) => p.pallet_number.split("-")[2];
-      const getFactory = (p) => p.pallet_number.split("-")[1];
+      const getDPN = (p) => (p.pallet_number.split("-")[2] || "").trim();
+      const getFactory = (p) => (p.pallet_number.split("-")[1] || "").trim();
 
       const fromDPN = getDPN(fromPallet);
       const toDPN = getDPN(toPallet);
@@ -566,18 +557,24 @@ export default function ShippingPage() {
           reasons.push(`DPN mismatch (${fromDPN} → ${toDPN})`);
         if (fromFactory !== toFactory)
           reasons.push(`Factory mismatch (${fromFactory} → ${toFactory})`);
-
         showToast(`Cannot move system: ${reasons.join(" and ")}`, "error");
         return prev;
       }
 
-      if (toPallet.active_systems[toIdx]) {
+      if (toPallet.active_systems?.[toIdx]) {
         showToast("Target slot already occupied", "error");
         return prev;
       }
 
-      fromPallet.active_systems[fromIdx] = undefined;
-      toPallet.active_systems[toIdx] = system;
+      // Mutate both views to keep state consistent
+      if (Array.isArray(fromPallet.active_systems))
+        fromPallet.active_systems[fromIdx] = undefined;
+      if (Array.isArray(toPallet.active_systems))
+        toPallet.active_systems[toIdx] = system;
+
+      if (Array.isArray(fromPallet.systems))
+        fromPallet.systems[fromIdx] = undefined;
+      if (Array.isArray(toPallet.systems)) toPallet.systems[toIdx] = system;
 
       return [...copy];
     });
@@ -595,7 +592,6 @@ export default function ShippingPage() {
         .filter(Boolean)
         .map((s) => s.service_tag)
         .sort();
-
       const initialTags = (initial.active_systems || [])
         .filter(Boolean)
         .map((s) => s.service_tag)
@@ -610,7 +606,6 @@ export default function ShippingPage() {
     const hasAnyRelease = Object.keys(releaseFlags).length > 0;
     if (hasAnyRelease) return true;
 
-    // NEW: consider staged lock changes
     const hasAnyLockChange = pallets.some((p) => {
       if (lockFlags[p.id] === undefined) return false;
       return lockFlags[p.id] !== !!p.locked;
@@ -645,7 +640,6 @@ export default function ShippingPage() {
 
     if (!confirmed) return;
 
-    // Snapshot lock counts at time of submission
     const lockedCount = pallets.filter((p) => p.locked === true).length;
     const unlockedCount = pallets.filter((p) => p.locked === false).length;
 
@@ -660,7 +654,6 @@ export default function ShippingPage() {
         const currentPallet = pallets.find((p) =>
           p.active_systems.some((s) => s?.service_tag === system.service_tag)
         );
-
         if (!currentPallet || currentPallet.id === initial.id) return;
 
         moves.push({
@@ -689,8 +682,9 @@ export default function ShippingPage() {
       const toPallet = pallets.find(
         (p) => p.pallet_number === move.to_pallet_number
       );
-      const dpn = toPallet?.pallet_number.split("-")[2] || "UNKNOWN";
-      const factory_code = toPallet?.pallet_number.split("-")[1] || "UNKNOWN";
+      const parts = (toPallet?.pallet_number || "").split("-");
+      const dpn = parts[2] || "UNKNOWN";
+      const factory_code = parts[1] || "UNKNOWN";
       return {
         service_tag: move.service_tag,
         pallet_number: toPallet?.pallet_number || "UNKNOWN",
@@ -773,20 +767,21 @@ export default function ShippingPage() {
                   `Failed to fetch details for ${sys.service_tag}`,
                   err
                 );
-                return {
-                  service_tag: sys.service_tag,
-                  ppid: "",
-                };
+                return { service_tag: sys.service_tag, ppid: "" };
               }
             })
         );
+
+        const parts = palletData.pallet_number.split("-");
+        const factory_id = parts[1] || "";
+        const dpn = parts[2] || "";
 
         const rawPallet = {
           pallet_number: palletData.pallet_number,
           doa_number: release.doa_number,
           date_released: new Date().toISOString().split("T")[0],
-          dpn: palletData.pallet_number.split("-")[2] || "",
-          factory_id: palletData.pallet_number.split("-")[1] || "",
+          dpn,
+          factory_id,
           systems: systemsWithDetails,
         };
 
@@ -801,7 +796,7 @@ export default function ShippingPage() {
       return;
     }
 
-    // STEP 4.5: Apply staged lock changes (AFTER moves/deletes/releases)
+    // STEP 4.5: Apply staged lock changes
     const pendingLockUpdates = pallets
       .filter(
         (p) => lockFlags[p.id] !== undefined && lockFlags[p.id] !== !!p.locked
@@ -815,7 +810,6 @@ export default function ShippingPage() {
     for (const upd of pendingLockUpdates) {
       try {
         const res = await setPalletLock(upd.pallet_number, upd.desired);
-        // keep local state in sync if you don't refetch below
         setPallets((prev) =>
           prev.map((p) =>
             p.id === upd.id
@@ -834,7 +828,7 @@ export default function ShippingPage() {
       }
     }
 
-    // STEP 5: Refetch pallets
+    // STEP 5: Refetch pallets (normalize again)
     try {
       const data = await getPallets({
         filters: {
@@ -842,24 +836,21 @@ export default function ShippingPage() {
         },
       });
       const refreshed = Array.isArray(data?.data) ? data.data : [];
-      setPallets(refreshed);
-      setInitialPallets(structuredClone(refreshed));
+      const normalized = refreshed.map((p) => ({
+        ...p,
+        active_systems: p.active_systems ?? p.systems ?? [],
+        systems: p.systems ?? p.active_systems ?? [],
+      }));
+      setPallets(normalized);
+      setInitialPallets(structuredClone(normalized));
       setReleaseFlags({});
-      setLockFlags({}); // clear staged lock changes
+      setLockFlags({});
       const parts = [];
-
-      if (moves.length > 0) {
-        parts.push(`Submitted ${moves.length} move(s)`);
-      }
-
-      if (emptyPallets.length > 0) {
+      if (moves.length > 0) parts.push(`Submitted ${moves.length} move(s)`);
+      if (emptyPallets.length > 0)
         parts.push(`Deleted ${emptyPallets.length} empty pallet(s)`);
-      }
-
-      if (lockedCount > 0 || unlockedCount > 0) {
+      if (lockedCount > 0 || unlockedCount > 0)
         parts.push(`Locks: ${lockedCount} locked / ${unlockedCount} unlocked`);
-      }
-
       showToast(parts.join(", "), "info");
     } catch (err) {
       showToast(`Failed to refresh pallets: ${err.message}`, "error");
@@ -905,12 +896,11 @@ export default function ShippingPage() {
               <button
                 onClick={handleDownloadLockedReport}
                 disabled={downloadingReport}
-                className={`px-4 py-2 text-sm font-semibold rounded-md border
-                   ${
-                     downloadingReport
-                       ? "bg-gray-200 text-gray-500 cursor-wait"
-                       : "bg-white hover:bg-neutral-50 text-blue-700 border-blue-200"
-                   }`}
+                className={`px-4 py-2 text-sm font-semibold rounded-md border ${
+                  downloadingReport
+                    ? "bg-gray-200 text-gray-500 cursor-wait"
+                    : "bg-white hover:bg-neutral-50 text-blue-700 border-blue-300"
+                }`}
                 title="Download CSV of units (ST  PPID) on locked pallets"
               >
                 {downloadingReport
@@ -918,6 +908,7 @@ export default function ShippingPage() {
                   : "Download Locked Pallet Report"}
               </button>
             </div>
+
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}

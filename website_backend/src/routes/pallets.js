@@ -87,7 +87,7 @@ router.get("/", async (req, res) => {
             '[]'::json
           ) AS active_systems,
 
-          -- Released-pallet snapshot at release time
+          -- Released-pallet snapshot at release time (INCLUSIVE; robust to NULL removed_at)
           COALESCE(
             json_agg(
               json_build_object(
@@ -100,7 +100,7 @@ router.get("/", async (req, res) => {
             ) FILTER (
               WHERE p.status = 'released'
                 AND ps.added_at <= p.released_at
-                AND (ps.removed_at IS NULL OR ps.removed_at > p.released_at)
+                AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
             ),
             '[]'::json
           ) AS released_systems,
@@ -129,21 +129,21 @@ router.get("/", async (req, res) => {
                   ORDER BY ps.added_at
                 ) FILTER (
                   WHERE ps.added_at <= p.released_at
-                    AND (ps.removed_at IS NULL OR ps.removed_at > p.released_at)
+                    AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
                 )
             END,
             '[]'::json
           ) AS systems,
 
-          -- Count matching the above
+          -- Count matching the above (cast to int so frontend doesn’t get a string)
           CASE
             WHEN p.status = 'open' THEN
-              COUNT(*) FILTER (WHERE ps.removed_at IS NULL)
+              COUNT(*) FILTER (WHERE ps.removed_at IS NULL)::int
             ELSE
               COUNT(*) FILTER (
                 WHERE ps.added_at <= p.released_at
-                  AND (ps.removed_at IS NULL OR ps.removed_at > p.released_at)
-              )
+                  AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
+              )::int
           END AS systems_count
 
         FROM pallet p
@@ -191,7 +191,7 @@ router.get("/:pallet_number", async (req, res) => {
   try {
     const result = await db.query(
       `
-      SELECT
+        SELECT
         p.id, p.pallet_number, p.factory_id, p.dpn, p.status,
         p.doa_number, p.released_at, p.created_at,
         p.locked, p.locked_at, p.locked_by,
@@ -210,7 +210,7 @@ router.get("/:pallet_number", async (req, res) => {
           '[]'::json
         ) AS active_systems,
 
-        -- Released-pallet snapshot at release time
+        -- Released-pallet snapshot at release time (INCLUSIVE; robust to NULL removed_at)
         COALESCE(
           json_agg(
             json_build_object(
@@ -223,7 +223,7 @@ router.get("/:pallet_number", async (req, res) => {
           ) FILTER (
             WHERE p.status = 'released'
               AND ps.added_at <= p.released_at
-              AND (ps.removed_at IS NULL OR ps.removed_at > p.released_at)
+              AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
           ),
           '[]'::json
         ) AS released_systems,
@@ -252,21 +252,21 @@ router.get("/:pallet_number", async (req, res) => {
                 ORDER BY ps.added_at
               ) FILTER (
                 WHERE ps.added_at <= p.released_at
-                  AND (ps.removed_at IS NULL OR ps.removed_at > p.released_at)
+                  AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
               )
           END,
           '[]'::json
         ) AS systems,
 
-        -- Count matching the above
+        -- Count matching the above (cast to int so frontend doesn’t get a string)
         CASE
           WHEN p.status = 'open' THEN
-            COUNT(*) FILTER (WHERE ps.removed_at IS NULL)
+            COUNT(*) FILTER (WHERE ps.removed_at IS NULL)::int
           ELSE
             COUNT(*) FILTER (
               WHERE ps.added_at <= p.released_at
-                AND (ps.removed_at IS NULL OR ps.removed_at > p.released_at)
-            )
+                AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
+            )::int
         END AS systems_count
 
       FROM pallet p
@@ -504,99 +504,107 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
   const { pallet_number } = req.params;
   const { doa_number } = req.body;
 
-  // 1. DOA number required
-  if (!doa_number) {
-    return res
-      .status(400)
-      .json({ error: "doa_number is required to release a pallet" });
+  if (!doa_number || doa_number.trim().length < 5) {
+    return res.status(400).json({ error: "Valid doa_number is required" });
   }
 
-  // 2. DOA number must be at least 5 characters
-  if (doa_number.trim().length < 5) {
-    return res
-      .status(400)
-      .json({ error: "doa_number must be at least 5 characters long" });
-  }
-
+  const client = await db.connect();
   try {
-    // 3. Check current pallet status and count active systems
-    const { rows } = await db.query(
+    await client.query("BEGIN");
+
+    // Lock the pallet row
+    const { rows: pRows } = await client.query(
       `
-      SELECT p.id, p.status,
-             COUNT(ps.id) FILTER (WHERE ps.removed_at IS NULL) AS active_count
-      FROM pallet p
-      LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
-      WHERE p.pallet_number = $1
-      GROUP BY p.id, p.status
+      SELECT id, status
+      FROM pallet
+      WHERE pallet_number = $1
+      FOR UPDATE
       `,
       [pallet_number]
     );
-
-    if (rows.length === 0) {
+    if (!pRows.length) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "Pallet not found" });
     }
-
-    const { id, status, active_count } = rows[0];
-
-    // 4. Must be open
+    const { id: pallet_id, status } = pRows[0];
     if (status !== "open") {
+      await client.query("ROLLBACK");
       return res.status(400).json({ error: "Pallet is already released" });
     }
 
-    // 5. Must not be empty
-    if (parseInt(active_count, 10) === 0) {
+    // Count active and validate PPID
+    const { rows: activeCountRows } = await client.query(
+      `
+      SELECT COUNT(*)::int AS active_count
+      FROM pallet_system ps
+      WHERE ps.pallet_id = $1 AND ps.removed_at IS NULL
+      `,
+      [pallet_id]
+    );
+    if (activeCountRows[0].active_count === 0) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ error: "Cannot release an empty pallet" });
     }
 
-    // 6. All active systems must have a PPID
-    const { rows: ppidCheckRows } = await db.query(
+    const { rows: missingPPID } = await client.query(
       `
       SELECT s.service_tag
       FROM pallet_system ps
-      JOIN system s ON ps.system_id = s.id
+      JOIN system s ON s.id = ps.system_id
       WHERE ps.pallet_id = $1
         AND ps.removed_at IS NULL
         AND (s.ppid IS NULL OR TRIM(s.ppid) = '')
       `,
-      [id]
+      [pallet_id]
     );
-
-    if (ppidCheckRows.length > 0) {
-      const missingTags = ppidCheckRows.map((r) => r.service_tag).join(", ");
+    if (missingPPID.length) {
+      await client.query("ROLLBACK");
       return res.status(400).json({
-        error: `Cannot release pallet: the following systems have missing PPID: ${missingTags}`,
+        error: `Cannot release pallet: missing PPID for ${missingPPID
+          .map((r) => r.service_tag)
+          .join(", ")}`,
       });
     }
 
-    // 7.1 Mark all active assignments on this pallet as removed
-    await db.query(
+    // ONE stable timestamp for this release
+    const {
+      rows: [tsRow],
+    } = await client.query(`SELECT NOW() AS t`);
+    const t = tsRow.t;
+
+    // Close memberships with the SAME timestamp
+    await client.query(
       `
       UPDATE pallet_system
-      SET removed_at = COALESCE(removed_at, NOW())
+      SET removed_at = $2
       WHERE pallet_id = $1 AND removed_at IS NULL
       `,
-      [id]
+      [pallet_id, t]
     );
 
-    // 7.2 Now update pallet to released
-    await db.query(
+    // Update pallet status using the SAME timestamp
+    await client.query(
       `
       UPDATE pallet
       SET status = 'released',
-          doa_number = $1,
-          released_at = NOW(),
+          doa_number = $2,
+          released_at = $3,
           locked = FALSE,
           locked_at = NULL,
           locked_by = NULL
-      WHERE id = $2
+      WHERE id = $1
       `,
-      [doa_number.trim(), id]
+      [pallet_id, doa_number.trim(), t]
     );
 
+    await client.query("COMMIT");
     res.json({ message: "Pallet released successfully" });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "Failed to release pallet" });
+  } finally {
+    client.release();
   }
 });
 
