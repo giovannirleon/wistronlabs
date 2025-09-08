@@ -179,6 +179,12 @@ async function assignSystemToPallet(system_id, factory_id, dpn, client) {
   return { pallet_id: palletId, pallet_number: palletNumber };
 }
 
+const FACTORY_MAP = {
+  WSJ00: "MX", // Juarez
+  WS900: "A1", // Hsinchu
+  WSM00: "N2", // Hukou
+};
+
 /**
  * GET /api/v1/systems
  *
