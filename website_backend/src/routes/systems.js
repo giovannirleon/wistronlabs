@@ -179,6 +179,20 @@ async function assignSystemToPallet(system_id, factory_id, dpn, client) {
   return { pallet_id: palletId, pallet_number: palletNumber };
 }
 
+function decodeDateCode(code) {
+  if (!code || code.length !== 3) return null;
+  const [y, m, d] = code.split("");
+  const decodeChar = (c) =>
+    /[0-9]/.test(c)
+      ? parseInt(c, 10)
+      : c.charCodeAt(0) - "A".charCodeAt(0) + 10;
+  const year = 2020 + parseInt(y, 10);
+  const month = decodeChar(m);
+  const day = decodeChar(d);
+  // Return a JavaScript Date object
+  return new Date(year, month - 1, day);
+}
+
 const FACTORY_MAP = {
   WSJ00: "MX", // Juarez
   WS900: "A1", // Hsinchu
