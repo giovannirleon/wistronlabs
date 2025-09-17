@@ -698,25 +698,35 @@ router.delete(
         to_location_id: deletedToLocationId,
       } = historyResult.rows[0];
 
-      // 3. Get deleted_user id
+      // 3. Who is deleting? (check admin flag from DB)
+      const meRes = await client.query(
+        `SELECT admin FROM users WHERE id = $1`,
+        [req.user.userId]
+      );
+      const isAdmin = !!meRes.rows[0]?.admin;
+
+      // 3b. (Optional) Get deleted_user id, if present
+      let deletedUserId = null;
       const deletedUserIdResult = await client.query(
         `SELECT id FROM users WHERE username = 'deleted_user@example.com'`
       );
-      const deletedUserId = deletedUserIdResult.rows[0]?.id;
-      if (!deletedUserId) {
-        await client.query("ROLLBACK");
-        return res.status(500).json({ error: "Deleted user not configured" });
+      if (deletedUserIdResult.rows.length) {
+        deletedUserId = deletedUserIdResult.rows[0].id;
       }
 
-      // 4. Authorization check
-      if (moved_by !== deletedUserId && moved_by !== req.user.userId) {
+      // 4. Authorization check:
+      //    Allow if admin OR self-owned entry OR an entry created by deleted_user
+      if (
+        !isAdmin &&
+        moved_by !== req.user.userId &&
+        !(deletedUserId && moved_by === deletedUserId)
+      ) {
         await client.query("ROLLBACK");
         return res.status(403).json({
           error:
-            "You are not authorized to delete this history entry. Only the original mover or any authenticated user if done by deleted_user can delete.",
+            "Not authorized. Only the note author or an other authorized users can delete this entry.",
         });
       }
-
       const onLocked = await systemOnLockedPallet(client, system_id);
       if (onLocked) {
         await client.query("ROLLBACK");
@@ -861,7 +871,6 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // GET /api/v1/systems/:service_tag - get single system
-// GET /api/v1/systems/:service_tag - get single system with full details
 router.get("/:service_tag", async (req, res) => {
   const { service_tag } = req.params;
 
