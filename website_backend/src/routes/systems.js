@@ -419,8 +419,37 @@ router.get("/snapshot", async (req, res) => {
     }
   }
 
-  const selectNote = includeNoteFlag ? `, h.note` : ``;
-  const subqueryNote = includeNoteFlag ? `, h.note` : ``;
+  // When includeNote is true, add a LATERAL subquery that aggregates the FULL history up to `date`
+  const selectNotesAggregate = includeNoteFlag
+    ? `,
+        nh.notes_history`
+    : ``;
+
+  const lateralJoinNotesAggregate = includeNoteFlag
+    ? `
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(
+          json_agg(
+            json_build_object(
+              'changed_at', h2.changed_at,
+              'from_location', l_from.name,
+              'to_location', l_to.name,
+              'note', h2.note,
+              'moved_by', u.username
+            )
+            ORDER BY h2.changed_at DESC
+          ),
+          '[]'::json
+        ) AS notes_history
+        FROM system_location_history h2
+        LEFT JOIN location l_from ON h2.from_location_id = l_from.id
+        JOIN location l_to ON h2.to_location_id = l_to.id
+        LEFT JOIN users   u     ON h2.moved_by         = u.id
+        WHERE h2.system_id = s.id
+          AND h2.changed_at <= $1
+      ) nh ON TRUE
+    `
+    : ``;
 
   try {
     const snapshotResult = await db.query(
@@ -431,20 +460,21 @@ router.get("/snapshot", async (req, res) => {
         s.issue,
         l.name AS location,
         h.changed_at AS as_of
-        ${selectNote}
+        ${selectNotesAggregate}
       FROM system s
       JOIN (
+        -- Latest event per system on/before $1 (snapshot point-in-time)
         SELECT DISTINCT ON (h.system_id)
           h.system_id,
           h.to_location_id,
           h.changed_at
-          ${subqueryNote}
         FROM system_location_history h
         WHERE h.changed_at <= $1
         ORDER BY h.system_id, h.changed_at DESC
       ) h ON h.system_id = s.id
       JOIN location l ON h.to_location_id = l.id
       LEFT JOIN factory f ON s.factory_id = f.id
+      ${lateralJoinNotesAggregate}
       WHERE 1=1
       ${locationFilterSQL.join(" ")}
       ORDER BY s.service_tag
@@ -453,7 +483,7 @@ router.get("/snapshot", async (req, res) => {
     );
 
     if (!noCacheFlag) {
-      snapshotCache.set(cacheKey, snapshotResult.rows);
+      snapshotCache.set(cacheKey, snapshotResult.rows, 300);
     }
 
     res.json(snapshotResult.rows);
