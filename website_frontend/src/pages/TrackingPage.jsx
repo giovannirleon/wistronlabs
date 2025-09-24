@@ -443,6 +443,8 @@ function TrackingPage() {
           From: unit.factory_code ? unit.factory_code : "Not Set",
           Status: unit.location,
           "Service Tag": unit.service_tag,
+          DPN: unit.dpn ? unit.dpn : "Not Set",
+          Config: unit.config ? unit.config : "Not Set",
           Issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
           "Note History": flattenedNotes,
         };
