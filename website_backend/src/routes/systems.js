@@ -431,7 +431,8 @@ router.get("/snapshot", async (req, res) => {
         SELECT COALESCE(
           json_agg(
             json_build_object(
-              'changed_at', h2.changed_at,
+              'changed_at', to_char(h2.changed_at AT TIME ZONE 'UTC',
+                      'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
               'from_location', l_from.name,
               'to_location', l_to.name,
               'note', h2.note,
@@ -459,7 +460,8 @@ router.get("/snapshot", async (req, res) => {
         COALESCE(f.code, 'Not Entered Yet') AS factory_code,
         s.issue,
         l.name AS location,
-        h.changed_at AS as_of
+        to_char(h.changed_at AT TIME ZONE 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
         ${selectNotesAggregate}
       FROM system s
       JOIN (
