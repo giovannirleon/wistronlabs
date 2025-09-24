@@ -36,6 +36,7 @@ const db = require("../db");
 const { authenticateToken } = require("./auth");
 const { buildWhereClause } = require("../utils/buildWhereClause");
 const { systemOnLockedPallet } = require("../utils/systemOnLockedPallet");
+const { generatePalletNumber } = require("../utils/generatePalletNumber");
 
 const NodeCache = require("node-cache");
 const snapshotCache = new NodeCache({ stdTTL: 8 * 60 * 60 }); // 8 hours
@@ -52,45 +53,6 @@ async function getDeletedUserId() {
 
 // RMA location IDs (must match DB)
 const RMA_LOCATION_IDS = [6, 7, 8];
-
-/**
- * Generate a pallet number in the format:
- * PAL-[FACTORY]-[DPN]-MMDDYYXX
- * Where XX is sequential per factory+dpn per day.
- */
-async function generatePalletNumber(factory_id, dpn_id, client) {
-  const { rows: fRows } = await client.query(
-    `SELECT code FROM factory WHERE id = $1`,
-    [factory_id]
-  );
-  if (!fRows.length) throw new Error(`Factory with id ${factory_id} not found`);
-  const factoryCode = fRows[0].code;
-
-  if (!dpn_id) throw new Error("Cannot create pallet without a DPN");
-
-  const { rows: dRows } = await client.query(
-    `SELECT name FROM dpn WHERE id = $1`,
-    [dpn_id]
-  );
-  if (!dRows.length) throw new Error(`DPN with id ${dpn_id} not found`);
-  const dpnName = dRows[0].name;
-
-  const now = new Date();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const yy = String(now.getFullYear()).slice(-2);
-  const dateStr = `${mm}${dd}${yy}`;
-
-  const { rows: countRows } = await client.query(
-    `SELECT COUNT(*)::int AS count
-     FROM pallet
-     WHERE factory_id = $1 AND dpn_id = $2 AND to_char(created_at, 'MMDDYY') = $3`,
-    [factory_id, dpn_id, dateStr]
-  );
-
-  const suffix = String(countRows[0].count + 1).padStart(2, "0");
-  return `PAL-${factoryCode}-${dpnName}-${dateStr}${suffix}`;
-}
 
 /**
  * Assign a system to a pallet (or create a new pallet)
@@ -159,6 +121,305 @@ const FACTORY_MAP = {
   WS900: "A1", // Hsinchu
   WSM00: "N2", // Hukou
 };
+
+// ---------- helpers ----------
+async function ensureAdmin(req, res, next) {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { rows } = await db.query(`SELECT admin FROM users WHERE id = $1`, [
+      req.user.userId,
+    ]);
+    if (!rows.length || !rows[0].admin) {
+      return res.status(403).json({ error: "Admin privileges required" });
+    }
+    return next();
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Auth check failed" });
+  }
+}
+
+function isPgUniqueViolation(err) {
+  return err && err.code === "23505";
+}
+
+// ---------- FACTORY CRUD ----------
+
+// GET factories (optional ?q= search by code or name)
+router.get("/factory", async (req, res) => {
+  const { q } = req.query;
+  try {
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      const { rows } = await db.query(
+        `SELECT id, code, name
+           FROM factory
+          WHERE code ILIKE $1 OR name ILIKE $1
+          ORDER BY code ASC`,
+        [like]
+      );
+      return res.json(rows);
+    }
+    const { rows } = await db.query(
+      `SELECT id, code, name FROM factory ORDER BY code ASC`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to list factories" });
+  }
+});
+
+// GET single factory
+router.get("/factory/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, code, name FROM factory WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length)
+      return res.status(404).json({ error: "Factory not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to fetch factory" });
+  }
+});
+
+// POST factory (admin)
+router.post("/factory", authenticateToken, ensureAdmin, async (req, res) => {
+  const { code, name } = req.body || {};
+  if (!code || !name) {
+    return res.status(400).json({ error: "code and name are required" });
+  }
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO factory (code, name)
+       VALUES ($1, $2)
+       RETURNING id, code, name`,
+      [code.trim(), name.trim()]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    if (isPgUniqueViolation(e)) {
+      return res
+        .status(409)
+        .json({ error: "Factory code or name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to create factory" });
+  }
+});
+
+// PATCH factory (admin)
+router.patch(
+  "/factory/:id",
+  authenticateToken,
+  ensureAdmin,
+  async (req, res) => {
+    const { code, name } = req.body || {};
+    if (!code && !name) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+    const fields = [];
+    const vals = [];
+    if (code) {
+      fields.push(`code = $${fields.length + 1}`);
+      vals.push(code.trim());
+    }
+    if (name) {
+      fields.push(`name = $${fields.length + 1}`);
+      vals.push(name.trim());
+    }
+    try {
+      const { rows } = await db.query(
+        `UPDATE factory SET ${fields.join(", ")}
+         WHERE id = $${fields.length + 1}
+       RETURNING id, code, name`,
+        [...vals, req.params.id]
+      );
+      if (!rows.length)
+        return res.status(404).json({ error: "Factory not found" });
+      return res.json(rows[0]);
+    } catch (e) {
+      console.error(e);
+      if (isPgUniqueViolation(e)) {
+        return res
+          .status(409)
+          .json({ error: "Factory code or name already exists" });
+      }
+      return res.status(500).json({ error: "Failed to update factory" });
+    }
+  }
+);
+
+// DELETE factory (admin) – block if referenced
+router.delete(
+  "/factory/:id",
+  authenticateToken,
+  ensureAdmin,
+  async (req, res) => {
+    const id = req.params.id;
+    try {
+      // Block delete if referenced by system or pallet
+      const ref = await db.query(
+        `
+      SELECT
+        EXISTS(SELECT 1 FROM system WHERE factory_id = $1) AS has_systems,
+        EXISTS(SELECT 1 FROM pallet WHERE factory_id = $1) AS has_pallets
+      `,
+        [id]
+      );
+      if (ref.rows[0].has_systems || ref.rows[0].has_pallets) {
+        return res.status(409).json({
+          error: "Cannot delete factory: referenced by systems or pallets",
+        });
+      }
+
+      const del = await db.query(`DELETE FROM factory WHERE id = $1`, [id]);
+      if (del.rowCount === 0) {
+        return res.status(404).json({ error: "Factory not found" });
+      }
+      return res.json({ message: "Factory deleted" });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Failed to delete factory" });
+    }
+  }
+);
+
+// ---------- DPN CRUD ----------
+
+// GET dpns (optional ?q= search by name or config)
+router.get("/dpn", async (req, res) => {
+  const { q } = req.query;
+  try {
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      const { rows } = await db.query(
+        `SELECT id, name, config
+           FROM dpn
+          WHERE name ILIKE $1 OR CAST(config AS TEXT) ILIKE $1
+          ORDER BY name ASC`,
+        [like]
+      );
+      return res.json(rows);
+    }
+    const { rows } = await db.query(
+      `SELECT id, name, config FROM dpn ORDER BY name ASC`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to list DPNs" });
+  }
+});
+
+// GET single dpn
+router.get("/dpn/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name, config FROM dpn WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "DPN not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to fetch DPN" });
+  }
+});
+
+// POST dpn (admin)
+router.post("/dpn", authenticateToken, ensureAdmin, async (req, res) => {
+  const { name, config } = req.body || {};
+  if (!name) {
+    return res.status(400).json({ error: "name is required" });
+  }
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO dpn (name, config)
+       VALUES ($1, $2)
+       RETURNING id, name, config`,
+      [name.trim(), config ?? null]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    if (isPgUniqueViolation(e)) {
+      return res.status(409).json({ error: "DPN name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to create DPN" });
+  }
+});
+
+// PATCH dpn (admin)
+router.patch("/dpn/:id", authenticateToken, ensureAdmin, async (req, res) => {
+  const { name, config } = req.body || {};
+  if (typeof name === "undefined" && typeof config === "undefined") {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
+
+  const fields = [];
+  const vals = [];
+  if (typeof name !== "undefined") {
+    fields.push(`name = $${fields.length + 1}`);
+    vals.push(name.trim());
+  }
+  if (typeof config !== "undefined") {
+    fields.push(`config = $${fields.length + 1}`);
+    vals.push(config);
+  }
+
+  try {
+    const { rows } = await db.query(
+      `UPDATE dpn SET ${fields.join(", ")}
+         WHERE id = $${fields.length + 1}
+       RETURNING id, name, config`,
+      [...vals, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "DPN not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    if (isPgUniqueViolation(e)) {
+      return res.status(409).json({ error: "DPN name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to update DPN" });
+  }
+});
+
+// DELETE dpn (admin) – block if referenced
+router.delete("/dpn/:id", authenticateToken, ensureAdmin, async (req, res) => {
+  const id = req.params.id;
+  try {
+    // Block delete if referenced by system or pallet
+    const ref = await db.query(
+      `
+      SELECT
+        EXISTS(SELECT 1 FROM system WHERE dpn_id = $1) AS has_systems,
+        EXISTS(SELECT 1 FROM pallet WHERE dpn_id = $1) AS has_pallets
+      `,
+      [id]
+    );
+    if (ref.rows[0].has_systems || ref.rows[0].has_pallets) {
+      return res.status(409).json({
+        error: "Cannot delete DPN: referenced by systems or pallets",
+      });
+    }
+
+    const del = await db.query(`DELETE FROM dpn WHERE id = $1`, [id]);
+    if (del.rowCount === 0) {
+      return res.status(404).json({ error: "DPN not found" });
+    }
+    return res.json({ message: "DPN deleted" });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to delete DPN" });
+  }
+});
 
 /**
  * GET /api/v1/systems

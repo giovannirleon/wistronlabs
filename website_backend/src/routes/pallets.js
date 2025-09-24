@@ -2,6 +2,7 @@ const express = require("express");
 const db = require("../db");
 const { authenticateToken } = require("./auth");
 const { buildWhereClause } = require("../utils/buildWhereClause");
+const { generatePalletNumber } = require("../utils/generatePalletNumber");
 
 const router = express.Router();
 
@@ -186,6 +187,103 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch pallets" });
+  }
+});
+
+// POST /api/v1/pallets
+// Body: { dpn: "DKCFX", factory_code: "MX" }
+router.post("/", authenticateToken, async (req, res) => {
+  const { dpn, factory_code } = req.body || {};
+
+  if (!dpn || !factory_code) {
+    return res.status(400).json({
+      error: "dpn and factory_code are required",
+    });
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Resolve DPN -> id
+    const { rows: dpnRows } = await client.query(
+      `SELECT id FROM dpn WHERE name = $1`,
+      [dpn]
+    );
+    if (!dpnRows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: `DPN not found: ${dpn}` });
+    }
+    const dpn_id_final = dpnRows[0].id;
+
+    // Resolve Factory -> id
+    const { rows: fRows } = await client.query(
+      `SELECT id FROM factory WHERE code = $1`,
+      [factory_code]
+    );
+    if (!fRows.length) {
+      await client.query("ROLLBACK");
+      return res
+        .status(404)
+        .json({ error: `Factory code not found: ${factory_code}` });
+    }
+    const factory_id_final = fRows[0].id;
+
+    // Generate pallet number (helper uses ids)
+    const pallet_number = await generatePalletNumber(
+      factory_id_final,
+      dpn_id_final,
+      client
+    );
+
+    // Enforce uniqueness
+    const { rowCount: exists } = await client.query(
+      `SELECT 1 FROM pallet WHERE pallet_number = $1`,
+      [pallet_number]
+    );
+    if (exists) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        error: `pallet_number already exists: ${pallet_number}`,
+      });
+    }
+
+    // Insert pallet (status=open)
+    const { rows: ins } = await client.query(
+      `
+      INSERT INTO pallet (
+        pallet_number, factory_id, dpn_id, status,
+        created_at, locked, locked_at, locked_by
+      )
+      VALUES ($1, $2, $3, 'open', NOW(), FALSE, NULL, NULL)
+      RETURNING id, pallet_number, factory_id, dpn_id, status,
+                doa_number, released_at, created_at, locked, locked_at, locked_by
+      `,
+      [pallet_number, factory_id_final, dpn_id_final]
+    );
+
+    await client.query("COMMIT");
+
+    // Join DPN name for convenience
+    const { rows: out } = await db.query(
+      `SELECT p.*, d.name AS dpn
+         FROM pallet p
+         LEFT JOIN dpn d ON d.id = p.dpn_id
+        WHERE p.id = $1`,
+      [ins[0].id]
+    );
+
+    return res.status(201).json({
+      message: "Pallet created",
+      pallet_number: pallet_number, // <- explicit return
+      pallet: out[0],
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    return res.status(500).json({ error: "Failed to create pallet" });
+  } finally {
+    client.release();
   }
 });
 
