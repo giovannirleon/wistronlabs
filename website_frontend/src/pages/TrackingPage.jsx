@@ -411,6 +411,26 @@ function TrackingPage() {
         const unitData = filteredSystems.find(
           (fs) => fs.service_tag === unit.service_tag
         );
+
+        const flattenedNotes =
+          Array.isArray(unit.notes_history) && unit.notes_history.length
+            ? [...unit.notes_history]
+                .reverse()
+                .map((e) => {
+                  const mmdd = DateTime.fromISO(e.changed_at)
+                    .setZone(serverTimeReport.zone) // use this if you want server-local dates
+                    .toFormat("MM/dd");
+                  const fromLoc = e.from_location ?? "";
+                  const toLoc = e.to_location ?? "";
+                  const note = (e.note ?? "").trim();
+                  const by = e.moved_by ?? "";
+                  return fromLoc
+                    ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
+                    : `${mmdd} - [${toLoc}] [via] ${by}`;
+                })
+                .join("\n")
+            : "";
+
         return {
           "First Received On": unitData
             ? formatDateHumanReadable(unitData.date_created)
@@ -424,7 +444,7 @@ function TrackingPage() {
           Status: unit.location,
           "Service Tag": unit.service_tag,
           Issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
-          "Last Note (Analysis)": unit.note,
+          "Note History": flattenedNotes,
         };
       });
 

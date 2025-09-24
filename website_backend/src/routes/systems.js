@@ -58,60 +58,48 @@ const RMA_LOCATION_IDS = [6, 7, 8];
  * PAL-[FACTORY]-[DPN]-MMDDYYXX
  * Where XX is sequential per factory+dpn per day.
  */
-async function generatePalletNumber(factory_id, dpn, client) {
-  // Get factory code
+async function generatePalletNumber(factory_id, dpn_id, client) {
   const { rows: fRows } = await client.query(
     `SELECT code FROM factory WHERE id = $1`,
     [factory_id]
   );
-  if (!fRows.length) {
-    throw new Error(`Factory with id ${factory_id} not found`);
-  }
+  if (!fRows.length) throw new Error(`Factory with id ${factory_id} not found`);
   const factoryCode = fRows[0].code;
 
-  // Build date string (MMDDYY)
+  if (!dpn_id) throw new Error("Cannot create pallet without a DPN");
+
+  const { rows: dRows } = await client.query(
+    `SELECT name FROM dpn WHERE id = $1`,
+    [dpn_id]
+  );
+  if (!dRows.length) throw new Error(`DPN with id ${dpn_id} not found`);
+  const dpnName = dRows[0].name;
+
   const now = new Date();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
   const dateStr = `${mm}${dd}${yy}`;
 
-  // Count pallets for this factory+dpn on this day
   const { rows: countRows } = await client.query(
-    `
-    SELECT COUNT(*)::int AS count
-    FROM pallet
-    WHERE factory_id = $1
-      AND dpn = $2
-      AND to_char(created_at, 'MMDDYY') = $3
-    `,
-    [factory_id, dpn, dateStr]
+    `SELECT COUNT(*)::int AS count
+     FROM pallet
+     WHERE factory_id = $1 AND dpn_id = $2 AND to_char(created_at, 'MMDDYY') = $3`,
+    [factory_id, dpn_id, dateStr]
   );
 
   const suffix = String(countRows[0].count + 1).padStart(2, "0");
-
-  // Format: PAL-A1-12345-07312501
-  return `PAL-${factoryCode}-${dpn}-${dateStr}${suffix}`;
+  return `PAL-${factoryCode}-${dpnName}-${dateStr}${suffix}`;
 }
 
 /**
  * Assign a system to a pallet (or create a new pallet)
  * Pallets are segregated by factory_id AND dpn.
  */
-// Replace your assignSystemToPallet with this version
-async function assignSystemToPallet(system_id, factory_id, dpn, client) {
-  if (!factory_id) {
-    throw new Error(
-      `Cannot assign system ${system_id} to pallet: factory_id is null`
-    );
-  }
-  if (!dpn) {
-    throw new Error(
-      `Cannot assign system ${system_id} to pallet: dpn is missing`
-    );
-  }
+async function assignSystemToPallet(system_id, factory_id, dpn_id, client) {
+  if (!factory_id) throw new Error(`Cannot assign: factory_id is null`);
+  if (!dpn_id) throw new Error(`Cannot assign: dpn_id is missing`);
 
-  // Try to find an open pallet for this factory_id and dpn
   const { rows } = await client.query(
     `
     SELECT p.id, p.pallet_number
@@ -120,61 +108,34 @@ async function assignSystemToPallet(system_id, factory_id, dpn, client) {
       ON p.id = ps.pallet_id AND ps.removed_at IS NULL
     WHERE p.status = 'open' AND p.locked = FALSE
       AND p.factory_id = $1
-      AND p.dpn = $2
+      AND p.dpn_id = $2
     GROUP BY p.id, p.pallet_number
     HAVING COUNT(ps.id) < 9
-    LIMIT 1;
+    LIMIT 1
     `,
-    [factory_id, dpn]
+    [factory_id, dpn_id]
   );
 
   let palletId, palletNumber;
-
-  if (rows.length > 0) {
-    palletId = rows[0].id;
-    palletNumber = rows[0].pallet_number;
+  if (rows.length) {
+    ({ id: palletId, pallet_number: palletNumber } = rows[0]);
   } else {
-    const newNumber = await generatePalletNumber(factory_id, dpn, client);
-    const insertResult = await client.query(
-      `
-      INSERT INTO pallet (factory_id, pallet_number, dpn)
-      VALUES ($1, $2, $3)
-      RETURNING id, pallet_number;
-      `,
-      [factory_id, newNumber, dpn]
+    const newNumber = await generatePalletNumber(factory_id, dpn_id, client);
+    const ins = await client.query(
+      `INSERT INTO pallet (factory_id, pallet_number, dpn_id)
+       VALUES ($1, $2, $3)
+       RETURNING id, pallet_number`,
+      [factory_id, newNumber, dpn_id]
     );
-    palletId = insertResult.rows[0].id;
-    palletNumber = insertResult.rows[0].pallet_number;
+    palletId = ins.rows[0].id;
+    palletNumber = ins.rows[0].pallet_number;
   }
 
-  // Add system to pallet (avoid duplicates with ON CONFLICT DO NOTHING)
   await client.query(
-    `
-    INSERT INTO pallet_system (pallet_id, system_id)
-    VALUES ($1, $2)
-    ON CONFLICT DO NOTHING;
-    `,
+    `INSERT INTO pallet_system (pallet_id, system_id)
+     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     [palletId, system_id]
   );
-
-  // ✅ Verify the system is *now* active on *some* pallet and ideally on this one
-  const { rows: activeRows } = await client.query(
-    `
-    SELECT p.pallet_number, p.status
-    FROM pallet_system ps
-    JOIN pallet p ON p.id = ps.pallet_id
-    WHERE ps.system_id = $1 AND ps.removed_at IS NULL
-    LIMIT 1
-    `,
-    [system_id]
-  );
-
-  if (!activeRows.length) {
-    // If this happens, there’s a conflicting active assignment elsewhere that blocked the insert
-    throw new Error(
-      `System ${system_id} was not added to ${palletNumber}. Another active pallet assignment exists; clear it first.`
-    );
-  }
 
   return { pallet_id: palletId, pallet_number: palletNumber };
 }
@@ -265,7 +226,7 @@ router.get("/", async (req, res) => {
             issue: "s.issue",
             location_id: "s.location_id",
             location: "l.name",
-            dpn: "s.dpn",
+            dpn: "d.name",
             manufactured_date: "s.manufactured_date",
             serial: "s.serial",
             rev: "s.rev",
@@ -280,7 +241,7 @@ router.get("/", async (req, res) => {
     service_tag: "s.service_tag",
     issue: "s.issue",
     location: "l.name",
-    dpn: "s.dpn",
+    dpn: "d.name",
     manufactured_date: "s.manufactured_date",
     serial: "s.serial",
     rev: "s.rev",
@@ -292,6 +253,7 @@ router.get("/", async (req, res) => {
 
   const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";
   const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
+  const orderSql = `${orderColumn} ${orderDirection} NULLS LAST`;
 
   let limitOffsetSQL = "";
   let pageNum, pageSize, offset;
@@ -311,7 +273,8 @@ router.get("/", async (req, res) => {
           s.id,
           s.service_tag,
           s.issue,
-          s.dpn,
+          d.name AS dpn,              
+          d.config AS config,
           s.manufactured_date,
           s.serial,
           s.rev,
@@ -325,6 +288,7 @@ router.get("/", async (req, res) => {
         FROM system s
         JOIN location l ON s.location_id = l.id
         LEFT JOIN factory f ON s.factory_id = f.id
+        LEFT JOIN dpn d ON s.dpn_id = d.id
 
         -- first history entry per system
         LEFT JOIN LATERAL (
@@ -347,7 +311,7 @@ router.get("/", async (req, res) => {
         ) AS last_history ON TRUE
 
         ${whereSQL}
-        ORDER BY ${orderColumn} ${orderDirection}
+        ORDER BY ${orderSql}
         ${limitOffsetSQL}
         `,
         params
@@ -359,6 +323,7 @@ router.get("/", async (req, res) => {
             FROM system s
             JOIN location l ON s.location_id = l.id
             LEFT JOIN factory f ON s.factory_id = f.id
+            LEFT JOIN dpn d ON s.dpn_id = d.id
             ${whereSQL}
             `,
             params
@@ -459,13 +424,14 @@ router.get("/snapshot", async (req, res) => {
         s.service_tag,
         COALESCE(f.code, 'Not Entered Yet') AS factory_code,
         s.issue,
+        d.name AS dpn,
+        d.config AS config,
         l.name AS location,
         to_char(h.changed_at AT TIME ZONE 'UTC',
-        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
         ${selectNotesAggregate}
       FROM system s
       JOIN (
-        -- Latest event per system on/before $1 (snapshot point-in-time)
         SELECT DISTINCT ON (h.system_id)
           h.system_id,
           h.to_location_id,
@@ -476,6 +442,7 @@ router.get("/snapshot", async (req, res) => {
       ) h ON h.system_id = s.id
       JOIN location l ON h.to_location_id = l.id
       LEFT JOIN factory f ON s.factory_id = f.id
+      LEFT JOIN dpn d ON s.dpn_id = d.id
       ${lateralJoinNotesAggregate}
       WHERE 1=1
       ${locationFilterSQL.join(" ")}
@@ -913,7 +880,8 @@ router.get("/:service_tag", async (req, res) => {
         s.id,
         s.service_tag,
         s.issue,
-        s.dpn,
+        d.name   AS dpn,
+        d.config AS config,
         s.manufactured_date,
         s.serial,
         s.rev,
@@ -929,6 +897,7 @@ router.get("/:service_tag", async (req, res) => {
       FROM system s
       JOIN location l ON s.location_id = l.id
       LEFT JOIN factory f ON s.factory_id = f.id
+      LEFT JOIN dpn d ON s.dpn_id = d.id
 
       -- first history entry per system
       LEFT JOIN LATERAL (
@@ -988,7 +957,7 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
          location_id, 
          factory_id, 
          ppid, 
-         dpn, 
+         dpn_id, 
          manufactured_date, 
          serial, 
          rev
@@ -1007,7 +976,7 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       location_id: from_location_id,
       factory_id,
       ppid,
-      dpn,
+      dpn_id,
       manufactured_date,
       serial,
       rev,
@@ -1026,15 +995,14 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
     // RMA validation
     if (RMA_LOCATION_IDS.includes(to_location_id)) {
       const missingFields = [];
-
       if (!factory_id) missingFields.push("factory_id");
       if (!ppid) missingFields.push("ppid");
-      if (!dpn) missingFields.push("dpn");
+      if (!dpn_id) missingFields.push("dpn"); // NULL means missing
       if (!manufactured_date) missingFields.push("manufactured_date");
       if (!serial) missingFields.push("serial");
       if (!rev) missingFields.push("rev");
 
-      if (missingFields.length > 0) {
+      if (missingFields.length) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           error: `Cannot move to an RMA location because the following fields are missing: ${missingFields.join(
@@ -1058,7 +1026,7 @@ router.patch("/:service_tag/location", authenticateToken, async (req, res) => {
       const { pallet_number } = await assignSystemToPallet(
         system_id,
         factory_id,
-        dpn,
+        dpn_id,
         client
       );
       finalNote = `${note} - added to ${pallet_number}`;
@@ -1185,17 +1153,23 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
     ]);
     const factoryId = rows.length ? rows[0].id : null;
 
-    // Build update SET clause
+    // dpnCode is parsed from PPID (chars 4..8)
+    const upsert = await db.query(
+      `INSERT INTO dpn (name) VALUES ($1)
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [dpn]
+    );
+    const dpnId = upsert.rows[0].id;
+
     const fields = [
       { column: "ppid", value: ppid },
-      { column: "dpn", value: dpn },
+      { column: "dpn_id", value: dpnId },
       { column: "manufactured_date", value: manufacturedDate },
       { column: "serial", value: serial },
       { column: "rev", value: rev },
     ];
-    if (factoryId) {
-      fields.push({ column: "factory_id", value: factoryId });
-    }
+    if (factoryId) fields.push({ column: "factory_id", value: factoryId });
 
     const setClauses = fields
       .map((f, i) => `${f.column} = $${i + 2}`)
@@ -1228,7 +1202,7 @@ router.patch(
       // 1. Get system details including location_id and ppid
       const { rows } = await client.query(
         `
-      SELECT id, factory_id, dpn, location_id, ppid
+      SELECT id, factory_id, dpn_id, location_id, ppid
       FROM system
       WHERE service_tag = $1
       `,
@@ -1240,7 +1214,7 @@ router.patch(
         return res.status(404).json({ error: "System not found" });
       }
 
-      const { id: system_id, factory_id, dpn, location_id, ppid } = rows[0];
+      const { id: system_id, factory_id, dpn_id, location_id, ppid } = rows[0];
 
       // 2. Validate RMA location
       if (!RMA_LOCATION_IDS.includes(location_id)) {
@@ -1260,7 +1234,7 @@ router.patch(
       }
 
       // 4. Validate factory_id and dpn
-      if (!factory_id || !dpn) {
+      if (!factory_id || !dpn_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           error:
@@ -1294,7 +1268,7 @@ router.patch(
       const { pallet_id, pallet_number } = await assignSystemToPallet(
         system_id,
         factory_id,
-        dpn,
+        dpn_id,
         client
       );
 
@@ -1350,7 +1324,7 @@ router.get("/:service_tag/pallet", async (req, res) => {
     SELECT
       p.id AS pallet_id,
       p.pallet_number,
-      p.dpn,
+      d.name AS dpn,      
       p.status,
       p.created_at,
       f.name AS factory,
@@ -1359,11 +1333,12 @@ router.get("/:service_tag/pallet", async (req, res) => {
     FROM pallet_system ps
     JOIN pallet p ON ps.pallet_id = p.id
     JOIN factory f ON p.factory_id = f.id
+    LEFT JOIN dpn d ON p.dpn_id = d.id
     WHERE ps.system_id = $1
       AND ps.removed_at IS NULL
       AND p.status = 'open'
     ORDER BY ps.added_at DESC
-    LIMIT 1
+    LIMIT 1;
     `,
     [systemId]
   );
@@ -1397,7 +1372,7 @@ router.get("/:service_tag/pallet-history", async (req, res) => {
       ps.id AS assignment_id,
       p.id AS pallet_id,
       p.pallet_number,
-      p.dpn,
+      d.name AS dpn,
       f.name AS factory,
       f.code AS factory_code,
       p.status AS pallet_status,
@@ -1406,8 +1381,9 @@ router.get("/:service_tag/pallet-history", async (req, res) => {
     FROM pallet_system ps
     JOIN pallet p ON ps.pallet_id = p.id
     JOIN factory f ON p.factory_id = f.id
+    LEFT JOIN dpn d ON p.dpn_id = d.id
     WHERE ps.system_id = $1
-    ORDER BY ps.added_at ASC
+    ORDER BY ps.added_at ASC;
     `,
     [systemId]
   );
