@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import useToast from "../hooks/useToast";
 import useConfirm from "../hooks/useConfirm";
 import { formatDateHumanReadable } from "../utils/date_format";
@@ -314,6 +314,14 @@ export default function ShippingPage() {
   const [lockFlags, setLockFlags] = useState({});
   const [releaseFlags, setReleaseFlags] = useState({});
   const [tab, setTab] = useState("active");
+
+  // Report modal state
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all"); // 'all' | 'locked' | 'unlocked'
+  const [selectedDpns, setSelectedDpns] = useState(new Set());
+  const [selectedFactories, setSelectedFactories] = useState(new Set());
+
   const FRONTEND_URL = import.meta.env.VITE_URL;
 
   const sensors = useSensors(
@@ -360,6 +368,34 @@ export default function ShippingPage() {
       setCreatingPallet(false);
     }
   };
+
+  // Derived filter options from currently loaded OPEN pallets
+  const uniqueDpns = useMemo(
+    () =>
+      Array.from(
+        new Set((pallets || []).map((p) => p?.dpn).filter(Boolean))
+      ).sort(),
+    [pallets]
+  );
+
+  const uniqueFactories = useMemo(
+    () =>
+      Array.from(
+        new Set((pallets || []).map((p) => p?.factory_code).filter(Boolean))
+      ).sort(),
+    [pallets]
+  );
+
+  // Helpers used by the modal
+  const toggleSetValue = (setter) => (value) =>
+    setter((prev) => {
+      const next = new Set(prev);
+      next.has(value) ? next.delete(value) : next.add(value);
+      return next;
+    });
+
+  const selectAll = (setter, values) => setter(new Set(values));
+  const selectNone = (setter) => setter(new Set());
 
   // ---- Released tab data fetcher ----
   const fetchReleasedPallets = async ({
@@ -450,6 +486,14 @@ export default function ShippingPage() {
   };
 
   useEffect(() => {
+    if (showReportModal) {
+      setSelectedDpns(new Set(uniqueDpns));
+      setSelectedFactories(new Set(uniqueFactories));
+      setStatusFilter("all");
+    }
+  }, [showReportModal, uniqueDpns, uniqueFactories]);
+
+  useEffect(() => {
     if (!showCreateModal) return;
     (async () => {
       try {
@@ -527,31 +571,47 @@ export default function ShippingPage() {
     );
   };
 
-  const handleDownloadLockedReport = async () => {
+  const handleDownloadReport = async () => {
     try {
-      setDownloadingReport(true);
+      setReportGenerating(true);
 
-      // Prefer live members for active pallets
-      const lockedPallets = pallets.filter(
-        (p) => (lockFlags[p.id] ?? p.locked) === true
-      );
-      if (lockedPallets.length === 0) {
-        showToast("No locked pallets to report.", "info");
+      // Filter OPEN pallets (this page already loads "open", but keep guard)
+      const filtered = (pallets || []).filter((p) => {
+        // Lock filter
+        const lockOk =
+          statusFilter === "all"
+            ? true
+            : statusFilter === "locked"
+            ? !!p.locked
+            : !p.locked;
+
+        // DPN & Factory filter (if lists are empty, treat as "no restriction")
+        const dpnOk = selectedDpns.size === 0 ? true : selectedDpns.has(p.dpn);
+        const facOk =
+          selectedFactories.size === 0
+            ? true
+            : selectedFactories.has(p.factory_code);
+
+        return lockOk && dpnOk && facOk;
+      });
+
+      if (filtered.length === 0) {
+        showToast("No pallets match the selected filters.", "info");
         return;
       }
 
-      const rows = [
-        [
-          "pallet_number",
-          "service_tag",
-          "ppid",
-          "issue",
-          "location",
-          "factory_code",
-        ],
+      const header = [
+        "pallet_number",
+        "service_tag",
+        "ppid",
+        "issue",
+        "location",
+        "factory_code",
       ];
+      const rows = [header];
 
-      for (const pallet of lockedPallets) {
+      // For each pallet → each active system → fetch live system details
+      for (const pallet of filtered) {
         const systems = (pallet.active_systems ?? pallet.systems ?? []).filter(
           Boolean
         );
@@ -566,16 +626,9 @@ export default function ShippingPage() {
                 ppid: (d?.ppid || "").trim(),
                 issue: d?.issue ?? "",
                 location: d?.location ?? "",
-                factory_code: d?.factory_code ?? "",
               };
             } catch {
-              return {
-                st: s.service_tag,
-                ppid: "",
-                issue: "",
-                location: "",
-                factory_code: "",
-              };
+              return { st: s.service_tag, ppid: "", issue: "", location: "" };
             }
           })
         );
@@ -584,12 +637,17 @@ export default function ShippingPage() {
           rows.push([
             pallet.pallet_number,
             d.st,
-            d.ppid || "",
+            d.ppid,
             d.issue,
             d.location,
-            d.factory_code,
+            pallet.factory_code || "", // prefer from pallet payload
           ]);
         }
+      }
+
+      if (rows.length === 1) {
+        showToast("No units found for the selected filters.", "info");
+        return;
       }
 
       const csv = rows
@@ -610,18 +668,19 @@ export default function ShippingPage() {
       const a = document.createElement("a");
       const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
       a.href = url;
-      a.download = `locked-pallet-report-${ts}.csv`;
+      a.download = `pallet-report-${ts}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
 
-      showToast("Locked Pallet Report downloaded.", "info");
+      showToast("Report downloaded.", "info");
+      setShowReportModal(false);
     } catch (err) {
       console.error(err);
       showToast(`Failed to build report: ${err.message || err}`, "error");
     } finally {
-      setDownloadingReport(false);
+      setReportGenerating(false);
     }
   };
 
@@ -976,6 +1035,160 @@ export default function ShippingPage() {
       <Toast />
       <ConfirmDialog />
       {/* Create Pallet Modal */}
+      {/* Download Report Modal */}
+      {showReportModal && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={() => !reportGenerating && setShowReportModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-3">Download Report</h3>
+
+            <div className="space-y-5">
+              {/* Status */}
+              <section>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                  Pallet Lock Status
+                </h4>
+                <div className="flex gap-3">
+                  {[
+                    { value: "all", label: "All" },
+                    { value: "locked", label: "Locked only" },
+                    { value: "unlocked", label: "Unlocked only" },
+                  ].map((opt) => (
+                    <label
+                      key={opt.value}
+                      className="inline-flex items-center gap-2"
+                    >
+                      <input
+                        type="radio"
+                        name="status-filter"
+                        value={opt.value}
+                        checked={statusFilter === opt.value}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm text-gray-700">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              {/* DPN */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-gray-700">DPN</h4>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded border"
+                      onClick={() => selectAll(setSelectedDpns, uniqueDpns)}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded border"
+                      onClick={() => selectNone(setSelectedDpns)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                {uniqueDpns.length === 0 ? (
+                  <p className="text-sm text-gray-500">No DPNs found.</p>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {uniqueDpns.map((d) => (
+                      <label key={d} className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={selectedDpns.has(d)}
+                          onChange={() => toggleSetValue(setSelectedDpns)(d)}
+                        />
+                        <span className="text-sm">{d}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Factory */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-gray-700">
+                    Factory
+                  </h4>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded border"
+                      onClick={() =>
+                        selectAll(setSelectedFactories, uniqueFactories)
+                      }
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded border"
+                      onClick={() => selectNone(setSelectedFactories)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                {uniqueFactories.length === 0 ? (
+                  <p className="text-sm text-gray-500">No factories found.</p>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {uniqueFactories.map((f) => (
+                      <label key={f} className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={selectedFactories.has(f)}
+                          onChange={() =>
+                            toggleSetValue(setSelectedFactories)(f)
+                          }
+                        />
+                        <span className="text-sm">{f}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-6">
+              <button
+                type="button"
+                disabled={reportGenerating}
+                onClick={() => setShowReportModal(false)}
+                className="px-4 py-2 rounded-md border border-neutral-300 text-neutral-700 hover:bg-neutral-50 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reportGenerating}
+                onClick={handleDownloadReport}
+                className={`px-4 py-2 rounded-md text-white text-sm font-semibold ${
+                  reportGenerating
+                    ? "bg-gray-400 cursor-wait"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
+              >
+                {reportGenerating ? "Generating…" : "Download CSV"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showCreateModal && (
         <div
           className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
@@ -1103,18 +1316,16 @@ export default function ShippingPage() {
               </button>
 
               <button
-                onClick={handleDownloadLockedReport}
-                disabled={downloadingReport}
+                onClick={() => setShowReportModal(true)}
+                disabled={reportGenerating}
                 className={`px-4 py-2 text-sm font-semibold rounded-md border ${
-                  downloadingReport
+                  reportGenerating
                     ? "bg-gray-200 text-gray-500 cursor-wait"
                     : "bg-white hover:bg-neutral-50 text-blue-700 border-blue-300"
                 }`}
-                title="Download CSV of units (ST  PPID) on locked pallets"
+                title="Download CSV of units from current open pallets"
               >
-                {downloadingReport
-                  ? "Generating..."
-                  : "Download Locked Pallet Report"}
+                {reportGenerating ? "Generating..." : "Download Report"}
               </button>
             </div>
 
