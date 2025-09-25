@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useContext } from "react";
 import useToast from "../hooks/useToast";
 import useConfirm from "../hooks/useConfirm";
 import { formatDateHumanReadable } from "../utils/date_format";
@@ -20,6 +20,7 @@ import {
   useDraggable,
   useDroppable,
 } from "@dnd-kit/core";
+import { AuthContext } from "../context/AuthContext.jsx";
 
 function SystemBox({ serviceTag }) {
   return (
@@ -140,9 +141,13 @@ const PalletGrid = ({
   lockFlags,
   setLockFlags,
 }) => {
-  // Use unified field so the grid also works for released pallets if reused.
-  const systems = pallet.systems ?? pallet.active_systems ?? [];
-  const isEmpty = systems.every((s) => s == null);
+  // Use unified field so the grid also works for released pallets if reused
+  const raw = pallet.systems ?? pallet.active_systems ?? [];
+  const systems = raw.map((s) =>
+    s && (s.service_tag || s.system_id) ? s : undefined
+  );
+
+  const isEmpty = systems.every((s) => !s || (!s.service_tag && !s.system_id));
   const isReleased = !!releaseFlags[pallet.id]?.released;
 
   useEffect(() => {
@@ -252,7 +257,7 @@ const PalletGrid = ({
                 palletId={pallet.id}
                 idx={idx}
               >
-                {system && (
+                {system?.service_tag && (
                   <DraggableSystem
                     system={system}
                     index={idx}
@@ -373,7 +378,9 @@ export default function ShippingPage() {
   const uniqueDpns = useMemo(
     () =>
       Array.from(
-        new Set((pallets || []).map((p) => p?.dpn).filter(Boolean))
+        new Set(
+          (pallets || []).map((p) => p?.dpn).filter((s) => s?.service_tag)
+        )
       ).sort(),
     [pallets]
   );
@@ -381,7 +388,11 @@ export default function ShippingPage() {
   const uniqueFactories = useMemo(
     () =>
       Array.from(
-        new Set((pallets || []).map((p) => p?.factory_code).filter(Boolean))
+        new Set(
+          (pallets || [])
+            .map((p) => p?.factory_code)
+            .filter((s) => s?.service_tag)
+        )
       ).sort(),
     [pallets]
   );
@@ -426,7 +437,7 @@ export default function ShippingPage() {
               pallet.active_systems ??
               []
             )
-              .filter(Boolean)
+              .filter((s) => s?.service_tag)
               .map(async (sys) => {
                 try {
                   const systemDetails = await getSystem(sys.service_tag);
@@ -763,7 +774,7 @@ export default function ShippingPage() {
         return prev;
       }
 
-      if (toPallet.active_systems?.[toIdx]) {
+      if (toPallet.active_systems?.[toIdx]?.service_tag) {
         showToast("Target slot already occupied", "error");
         return prev;
       }
@@ -791,11 +802,11 @@ export default function ShippingPage() {
       if (!initial) return true;
 
       const currentTags = (current.active_systems || [])
-        .filter(Boolean)
+        .filter((s) => s?.service_tag)
         .map((s) => s.service_tag)
         .sort();
       const initialTags = (initial.active_systems || [])
-        .filter(Boolean)
+        .filter((s) => s?.service_tag)
         .map((s) => s.service_tag)
         .sort();
 
@@ -866,8 +877,10 @@ export default function ShippingPage() {
       });
     }
 
+    const isSlotEmpty = (s) => !s || !s.service_tag; // treat placeholder as empty
+
     const emptyPallets = pallets
-      .filter((p) => (p.active_systems || []).every((s) => s == null))
+      .filter((p) => (p.active_systems || []).every(isSlotEmpty))
       .map((p) => ({ id: p.id, pallet_number: p.pallet_number }));
 
     const releaseList = Object.entries(releaseFlags)
@@ -956,7 +969,7 @@ export default function ShippingPage() {
 
         const systemsWithDetails = await Promise.all(
           (palletData.systems ?? palletData.active_systems ?? [])
-            .filter(Boolean)
+            .filter((s) => s?.service_tag)
             .map(async (sys) => {
               try {
                 const systemDetails = await getSystem(sys.service_tag);
@@ -1058,6 +1071,8 @@ export default function ShippingPage() {
       showToast(`Failed to refresh pallets: ${err.message}`, "error");
     }
   };
+
+  const { token } = useContext(AuthContext);
 
   return (
     <>
@@ -1338,7 +1353,9 @@ export default function ShippingPage() {
             <div className="flex justify-end mt-3 gap-2">
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 text-sm font-semibold rounded-md border bg-white hover:bg-neutral-50 text-green-700 border-green-300"
+                className={`bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-s ${
+                  !token ? "opacity-30 pointer-events-none" : ""
+                }`}
                 title="Create a new empty pallet by DPN + Factory"
               >
                 Add Pallet
@@ -1347,10 +1364,10 @@ export default function ShippingPage() {
               <button
                 onClick={() => setShowReportModal(true)}
                 disabled={reportGenerating}
-                className={`px-4 py-2 text-sm font-semibold rounded-md border ${
+                className={` px-2 py-2 rounded-lg shadow-s ${
                   reportGenerating
-                    ? "bg-gray-200 text-gray-500 cursor-wait"
-                    : "bg-white hover:bg-neutral-50 text-blue-700 border-blue-300"
+                    ? "bg-green-200 text-green-500 cursor-wait"
+                    : "bg-green-600 hover:bg-green-700  text-white px-4 "
                 }`}
                 title="Download CSV of units from current open pallets"
               >
