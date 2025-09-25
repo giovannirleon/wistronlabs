@@ -79,6 +79,57 @@ function DroppableSlot({ palletId, idx, children }) {
   );
 }
 
+function LockStateButton({ currentLocked, pending, onToggle }) {
+  const hasPending = pending !== undefined;
+  const effectiveLocked = hasPending ? pending : currentLocked;
+
+  const styles = {
+    LOCKED_CURRENT: "bg-red-50 text-red-700 border-red-200",
+    UNLOCKED_CURRENT: "bg-green-50 text-green-700 border-green-200",
+    LOCKED_PENDING: "bg-amber-50 text-amber-700 border-amber-200",
+    UNLOCKED_PENDING: "bg-blue-50 text-blue-700 border-blue-200",
+  };
+  const labels = {
+    LOCKED_CURRENT: "Locked",
+    UNLOCKED_CURRENT: "Unlocked",
+    LOCKED_PENDING: "Locked (pending)",
+    UNLOCKED_PENDING: "Unlocked (pending)",
+  };
+
+  const stateKey = hasPending
+    ? effectiveLocked
+      ? "LOCKED_PENDING"
+      : "UNLOCKED_PENDING"
+    : currentLocked
+    ? "LOCKED_CURRENT"
+    : "UNLOCKED_CURRENT";
+
+  // Longest label drives button width
+  const longestLabel = Object.values(labels).reduce(
+    (a, b) => (b.length > a.length ? b : a),
+    ""
+  );
+
+  const title = hasPending
+    ? "Click to clear the pending lock change"
+    : `Click to stage a ${currentLocked ? "unlock" : "lock"} change`;
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={title}
+      className={`grid place-items-center whitespace-nowrap px-2 py-1 text-xs font-semibold rounded-md border ${styles[stateKey]} hover:opacity-90`}
+      // grid + invisible longest label ensures fixed width
+    >
+      {/* Invisible width-reserver */}
+      <span className="invisible col-start-1 row-start-1">{longestLabel}</span>
+      {/* Visible label, overlaid in same grid cell */}
+      <span className="col-start-1 row-start-1">{labels[stateKey]}</span>
+    </button>
+  );
+}
+
 const PalletGrid = ({
   pallet,
   releaseFlags,
@@ -133,6 +184,20 @@ const PalletGrid = ({
   const currentLocked = !!pallet.locked;
   const pending = lockFlags[pallet.id]; // undefined | boolean
   const hasPending = pending !== undefined;
+
+  const toggleLockStaged = () => {
+    setLockFlags((prev) => {
+      const copy = { ...prev };
+      if (hasPending) {
+        // clear pending
+        delete copy[pallet.id];
+      } else {
+        // stage opposite of current
+        copy[pallet.id] = !currentLocked;
+      }
+      return copy;
+    });
+  };
   const effectiveLocked = hasPending ? pending : currentLocked;
 
   const stateKey = hasPending
@@ -157,51 +222,25 @@ const PalletGrid = ({
     UNLOCKED_PENDING: "Unlocked (pending)",
   };
 
-  const toggleLockStaged = () => {
-    if (!hasPending) {
-      setLockFlags((prev) => ({ ...prev, [pallet.id]: !currentLocked }));
-      return;
-    }
-    setLockFlags((prev) => {
-      const copy = { ...prev };
-      delete copy[pallet.id];
-      return copy;
-    });
-  };
-
   return (
     <div className="border border-gray-300 rounded-2xl shadow-md hover:shadow-lg transition p-4 bg-white flex flex-col justify-between">
-      <div className="mb-2 relative">
+      <div className="mb-4 relative">
         <h2 className="text-md font-medium text-gray-700 pr-32">
           {pallet.pallet_number}
         </h2>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs pb-2 text-gray-500">
           Created on {formatDateHumanReadable(pallet.created_at)}
         </p>
 
         {/* Lock chip  stage/clear button */}
         <div className="absolute top-0 right-0 flex items-center gap-2">
-          <span
-            className={`px-2 py-1 text-xs font-semibold rounded-md border ${stateStyles[stateKey]}`}
-            title={
-              hasPending
-                ? "Pending lock change (applied on Submit Changes)"
-                : "Current lock state"
-            }
-          >
-            {stateLabel[stateKey]}
-          </span>
-          <button
-            onClick={toggleLockStaged}
-            className="px-2 py-1 text-xs font-semibold rounded-md border border-neutral-300 hover:bg-neutral-50"
-            title={
-              hasPending
-                ? "Clear staged lock change"
-                : "Stage a lock/unlock change (applied on Submit Changes)"
-            }
-          >
-            {hasPending ? "Clear Pending" : "Toggle Lock"}
-          </button>
+          <div className="absolute top-0 right-0">
+            <LockStateButton
+              currentLocked={currentLocked}
+              pending={pending}
+              onToggle={toggleLockStaged}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-3 grid-rows-3 gap-2 mb-4">
@@ -261,6 +300,16 @@ export default function ShippingPage() {
   const [activeDragData, setActiveDragData] = useState(null);
   const [downloadingReport, setDownloadingReport] = useState(false);
 
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creatingPallet, setCreatingPallet] = useState(false);
+  const [newPalletForm, setNewPalletForm] = useState({
+    dpn: "",
+    factoryCode: "",
+  });
+
+  const [dpnOptions, setDpnOptions] = useState([]);
+  const [factoryOptions, setFactoryOptions] = useState([]);
+
   // staged lock changes
   const [lockFlags, setLockFlags] = useState({});
   const [releaseFlags, setReleaseFlags] = useState({});
@@ -275,6 +324,9 @@ export default function ShippingPage() {
   );
 
   const {
+    getDpns,
+    getFactories,
+    createPallet,
     getSystem,
     getPallets,
     moveSystemBetweenPallets,
@@ -282,6 +334,32 @@ export default function ShippingPage() {
     deletePallet,
     setPalletLock,
   } = useApi();
+
+  const handleCreatePallet = async (e) => {
+    e?.preventDefault?.();
+    const dpn = newPalletForm.dpn.trim();
+    const factory_code = newPalletForm.factoryCode.trim();
+    if (!dpn || !factory_code) {
+      showToast("DPN and Factory Code are required.", "error");
+      return;
+    }
+
+    try {
+      setCreatingPallet(true);
+      const res = await createPallet({ dpn, factory_code });
+      const pn =
+        res?.pallet_number || res?.pallet?.pallet_number || "(pallet created)";
+      showToast(`Created pallet ${pn}`, "info");
+      setShowCreateModal(false);
+      setNewPalletForm({ dpn: "", factoryCode: "" });
+      await reloadOpenPallets();
+    } catch (err) {
+      const msg = err?.error || err?.message || "Failed to create pallet";
+      showToast(msg, "error");
+    } finally {
+      setCreatingPallet(false);
+    }
+  };
 
   // ---- Released tab data fetcher ----
   const fetchReleasedPallets = async ({
@@ -371,6 +449,26 @@ export default function ShippingPage() {
     return { data: palletsWithLinks, total_count: res.total_count };
   };
 
+  useEffect(() => {
+    if (!showCreateModal) return;
+    (async () => {
+      try {
+        const dpns = await getDpns();
+        setDpnOptions(Array.isArray(dpns) ? dpns : []);
+      } catch (e) {
+        console.error(e);
+        showToast("Failed to load DPNs", "error");
+      }
+      try {
+        const facs = await getFactories();
+        setFactoryOptions(Array.isArray(facs) ? facs : []);
+      } catch (e) {
+        console.error(e);
+        showToast("Failed to load factories", "error");
+      }
+    })();
+  }, [showCreateModal]);
+
   // ---- Initial load (open pallets) ----
   useEffect(() => {
     const loadPallets = async () => {
@@ -399,6 +497,22 @@ export default function ShippingPage() {
 
     loadPallets();
   }, []);
+
+  const reloadOpenPallets = async () => {
+    const data = await getPallets({
+      filters: { conditions: [{ field: "status", op: "=", values: ["open"] }] },
+    });
+    const refreshed = Array.isArray(data?.data) ? data.data : [];
+    const normalized = refreshed.map((p) => ({
+      ...p,
+      active_systems: p.active_systems ?? p.systems ?? [],
+      systems: p.systems ?? p.active_systems ?? [],
+    }));
+    setPallets(normalized);
+    setInitialPallets(structuredClone(normalized));
+    setReleaseFlags({});
+    setLockFlags({});
+  };
 
   const handleLockUpdated = (updatedPallet) => {
     setPallets((prev) =>
@@ -861,6 +975,93 @@ export default function ShippingPage() {
     <>
       <Toast />
       <ConfirmDialog />
+      {/* Create Pallet Modal */}
+      {showCreateModal && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={() => !creatingPallet && setShowCreateModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-3">Create New Pallet</h3>
+            <form onSubmit={handleCreatePallet} className="space-y-3">
+              {/* DPN typable dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  DPN
+                </label>
+                <input
+                  list="dpn-list"
+                  value={newPalletForm.dpn}
+                  onChange={(e) =>
+                    setNewPalletForm((p) => ({ ...p, dpn: e.target.value }))
+                  }
+                  placeholder="Start typing to search…"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring focus:ring-blue-200 text-sm"
+                />
+                <datalist id="dpn-list">
+                  {dpnOptions.map((d) => (
+                    <option key={d.id ?? d.name} value={d.name} />
+                  ))}
+                </datalist>
+              </div>
+
+              {/* Factory Code typable dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Factory Code
+                </label>
+                <input
+                  list="factory-code-list"
+                  value={newPalletForm.factoryCode}
+                  onChange={(e) =>
+                    setNewPalletForm((p) => ({
+                      ...p,
+                      factoryCode: e.target.value,
+                    }))
+                  }
+                  placeholder="Start typing to search… (e.g., MX)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring focus:ring-blue-200 text-sm"
+                />
+                <datalist id="factory-code-list">
+                  {factoryOptions.map((f) => (
+                    <option
+                      key={f.id ?? f.code}
+                      value={f.code} // <- use the CODE as the input value
+                      label={f.name || undefined} // nice hint in some browsers
+                    />
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={creatingPallet}
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 rounded-md border border-neutral-300 text-neutral-700 hover:bg-neutral-50 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingPallet}
+                  className={`px-4 py-2 rounded-md text-white text-sm font-semibold ${
+                    creatingPallet
+                      ? "bg-gray-400 cursor-wait"
+                      : "bg-green-600 hover:bg-green-700"
+                  }`}
+                >
+                  {creatingPallet ? "Creating..." : "Create Pallet"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <main className="md:max-w-10/12 mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         <h1 className="text-3xl font-semibold text-gray-800">
           Shipping Manager
@@ -892,7 +1093,15 @@ export default function ShippingPage() {
 
         {tab === "active" ? (
           <>
-            <div className="flex justify-end mt-3">
+            <div className="flex justify-end mt-3 gap-2">
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-4 py-2 text-sm font-semibold rounded-md border bg-white hover:bg-neutral-50 text-green-700 border-green-300"
+                title="Create a new empty pallet by DPN + Factory"
+              >
+                Add Pallet
+              </button>
+
               <button
                 onClick={handleDownloadLockedReport}
                 disabled={downloadingReport}

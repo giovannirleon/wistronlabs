@@ -27,6 +27,7 @@ router.get("/", async (req, res) => {
         ? `WHERE ${buildWhereClause(parsed, params, {
             pallet_number: "p.pallet_number",
             factory_id: "p.factory_id",
+            factory_code: "f.code",
             dpn: "d.name",
             status: "p.status",
             doa_number: "p.doa_number",
@@ -42,6 +43,7 @@ router.get("/", async (req, res) => {
   const allowedSortColumns = {
     pallet_number: "p.pallet_number",
     factory_id: "p.factory_id",
+    factory_code: "f.code",
     dpn: "d.name",
     status: "p.status",
     doa_number: "p.doa_number",
@@ -74,6 +76,7 @@ router.get("/", async (req, res) => {
           p.doa_number, p.released_at, p.created_at,
           p.locked, p.locked_at, p.locked_by,
           d.name AS dpn,
+          f.code AS factory_code,
 
           -- Open-pallet live members
           COALESCE(
@@ -152,8 +155,9 @@ router.get("/", async (req, res) => {
         LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
         LEFT JOIN system s        ON s.id = ps.system_id
         LEFT JOIN dpn d           ON d.id = p.dpn_id
+        LEFT JOIN factory f       ON f.id = p.factory_id
         ${whereSQL}
-        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, d.name
+        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, d.name, f.code
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
         `,
@@ -165,6 +169,7 @@ router.get("/", async (req, res) => {
             SELECT COUNT(*) AS count
             FROM pallet p
             LEFT JOIN dpn d ON d.id = p.dpn_id
+            LEFT JOIN factory f ON f.id = p.factory_id
             ${whereSQL}
             `,
             params
@@ -297,6 +302,7 @@ router.get("/:pallet_number", async (req, res) => {
         p.doa_number, p.released_at, p.created_at,
         p.locked, p.locked_at, p.locked_by,
         d.name AS dpn,
+        f.code AS factory_code,                 
 
         -- Open-pallet live members
         COALESCE(
@@ -375,8 +381,9 @@ router.get("/:pallet_number", async (req, res) => {
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
       LEFT JOIN system s        ON s.id = ps.system_id
       LEFT JOIN dpn d           ON d.id = p.dpn_id
+      LEFT JOIN factory f       ON f.id = p.factory_id
       WHERE p.pallet_number = $1
-      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, d.name
+      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, d.name, f.code
       `,
       [pallet_number]
     );

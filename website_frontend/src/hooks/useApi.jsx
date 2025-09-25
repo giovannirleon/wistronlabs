@@ -359,6 +359,16 @@ function useApi() {
       body: JSON.stringify({ locked }),
     });
 
+  const createPallet = ({ dpn, factory_code }) =>
+    fetchJSON(`/pallets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dpn, factory_code }),
+    });
+
+  const getDpns = () => fetchJSON(`/systems/dpn`);
+  const getFactories = () => fetchJSON(`/systems/factory`);
+
   // tiny convenience wrappers
   const lockPallet = (pallet_number) => setPalletLock(pallet_number, true);
   const unlockPallet = (pallet_number) => setPalletLock(pallet_number, false);
@@ -394,6 +404,9 @@ function useApi() {
     setPalletLock,
     lockPallet,
     unlockPallet,
+    createPallet,
+    getDpns,
+    getFactories,
   };
 }
 
