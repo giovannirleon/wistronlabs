@@ -1,6 +1,9 @@
 import { useEffect, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "react-select";
+import { Link, useLocation } from "react-router-dom";
+
+import { DateTime } from "luxon";
 
 import Flowchart from "../components/Flowchart";
 import { useParams } from "react-router-dom";
@@ -46,6 +49,10 @@ function SystemPage() {
   const [toLocationId, setToLocationId] = useState("");
   const [selectedStation, setSelectedStation] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [downloads, setDownloads] = useState([]);
+  const [releasedPallets, setreleasedPallets] = useState([]);
+
+  const [tab, setTab] = useState("history");
 
   const { confirmPrint, ConfirPrintmModal } = usePrintConfirm();
 
@@ -59,7 +66,19 @@ function SystemPage() {
 
   const isResolved = resolvedNames?.includes(currentLocation);
 
+  const rmaIDs = [6, 7, 8];
+
+  const rmaNames = locations
+    ?.filter((loc) => rmaIDs.includes(loc.id))
+    .map((loc) => loc.name);
+
+  const isRMA = rmaNames?.includes(currentLocation);
+
   const { token } = useContext(AuthContext);
+  const baseUrl =
+    import.meta.env.MODE === "development"
+      ? FRONTEND_URL // is "/l10_logs/" in development
+      : FRONTEND_URL; // is "/l10_logs/" in production
 
   const {
     getSystem,
@@ -71,6 +90,8 @@ function SystemPage() {
     getStations,
     updateStation,
     getSystemPallet,
+    getPallets,
+    getServerTime,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
@@ -81,17 +102,29 @@ function SystemPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [systemsData, locationsData, historyData, stationData] =
-        await Promise.all([
-          getSystem(serviceTag),
-          getLocations(),
-          getSystemHistory(serviceTag),
-          getStations(),
-        ]);
+      const [
+        systemsData,
+        locationsData,
+        historyData,
+        stationData,
+        releasedPalletsData,
+      ] = await Promise.all([
+        getSystem(serviceTag),
+        getLocations(),
+        getSystemHistory(serviceTag),
+        getStations(),
+        getPallets({
+          all: true,
+          filters: {
+            conditions: [{ field: "status", op: "=", values: ["open"] }],
+          },
+        }),
+      ]);
       setStations(stationData);
       setSystem(systemsData);
       setLocations(locationsData);
       setHistory(historyData); // add link to each history entry
+      setreleasedPallets(releasedPalletsData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -194,6 +227,82 @@ function SystemPage() {
       );
     }
   };
+
+  useEffect(() => {
+    // fetch downloads once
+    const fetchDownloads = async () => {
+      try {
+        const { zone: serverZone = "UTC" } = await getServerTime();
+
+        const link = `${baseUrl}/l10_logs/${serviceTag}/`;
+        const res = await fetch(link);
+        const text = await res.text();
+        const parser = new DOMParser();
+        const htmlDoc = parser.parseFromString(text, "text/html");
+        const rows = htmlDoc.querySelectorAll("tr");
+        const entries = [];
+        rows.forEach((row, rowIndex) => {
+          if (rowIndex >= 3 && rowIndex < rows.length - 1) {
+            let rawDate = "";
+            let name = "";
+            let href = "";
+            const cols = row.querySelectorAll("td");
+            cols.forEach((col, colIndex) => {
+              // get folder name and href
+              if (colIndex == 1) {
+                name = Array.from(col.querySelectorAll("a"))[0]
+                  .textContent.trim()
+                  .replace(/\/$/, "");
+                href = Array.from(col.querySelectorAll("a"))[0].getAttribute(
+                  "href"
+                );
+              }
+
+              // get raw date data
+              if (colIndex == 2) {
+                rawDate = col.textContent.trim();
+              }
+            });
+
+            const modLux = DateTime.fromFormat(rawDate, "yyyy-LL-dd HH:mm:ss", {
+              zone: "utc",
+            }).isValid
+              ? DateTime.fromFormat(rawDate, "yyyy-LL-dd HH:mm:ss", {
+                  zone: "utc",
+                })
+              : DateTime.fromFormat(rawDate, "yyyy-LL-dd HH:mm", {
+                  zone: "utc",
+                });
+
+            const formattedDate = modLux.isValid
+              ? formatDateHumanReadable(
+                  new Date(modLux.setZone(serverZone).toISO())
+                )
+              : rawDate; // fallback if parsing fails
+
+            const nameLux = DateTime.fromISO(name, { zone: "utc" });
+            const nameLocal = nameLux.isValid
+              ? formatDateHumanReadable(
+                  new Date(nameLux.setZone(serverZone).toISO())
+                )
+              : name;
+            //push entry
+            entries.push({
+              name: `L10 test ran on ${nameLocal}`,
+              href: link + href,
+              name_title: "File Name",
+              date: formattedDate,
+              date_title: "Date Modified",
+            });
+          }
+        });
+        setDownloads(entries);
+      } catch (err) {
+        console.error("Failed to fetch downloads:", err);
+      }
+    };
+    fetchDownloads();
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -379,6 +488,16 @@ function SystemPage() {
       setFormError(""); // or null
     }
   }, [isResolved]);
+
+  const target = serviceTag.trim().toUpperCase();
+
+  const isInPalletNumber =
+    releasedPallets.find((p) =>
+      p.active_systems?.some(
+        (s) => (s.service_tag || "").toUpperCase() === target
+      )
+    )?.pallet_number ?? null;
+
   return (
     <>
       <ConfirmDialog />
@@ -407,12 +526,18 @@ function SystemPage() {
                   Service Tag{" "}
                   <span className="text-blue-600">{serviceTag}</span>
                 </h1>
-
-                {system?.issue && (
-                  <span className="inline-block mt-1 px-2 py-1 bg-red-100 text-red-800 text-xs sm:text-sm font-bold rounded-full uppercase">
-                    {system.issue}
-                  </span>
-                )}
+                <span>
+                  {system?.config && (
+                    <span className="mr-2 inline-block mt-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs sm:text-sm font-bold rounded-full uppercase">
+                      Config {system.config}
+                    </span>
+                  )}
+                  {system?.issue && (
+                    <span className="inline-block mt-1 px-2 py-1 bg-red-100 text-red-800 text-xs sm:text-sm font-bold rounded-full uppercase">
+                      {system.issue}
+                    </span>
+                  )}
+                </span>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
@@ -615,89 +740,169 @@ function SystemPage() {
               >
                 {submitting ? "Submitting…" : "Update Location"}
               </button>
+
+              {isRMA ? (
+                isInPalletNumber ? (
+                  <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-2 mt-5 rounded">
+                    This system has been RMA'd but has not shipped yet, you can
+                    view it on pallet
+                    <Link className="hover:underline" to="/shipping">
+                      {" "}
+                      {isInPalletNumber}
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 mt-5 rounded">
+                    This system has been RMA'd and has shipped back to the L10
+                    factory.
+                    <Link className="hover:underline" to="/shipping">
+                      {" "}
+                      {isInPalletNumber}
+                    </Link>
+                  </div>
+                )
+              ) : (
+                <></>
+              )}
               {formError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 mt-5 rounded">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
                   {formError}
                 </div>
               )}
             </form>
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">
-                Location History
-              </h1>{" "}
-              <SearchContainer
-                data={history.map((entry) => ({
-                  ...entry,
-                  from_location_title: "From",
-                  to_location_title: "To",
-                  note_title: "Note",
-                  changed_at_title: "Updated At",
-                  changed_at: formatDateHumanReadable(entry.changed_at),
-                  moved_by_title: "Moved By",
-                  moved_by:
-                    entry.moved_by === "deleted_user@example.com"
-                      ? "Unknown"
-                      : entry.moved_by,
-                  link: `locationHistory/${entry.id}`, // add link to each history entry
-                }))}
-                title=""
-                displayOrder={["to_location", "note", "moved_by", "changed_at"]}
-                visibleFields={
-                  isMobile
-                    ? ["to_location", "note", "moved_by"]
-                    : ["to_location", "note", "moved_by", "changed_at"]
-                }
-                defaultSortBy={"changed_at"}
-                defaultSortAsc={true}
-                fieldStyles={{
-                  to_location: (val) =>
-                    val === "Sent to L11" ||
-                    val === "RMA CID" ||
-                    val === "RMA VID" ||
-                    val === "RMA PID"
-                      ? { type: "pill", color: "bg-green-100 text-green-800" }
-                      : val === "Received" ||
-                        val === "In Debug - Wistron" ||
-                        val === "In L10"
-                      ? { type: "pill", color: "bg-red-100 text-red-800" }
-                      : {
-                          type: "pill",
-                          color: "bg-yellow-100 text-yellow-800",
-                        },
-                  from_location: (val) =>
-                    val === "Sent to L11" ||
-                    val === "RMA CID" ||
-                    val === "RMA VID" ||
-                    val === "RMA PID"
-                      ? { type: "pill", color: "bg-green-100 text-green-800" }
-                      : val === "Received" ||
-                        val === "In Debug - Wistron" ||
-                        val === "In L10"
-                      ? { type: "pill", color: "bg-red-100 text-red-800" }
-                      : {
-                          type: "pill",
-                          color: "bg-yellow-100 text-yellow-800",
-                        },
-                  note: (val) =>
-                    val?.includes("Moving back to received from Inactive") ||
-                    val?.includes("Moving back to processed from Inactive")
-                      ? "font-semibold"
-                      : "",
-                }}
-                linkType={isMobile ? "internal" : "none"}
-                allowSort={false}
-                allowSearch={false}
-                defaultPage="last"
-                truncate={isMobile ?? true}
-                onAction={handleDeleteLastHistoryEntry}
-                actionButtonClass={
-                  "ml-2 text-xs text-grey-200 hover:text-red-400"
-                }
-                actionButtonVisibleIf={{
-                  field: "changed_at",
-                  equals: formatDateHumanReadable(history[0]?.changed_at), // only show action button for the most recent entry
-                }}
-              />
+              {/* Tabs */}
+              <div className="flex gap-4 mt-2 border-b border-gray-200">
+                <button
+                  onClick={() => setTab("history")}
+                  className={`px-4 py-2 -mb-px  border-b-2 text-3xl font-bold ${
+                    tab === "history"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Location History
+                </button>
+                <button
+                  onClick={() => setTab("logs")}
+                  className={`px-4 py-2 -mb-px  border-b-2 text-3xl font-bold ${
+                    tab === "logs"
+                      ? "border-blue-600 text-blue-600 "
+                      : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Logs
+                </button>
+              </div>
+
+              {tab === "history" ? (
+                <>
+                  <SearchContainer
+                    data={history.map((entry) => ({
+                      ...entry,
+                      from_location_title: "From",
+                      to_location_title: "To",
+                      note_title: "Note",
+                      changed_at_title: "Updated At",
+                      changed_at: formatDateHumanReadable(entry.changed_at),
+                      moved_by_title: "Moved By",
+                      moved_by:
+                        entry.moved_by === "deleted_user@example.com"
+                          ? "Unknown"
+                          : entry.moved_by,
+                      link: `locationHistory/${entry.id}`, // add link to each history entry
+                    }))}
+                    title=""
+                    displayOrder={[
+                      "to_location",
+                      "note",
+                      "moved_by",
+                      "changed_at",
+                    ]}
+                    visibleFields={
+                      isMobile
+                        ? ["to_location", "note", "moved_by"]
+                        : ["to_location", "note", "moved_by", "changed_at"]
+                    }
+                    defaultSortBy={"changed_at"}
+                    defaultSortAsc={true}
+                    fieldStyles={{
+                      to_location: (val) =>
+                        val === "Sent to L11" ||
+                        val === "RMA CID" ||
+                        val === "RMA VID" ||
+                        val === "RMA PID"
+                          ? {
+                              type: "pill",
+                              color: "bg-green-100 text-green-800",
+                            }
+                          : val === "Received" ||
+                            val === "In Debug - Wistron" ||
+                            val === "In L10"
+                          ? { type: "pill", color: "bg-red-100 text-red-800" }
+                          : {
+                              type: "pill",
+                              color: "bg-yellow-100 text-yellow-800",
+                            },
+                      from_location: (val) =>
+                        val === "Sent to L11" ||
+                        val === "RMA CID" ||
+                        val === "RMA VID" ||
+                        val === "RMA PID"
+                          ? {
+                              type: "pill",
+                              color: "bg-green-100 text-green-800",
+                            }
+                          : val === "Received" ||
+                            val === "In Debug - Wistron" ||
+                            val === "In L10"
+                          ? { type: "pill", color: "bg-red-100 text-red-800" }
+                          : {
+                              type: "pill",
+                              color: "bg-yellow-100 text-yellow-800",
+                            },
+                      note: (val) =>
+                        val?.includes(
+                          "Moving back to received from Inactive"
+                        ) ||
+                        val?.includes("Moving back to processed from Inactive")
+                          ? "font-semibold"
+                          : "",
+                    }}
+                    linkType={isMobile ? "internal" : "none"}
+                    allowSort={false}
+                    allowSearch={false}
+                    defaultPage="last"
+                    truncate={isMobile ?? true}
+                    onAction={handleDeleteLastHistoryEntry}
+                    actionButtonClass={
+                      "ml-2 text-xs text-grey-200 hover:text-red-400"
+                    }
+                    actionButtonVisibleIf={{
+                      field: "changed_at",
+                      equals: formatDateHumanReadable(history[0]?.changed_at), // only show action button for the most recent entry
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <SearchContainer
+                    data={downloads}
+                    displayOrder={["name", "date"]}
+                    defaultSortBy={"date"}
+                    defaultSortAsc={false}
+                    fieldStyles={{
+                      name: "text-blue-600 font-medium",
+                      date: "text-gray-500 text-sm",
+                    }}
+                    linkType="external"
+                    visibleFields={
+                      isMobile ? ["name", "date"] : ["name", "date"]
+                    }
+                    allowSearch={false}
+                  />
+                </>
+              )}
             </div>
           </>
         )}

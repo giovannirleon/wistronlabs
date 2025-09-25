@@ -158,7 +158,7 @@ export default function Flowchart({ currentLocation_id, locations }) {
 
   return (
     <svg
-      viewBox="0 0 750 400"
+      viewBox="-1 -1 752 402"
       className="w-full h-auto"
       preserveAspectRatio="xMinYMin meet"
       xmlns="http://www.w3.org/2000/svg"

@@ -1454,7 +1454,9 @@ export default function ShippingPage() {
             ]}
             linkType="external"
             fetchData={fetchReleasedPallets}
-            truncate={false}
+            truncate={true}
+            defaultSortBy="released_at"
+            defaultSortAsc={false}
           />
         )}
       </main>

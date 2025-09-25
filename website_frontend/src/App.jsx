@@ -1,7 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 
-import HomePage from "./pages/HomePage";
 import TrackingPage from "./pages/TrackingPage";
+import StationPage from "./pages/StationPage";
 import SystemPage from "./pages/SystemPage";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
@@ -30,8 +30,8 @@ function App() {
         {/* <ScrollToTop /> */}
         <Header />
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/tracking" element={<TrackingPage />} />
+          <Route path="/" element={<TrackingPage />} />
+          <Route path="/stations" element={<StationPage />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/shipping" element={<ShippingPage />} />
           <Route path="/:serviceTag" element={<SystemPage />} />

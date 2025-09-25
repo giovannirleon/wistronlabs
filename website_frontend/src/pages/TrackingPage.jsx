@@ -140,8 +140,6 @@ function TrackingPage() {
         const dt = DateTime.fromISO(h.changed_at, { zone: "utc" }).toISO();
         return dt >= locationChartHistoryCutoffDateTime;
       });
-      console.log("historyData", filteredHistory);
-      console.log("snapshot data", activeLocationSnapshotFirstDay);
       setLocations(locationsData);
       setInOutChartHistory(historyData);
       setLocationChartHistory(filteredHistory);

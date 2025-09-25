@@ -1,13 +1,13 @@
 import { useState, useCallback } from "react";
-import { formatDateHumanReadable } from "../utils/date_format";
-import useApi from "./useApi";
 import { DateTime } from "luxon";
+import useApi from "./useApi";
 
 export default function useDetailsModal(showToast, onUpdated) {
   const [isOpen, setIsOpen] = useState(false);
   const [details, setDetails] = useState(null);
   const [ppidInput, setPpidInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const { updateSystemPPID } = useApi();
 
@@ -20,6 +20,7 @@ export default function useDetailsModal(showToast, onUpdated) {
     setIsOpen(false);
     setDetails(null);
     setPpidInput("");
+    setCopied(false);
   }, []);
 
   const isIncomplete = (d) => {
@@ -35,49 +36,75 @@ export default function useDetailsModal(showToast, onUpdated) {
     return fields.some((f) => !d[f]);
   };
 
+  const handleCopy = async () => {
+    if (!details?.ppid) return;
+    try {
+      await navigator.clipboard.writeText(details.ppid);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+      showToast?.("PPID copied", "success", 1500, "bottom-right");
+    } catch {
+      showToast?.("Failed to copy PPID", "error", 2000, "bottom-right");
+    }
+  };
+
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!ppidInput) return;
     setLoading(true);
     try {
-      console.log(details.service_tag, ppidInput);
       const res = await updateSystemPPID(details.service_tag, ppidInput);
-      console.log("PATCH response", res);
       showToast?.(res.message, "success", 3000, "bottom-right");
       closeDetails();
       if (onUpdated) {
-        await onUpdated(); // refetch fresh data
+        await onUpdated();
       }
     } catch (err) {
       console.error("Failed to update PPID", err);
-
       let message = "Cannot update system, please make sure PPID is correct";
-
-      // If the error was thrown by useApi and contains the backend error in err.message
       if (err?.message?.includes("failed:")) {
-        // Extract the backend error part after the status code
         const parts = err.message.split(/failed:\s*\d+\s*/);
-        if (parts.length > 1) {
-          message = parts[1];
-        }
+        if (parts.length > 1) message = parts[1];
       }
-
       showToast?.(message, "error", 5000, "bottom-right");
     } finally {
       setLoading(false);
     }
   };
 
-  // Return a stable React node instead of a function component
   const modal = isOpen && (
     <div
       className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       style={{ zIndex: 9999 }}
     >
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full sm:max-w-lg p-6 transform transition-all scale-100 animate-fadeIn mx-2">
-        <h2 className="text-xl font-bold text-gray-900 mb-4 border-b border-gray-100 pb-2">
+        <h2 className="text-xl font-bold text-gray-900 mb-3 border-b border-gray-100 pb-2">
           System Details
         </h2>
+
+        {/* PPID: monofont with copy button */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <code
+            className="font-mono text-sm sm:text-base bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 w-full break-all"
+            title="PPID"
+          >
+            {details?.ppid || "—"}
+          </code>
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!details?.ppid}
+            className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium shadow
+              ${
+                details?.ppid
+                  ? "bg-gray-800 text-white hover:bg-gray-900"
+                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
+              }`}
+            aria-label="Copy PPID"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
 
         {details && !isIncomplete(details) ? (
           <div className="text-gray-700 text-sm sm:text-base space-y-3">

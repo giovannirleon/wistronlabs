@@ -37,10 +37,10 @@ function Header() {
           Home
         </Link>
         <Link
-          to="/tracking"
-          className={`${linkBase} ${pathname === "/tracking" ? active : ""}`}
+          to="/stations"
+          className={`${linkBase} ${pathname === "/stations" ? active : ""}`}
         >
-          Tracking
+          Stations
         </Link>
         <Link
           to="/shipping"

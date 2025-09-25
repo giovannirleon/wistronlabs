@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from "react";
-import SearchContainer from "../components/SearchContainer";
+import SearchContainer from "../components/SearchContainer.jsx";
 
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useApi from "../hooks/useApi.jsx";
 
-import Rack from "../components/Rack";
-import Table from "../components/Table";
+import Rack from "../components/Rack.jsx";
+import Table from "../components/Table.jsx";
 
-import { formatDateHumanReadable } from "../utils/date_format";
+import { formatDateHumanReadable } from "../utils/date_format.js";
 
-function HomePage() {
+function StationPage() {
   const FRONTEND_URL = import.meta.env.VITE_URL;
   const LOCATION = import.meta.env.VITE_LOCATION;
 
@@ -181,7 +181,7 @@ function HomePage() {
         </div>
       </main>
       {/* Available Downloads */}
-      <section className="md:max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
+      {/* <section className="md:max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
         <SearchContainer
           data={downloads}
           title={"Available Logs"}
@@ -195,9 +195,9 @@ function HomePage() {
           linkType="external"
           visibleFields={isMobile ? ["name", "date"] : ["name", "date"]}
         />
-      </section>
+      </section> */}
     </>
   );
 }
 
-export default HomePage;
+export default StationPage;
