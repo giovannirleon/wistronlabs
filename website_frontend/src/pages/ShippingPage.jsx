@@ -663,12 +663,41 @@ export default function ShippingPage() {
         )
         .join("\n");
 
+      // ...keep your existing code above...
+
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
+      // --- NEW: build filename parts from filters ---
+      const codeSlug = (s) => String(s ?? "").replace(/[^A-Za-z0-9_-]/g, "");
+      const joinCodes = (arr) => arr.map(codeSlug).join("_");
+
+      // "all" means either no restriction (size===0) OR the user selected every option
+      const allDpnsSelected =
+        selectedDpns.size === 0 || selectedDpns.size === uniqueDpns.length;
+      const allFactoriesSelected =
+        selectedFactories.size === 0 ||
+        selectedFactories.size === uniqueFactories.length;
+
+      const dpnPart = allDpnsSelected
+        ? "all_dpns"
+        : `dpns_${joinCodes([...selectedDpns].sort())}`;
+
+      const factoryPart = allFactoriesSelected
+        ? "all_factories"
+        : `factories_${joinCodes([...selectedFactories].sort())}`;
+
+      const statusPart = statusFilter === "all" ? "all_active" : statusFilter; // 'all_active' | 'locked' | 'unlocked'
+
+      // Example outputs:
+      // pallet-report-dpns_DKFX_XXXXX-factories_MX-all-<ts>.csv
+      // pallet-report-all_factories-all_dpns-locked-<ts>.csv
       a.href = url;
-      a.download = `pallet-report-${ts}.csv`;
+      a.download = `pallet-report-${dpnPart}-${factoryPart}-${statusPart}-${ts}.csv`;
+      // --- END NEW ---
+
       document.body.appendChild(a);
       a.click();
       a.remove();
