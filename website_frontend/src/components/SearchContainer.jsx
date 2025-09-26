@@ -14,6 +14,10 @@ function SearchContainer({
   allowSearch = true, // added: allows disabling search
   defaultPage = "first", // added: accepts 'first' or 'last'
   truncate,
+  // directory navigation (optional)
+  rootHref,
+  currentDir = "",
+  onDirChange,
   onAction = null,
   actionButtonClass,
   actionButtonVisibleIf,
@@ -55,8 +59,40 @@ function SearchContainer({
 
   return (
     <>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mt-4">
         <h1 className="text-2xl font-semibold">{title}</h1>
+        {rootHref && onDirChange && (
+          <div className="flex gap-2 mr-2">
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-sm font-medium"
+              onClick={() => onDirChange("")}
+              disabled={!currentDir}
+              title="Back to root"
+            >
+              ⌂ Root Directory
+            </button>
+
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-sm font-medium ${
+                !currentDir ? "opacity-30 pointer-events-none" : ""
+              }`}
+              onClick={() => {
+                const parts = currentDir
+                  .replace(/\/+$/, "")
+                  .split("/")
+                  .filter(Boolean);
+                parts.pop();
+                onDirChange(parts.length ? parts.join("/") + "/" : "");
+              }}
+              disabled={!currentDir}
+              title="Up one level"
+            >
+              ↑ Up a Directory
+            </button>
+          </div>
+        )}
         {allowSearch && (
           <input
             type="text"
@@ -135,6 +171,8 @@ function SearchContainer({
               onAction={onAction} // Pass down the onAction prop
               actionButtonClass={actionButtonClass}
               actionButtonVisibleIf={actionButtonVisibleIf}
+              rootHref={rootHref}
+              onDirChange={onDirChange}
             />
           </div>
         )}

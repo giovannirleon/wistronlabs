@@ -53,6 +53,7 @@ function SystemPage() {
   const [releasedPallets, setreleasedPallets] = useState([]);
 
   const [tab, setTab] = useState("history");
+  const [logsDir, setLogsDir] = useState(""); // e.g. "2025-09-25/"
 
   const { confirmPrint, ConfirPrintmModal } = usePrintConfirm();
 
@@ -234,7 +235,11 @@ function SystemPage() {
       try {
         const { zone: serverZone = "UTC" } = await getServerTime();
 
-        const link = `${baseUrl}/l10_logs/${serviceTag}/`;
+        const dirPart = logsDir
+          ? logsDir.replace(/^\//, "").replace(/\/?$/, "/")
+          : "";
+        const root = `${baseUrl.replace(/\/$/, "")}/l10_logs/${serviceTag}/`;
+        const link = root + dirPart;
         const res = await fetch(link);
         const text = await res.text();
         const parser = new DOMParser();
@@ -256,6 +261,7 @@ function SystemPage() {
                 href = Array.from(col.querySelectorAll("a"))[0].getAttribute(
                   "href"
                 );
+                if (href === "../") return; // skip parent directory row
               }
 
               // get raw date data
@@ -289,7 +295,7 @@ function SystemPage() {
             //push entry
             entries.push({
               name: `L10 test ran on ${nameLocal}`,
-              href: link + href,
+              href: new URL(href, link).href, // RESOLVE robustly (handles absolute or relative)
               name_title: "File Name",
               date: formattedDate,
               date_title: "Date Modified",
@@ -302,7 +308,7 @@ function SystemPage() {
       }
     };
     fetchDownloads();
-  }, []);
+  }, [baseUrl, serviceTag, logsDir]);
 
   useEffect(() => {
     fetchData();
@@ -900,6 +906,12 @@ function SystemPage() {
                       isMobile ? ["name", "date"] : ["name", "date"]
                     }
                     allowSearch={false}
+                    rootHref={`${baseUrl.replace(
+                      /\/$/,
+                      ""
+                    )}/l10_logs/${serviceTag}/`}
+                    currentDir={logsDir}
+                    onDirChange={setLogsDir}
                   />
                 </>
               )}

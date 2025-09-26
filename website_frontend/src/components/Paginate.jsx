@@ -8,6 +8,8 @@ function Items({
   visibleFields = [],
   fieldStyles,
   linkType,
+  rootHref,
+  onDirChange,
   truncate,
   onAction,
   actionButtonClass,
@@ -130,7 +132,51 @@ function Items({
         ) : null;
 
         const Wrapper = ({ children }) => {
-          if (linkType === "internal") {
+          if (linkType === "external") {
+            const href = item.href || "#";
+            const isDir = href.endsWith("/");
+            if (isDir && rootHref && onDirChange) {
+              return (
+                <a
+                  href={href}
+                  className={commonClasses + " hover:bg-blue-50 cursor-pointer"}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    try {
+                      const url = new URL(href, window.location.origin);
+                      const root = new URL(rootHref, window.location.origin);
+                      let rel = decodeURIComponent(
+                        url.pathname.replace(root.pathname, "")
+                      );
+                      rel = rel.replace(/^\/+/, "").replace(/\/?$/, "/");
+                      onDirChange(rel);
+                    } catch {
+                      // Fallback: string replace if URL ctor fails
+                      let rel = decodeURIComponent(href.replace(rootHref, ""))
+                        .replace(/^\/+/, "")
+                        .replace(/\/?$/, "/");
+                      onDirChange(rel);
+                    }
+                  }}
+                  rel="noopener noreferrer"
+                >
+                  {children}
+                </a>
+              );
+            }
+
+            // normal file
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={commonClasses + " hover:bg-blue-50"}
+              >
+                {children}
+              </a>
+            );
+          } else if (linkType === "internal") {
             return (
               <Link
                 to={`/${item.link || ""}`}
@@ -138,18 +184,6 @@ function Items({
               >
                 {children}
               </Link>
-            );
-          }
-          if (linkType === "external") {
-            return (
-              <a
-                href={item.href || "#"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={commonClasses + " hover:bg-blue-50"}
-              >
-                {children}
-              </a>
             );
           }
           return <div className={commonClasses}>{children}</div>;
@@ -174,6 +208,8 @@ export default function PaginatedItems({
   visibleFields = [],
   fieldStyles,
   linkType,
+  rootHref,
+  onDirChange,
   defaultPage = "first",
   truncate = false, // ⬅️ new optional prop
   onAction = null, // ⬅️ new optional prop
@@ -221,6 +257,8 @@ export default function PaginatedItems({
         visibleFields={visibleFields} // ⬅️ pass down
         fieldStyles={fieldStyles}
         linkType={linkType}
+        rootHref={rootHref}
+        onDirChange={onDirChange}
         truncate={truncate} // ⬅️ pass down
         onAction={onAction} // ⬅️ pass down
         actionButtonClass={actionButtonClass}
