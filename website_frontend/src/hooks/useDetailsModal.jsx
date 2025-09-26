@@ -83,29 +83,30 @@ export default function useDetailsModal(showToast, onUpdated) {
         </h2>
 
         {/* PPID: monofont with copy button */}
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <code
-            className="font-mono text-sm sm:text-base bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 w-full break-all"
-            title="PPID"
-          >
-            {details?.ppid || "—"}
-          </code>
-          <button
-            type="button"
-            onClick={handleCopy}
-            disabled={!details?.ppid}
-            className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium shadow
+        {details?.ppid && (
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <code
+              className="font-mono text-sm sm:text-base bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 w-full break-all"
+              title="PPID"
+            >
+              {details?.ppid || "—"}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopy}
+              disabled={!details?.ppid}
+              className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium shadow
               ${
                 details?.ppid
                   ? "bg-gray-800 text-white hover:bg-gray-900"
                   : "bg-gray-200 text-gray-500 cursor-not-allowed"
               }`}
-            aria-label="Copy PPID"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </div>
-
+              aria-label="Copy PPID"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        )}
         {details && !isIncomplete(details) ? (
           <div className="text-gray-700 text-sm sm:text-base space-y-3">
             <div className="flex justify-between">
