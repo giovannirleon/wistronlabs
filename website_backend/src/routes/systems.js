@@ -610,22 +610,51 @@ router.get("/", async (req, res) => {
   }
 });
 
+// systems.js (same file, same route)
 router.get("/snapshot", async (req, res) => {
-  const { date, locations, includeNote, noCache } = req.query;
+  const {
+    date, // REQUIRED: EOD ISO (you already send this)
+    locations, // OPTIONAL: comma-separated names (you already support this)
+    includeNote, // OPTIONAL (you already support this)
+    noCache, // OPTIONAL (you already support this)
+    mode = "cumulative", // NEW: 'perday' | 'cumulative'
+    start, // NEW: SoD ISO, required when mode=perday (frontend already computes)
+    includeReceived, // NEW: 'true' to compute "Last Received On"
+    format, // NEW: 'csv' to stream CSV
+    timezone, // NEW: for notes "MM/dd" display (falls back to server tz)
+  } = req.query;
 
   if (!date) {
     return res
       .status(400)
       .json({ error: "Missing required `date` query param" });
   }
+  if (mode === "perday" && !start) {
+    return res.status(400).json({
+      error: "When mode=perday, `start` (start-of-day ISO) is required",
+    });
+  }
 
   const includeNoteFlag =
     includeNote === "true" || includeNote === "1" || includeNote === true;
   const noCacheFlag = noCache === "true" || noCache === "1" || noCache === true;
+  const includeReceivedFlag =
+    includeReceived === "true" ||
+    includeReceived === "1" ||
+    includeReceived === true;
+  const wantCSV = format === "csv";
 
-  const cacheKey = `${date}:${locations || ""}:${includeNoteFlag}`;
+  // inactive locations you exclude "before start of day" in per-day mode
+  const INACTIVE_LOCATION_IDS = [6, 7, 8, 9]; // <- your FE uses [6,7,8,9]
+  const RECEIVED_LOCATION_ID = 1; // <- where we compute "Last Received On"
 
-  if (!noCacheFlag) {
+  const serverZone = process.env.SERVER_TZ || "UTC";
+  const displayZone = timezone || serverZone;
+
+  const cacheKey = `${date}:${locations || ""}:${includeNoteFlag}:${mode}:${
+    start || ""
+  }:${includeReceivedFlag}:${displayZone}`;
+  if (!noCacheFlag && !wantCSV) {
     const cached = snapshotCache.get(cacheKey);
     if (cached) {
       snapshotCache.ttl(cacheKey, 300);
@@ -645,7 +674,7 @@ router.get("/snapshot", async (req, res) => {
     }
   }
 
-  // When includeNote is true, add a LATERAL subquery that aggregates the FULL history up to `date`
+  // Notes aggregate (kept from your code)
   const selectNotesAggregate = includeNoteFlag
     ? `,
         nh.notes_history`
@@ -678,21 +707,24 @@ router.get("/snapshot", async (req, res) => {
     `
     : ``;
 
+  // per-day extra WHERE clause (exclude inactive locations before start-of-day)
+  // NOTE: $X placeholders added after we finalize param list
+  const perDayExclusionSQL =
+    mode === "perday"
+      ? `AND NOT ( l.id = ANY($${
+          params.length + 2
+        }::int[]) AND h.changed_at < $${params.length + 1} )`
+      : ``;
+
+  if (mode === "perday") {
+    params.push(start); // $...+1
+    params.push(INACTIVE_LOCATION_IDS); // $...+2
+  }
+
   try {
     const snapshotResult = await db.query(
       `
-      SELECT 
-        s.service_tag,
-        COALESCE(f.code, 'Not Entered Yet') AS factory_code,
-        s.issue,
-        d.name AS dpn,
-        d.config AS config,
-        l.name AS location,
-        to_char(h.changed_at AT TIME ZONE 'UTC',
-                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
-        ${selectNotesAggregate}
-      FROM system s
-      JOIN (
+      WITH latest_state AS (
         SELECT DISTINCT ON (h.system_id)
           h.system_id,
           h.to_location_id,
@@ -700,23 +732,154 @@ router.get("/snapshot", async (req, res) => {
         FROM system_location_history h
         WHERE h.changed_at <= $1
         ORDER BY h.system_id, h.changed_at DESC
-      ) h ON h.system_id = s.id
-      JOIN location l ON h.to_location_id = l.id
-      LEFT JOIN factory f ON s.factory_id = f.id
-      LEFT JOIN dpn d ON s.dpn_id = d.id
+      )
+      SELECT 
+        s.service_tag,
+        COALESCE(f.code, 'Not Entered Yet') AS factory_code,
+        -- Prefer system.issue, but you already surfaced snapshot.issue as fallback before; keep system.issue here
+        s.issue,
+        d.name   AS dpn,
+        d.config AS config,
+        l.name   AS location,
+
+        -- when it got to its current location (<= EOD)
+        to_char(h.changed_at AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
+
+        ${selectNotesAggregate}
+
+        -- NEW: first_received_on (first history timestamp)
+        , to_char(first_history.first_at AT TIME ZONE 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
+
+        -- NEW: last_received_on (latest TO 'Received' <= EOD), only if requested
+        ${
+          includeReceivedFlag
+            ? `,
+           to_char(last_recv.last_received_at AT TIME ZONE 'UTC',
+                   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_received_on
+        `
+            : ``
+        }
+
+      FROM system s
+      JOIN latest_state h  ON h.system_id = s.id
+      JOIN location l      ON h.to_location_id = l.id
+      LEFT JOIN factory f  ON s.factory_id = f.id
+      LEFT JOIN dpn d      ON s.dpn_id     = d.id
       ${lateralJoinNotesAggregate}
+
+      -- NEW: first history per system
+      LEFT JOIN LATERAL (
+        SELECT h0.changed_at AS first_at
+        FROM system_location_history h0
+        WHERE h0.system_id = s.id
+        ORDER BY h0.changed_at ASC
+        LIMIT 1
+      ) AS first_history ON TRUE
+
+      -- NEW: last 'Received' event per system (<= EOD) — only joins if asked
+      ${
+        includeReceivedFlag
+          ? `
+      LEFT JOIN LATERAL (
+        SELECT h3.changed_at AS last_received_at
+        FROM system_location_history h3
+        WHERE h3.system_id = s.id
+          AND h3.changed_at <= $1
+          AND h3.to_location_id = ${RECEIVED_LOCATION_ID}
+        ORDER BY h3.changed_at DESC
+        LIMIT 1
+      ) AS last_recv ON TRUE
+      `
+          : ``
+      }
+
       WHERE 1=1
       ${locationFilterSQL.join(" ")}
+      ${perDayExclusionSQL}
       ORDER BY s.service_tag
       `,
       params
     );
 
-    if (!noCacheFlag) {
-      snapshotCache.set(cacheKey, snapshotResult.rows, 300);
+    const rows = snapshotResult.rows;
+
+    // Cache JSON only (not CSV stream)
+    if (!noCacheFlag && !wantCSV) {
+      snapshotCache.set(cacheKey, rows, 300);
     }
 
-    res.json(snapshotResult.rows);
+    if (!wantCSV) {
+      // Preserve JSON behavior (unchanged)
+      return res.json(rows);
+    }
+
+    // --- CSV response (matches your FE mapping/columns) ---
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="snapshot_${(date || "").slice(0, 10)}_${mode}.csv"`
+    );
+
+    const header = [
+      "First Received On",
+      "Last Received On",
+      "PIC",
+      "From",
+      "Status",
+      "Service Tag",
+      "DPN",
+      "Config",
+      "Issue",
+      "Note History",
+    ];
+    res.write(header.join(",") + "\n");
+
+    const csvEsc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    for (const r of rows) {
+      const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
+      const row = [
+        toMDY(r.first_received_on),
+        includeReceivedFlag ? toMDY(r.last_received_on) : "",
+        pic,
+        r.factory_code || "Not Set",
+        r.location || "",
+        r.service_tag || "",
+        r.dpn || "Not Set",
+        r.config || "Not Set",
+        r.issue || "",
+        includeNoteFlag
+          ? Array.isArray(r.notes_history) && r.notes_history.length
+            ? [...r.notes_history] // copy
+                .reverse() // FE parity: oldest -> newest
+                .map((e) => {
+                  const dt = new Date(e.changed_at); // ISO Z from SQL
+                  const mmdd = new Intl.DateTimeFormat(displayZone, {
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(dt);
+                  const fromLoc = e.from_location || "";
+                  const toLoc = e.to_location || "";
+                  const note = (e.note || "").trim();
+                  const by = e.moved_by || "";
+                  return fromLoc
+                    ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
+                    : `${mmdd} - [${toLoc}] [via] ${by}`;
+                })
+                .join("\n")
+            : ""
+          : "",
+      ].map(csvEsc);
+
+      res.write(row.join(",") + "\n");
+    }
+
+    res.end();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch snapshot" });

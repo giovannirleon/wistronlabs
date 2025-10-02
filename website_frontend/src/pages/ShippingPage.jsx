@@ -374,28 +374,19 @@ export default function ShippingPage() {
     }
   };
 
-  // Derived filter options from currently loaded OPEN pallets
-  const uniqueDpns = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (pallets || []).map((p) => p?.dpn).filter((s) => s?.service_tag)
-        )
-      ).sort(),
-    [pallets]
-  );
+  const uniqueDpns = useMemo(() => {
+    const vals = (pallets || []).map(
+      (p) => p?.dpn ?? p?.pallet_number?.split("-")[2]?.trim() ?? ""
+    );
+    return Array.from(new Set(vals.filter(Boolean))).sort();
+  }, [pallets]);
 
-  const uniqueFactories = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (pallets || [])
-            .map((p) => p?.factory_code)
-            .filter((s) => s?.service_tag)
-        )
-      ).sort(),
-    [pallets]
-  );
+  const uniqueFactories = useMemo(() => {
+    const vals = (pallets || []).map(
+      (p) => p?.factory_code ?? p?.pallet_number?.split("-")[1]?.trim() ?? ""
+    );
+    return Array.from(new Set(vals.filter(Boolean))).sort();
+  }, [pallets]);
 
   // Helpers used by the modal
   const toggleSetValue = (setter) => (value) =>
@@ -586,9 +577,23 @@ export default function ShippingPage() {
     try {
       setReportGenerating(true);
 
-      // Filter OPEN pallets (this page already loads "open", but keep guard)
+      // helper inside handleDownloadReport (above the filter)
+      const matchesPick = (val, selectedSet, allCount) => {
+        if (allCount === 0) return true; // no options available -> ignore dim
+        if (selectedSet.size === 0) return false; // explicit NONE -> match nothing
+        if (selectedSet.size === allCount) return true; // ALL selected -> no restriction
+        return selectedSet.has(val); // subset -> membership
+      };
+
+      const nothingSelected =
+        selectedDpns.size === 0 && selectedFactories.size === 0;
+
+      if (nothingSelected) {
+        showToast("Select at least one DPN or Factory.", "error");
+        return;
+      }
+
       const filtered = (pallets || []).filter((p) => {
-        // Lock filter
         const lockOk =
           statusFilter === "all"
             ? true
@@ -596,12 +601,16 @@ export default function ShippingPage() {
             ? !!p.locked
             : !p.locked;
 
-        // DPN & Factory filter (if lists are empty, treat as "no restriction")
-        const dpnOk = selectedDpns.size === 0 ? true : selectedDpns.has(p.dpn);
-        const facOk =
-          selectedFactories.size === 0
-            ? true
-            : selectedFactories.has(p.factory_code);
+        const dpnVal = p?.dpn ?? p?.pallet_number?.split("-")[2]?.trim() ?? "";
+        const facVal =
+          p?.factory_code ?? p?.pallet_number?.split("-")[1]?.trim() ?? "";
+
+        const dpnOk = matchesPick(dpnVal, selectedDpns, uniqueDpns.length);
+        const facOk = matchesPick(
+          facVal,
+          selectedFactories,
+          uniqueFactories.length
+        );
 
         return lockOk && dpnOk && facOk;
       });
@@ -610,6 +619,8 @@ export default function ShippingPage() {
         showToast("No pallets match the selected filters.", "info");
         return;
       }
+
+      // ...rest of your CSV code...
 
       const header = [
         "pallet_number",
@@ -681,26 +692,25 @@ export default function ShippingPage() {
       const a = document.createElement("a");
       const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
-      // --- NEW: build filename parts from filters ---
+      // After filtered.length check, before building filename:
       const codeSlug = (s) => String(s ?? "").replace(/[^A-Za-z0-9_-]/g, "");
       const joinCodes = (arr) => arr.map(codeSlug).join("_");
 
-      // "all" means either no restriction (size===0) OR the user selected every option
-      const allDpnsSelected =
-        selectedDpns.size === 0 || selectedDpns.size === uniqueDpns.length;
-      const allFactoriesSelected =
-        selectedFactories.size === 0 ||
-        selectedFactories.size === uniqueFactories.length;
+      const dpnPart =
+        selectedDpns.size === 0
+          ? "dpns_none"
+          : selectedDpns.size === uniqueDpns.length
+          ? "dpns_all"
+          : `dpns_${joinCodes([...selectedDpns].sort())}`;
 
-      const dpnPart = allDpnsSelected
-        ? "all_dpns"
-        : `dpns_${joinCodes([...selectedDpns].sort())}`;
+      const factoryPart =
+        selectedFactories.size === 0
+          ? "factories_none"
+          : selectedFactories.size === uniqueFactories.length
+          ? "factories_all"
+          : `factories_${joinCodes([...selectedFactories].sort())}`;
 
-      const factoryPart = allFactoriesSelected
-        ? "all_factories"
-        : `factories_${joinCodes([...selectedFactories].sort())}`;
-
-      const statusPart = statusFilter === "all" ? "all_active" : statusFilter; // 'all_active' | 'locked' | 'unlocked'
+      const statusPart = statusFilter === "all" ? "all_active" : statusFilter;
 
       // Example outputs:
       // pallet-report-dpns_DKFX_XXXXX-factories_MX-all-<ts>.csv

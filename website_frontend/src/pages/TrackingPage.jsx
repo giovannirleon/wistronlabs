@@ -316,149 +316,56 @@ function TrackingPage() {
       return;
     }
 
-    // Set report "time" as EOD (server’s local timezone) in ZuluISO time
     try {
       const serverTimeReport = await getServerTime();
+      const serverZone = serverTimeReport.zone;
 
-      const serverLocalNow = DateTime.fromISO(reportDate, {
-        zone: serverTimeReport.zone,
-      });
-      const reportDT = serverLocalNow
+      // You already do this:
+      const serverLocal = DateTime.fromISO(reportDate, { zone: serverZone });
+      const reportDT = serverLocal
         .set({ hour: 23, minute: 59, second: 59, millisecond: 0 })
         .toUTC()
         .toISO();
-      console.log(reportDT);
 
-      const reportSnapshot = await getSnapshot({
+      const startOfDayUTC = serverLocal.startOf("day").toUTC().toISO();
+
+      // Ask backend for a CSV directly, reusing your existing /snapshot endpoint
+      const params = new URLSearchParams({
         date: reportDT,
-        includeNote: true,
-        noCache: true,
+        includeNote: "true",
+        noCache: "true",
+        mode: reportMode, // "perday" | "cumulative"
+        includeReceived: "true", // for "Last Received On"
+        format: "csv", // <-- CSV direct
+        timezone: serverZone, // for MM/DD in notes
       });
-
-      let reportServiceTags;
-      let reportData;
-      const locationsToExclude = locations
-        .filter((location) => inactiveLocationIDs.includes(location.id))
-        .map((location) => location.name);
 
       if (reportMode !== "cumulative") {
-        const todayMidnight = serverLocalNow
-          .startOf("day") // today at 12:00 AM in server timezone
-          .toUTC();
-
-        const filteredSnapshot = reportSnapshot.filter((r) => {
-          const asOfLocal = DateTime.fromISO(r.as_of, {
-            zone: serverTimeReport.zone,
-          });
-          const isExcludedLocation = locationsToExclude.includes(r.location);
-          const isBeforeToday = asOfLocal < todayMidnight;
-          return !(isExcludedLocation && isBeforeToday);
-        });
-        reportServiceTags = filteredSnapshot.map((r) => r.service_tag);
-        reportData = filteredSnapshot;
-      } else {
-        reportServiceTags = reportSnapshot.map((r) => r.service_tag);
-        reportData = reportSnapshot;
+        params.set("start", startOfDayUTC); // per-day cutoff
       }
 
-      const { data: filteredSystems } = await fetchSystems({
-        all: true,
-        filters: {
-          op: "AND",
-          conditions: [
-            {
-              field: "service_tag",
-              values: reportServiceTags,
-              op: "IN",
-            },
-          ],
-        },
-      });
+      // If you were passing "locations" before, keep doing it:
+      // params.set("locations", activeLocationNames.join(","));
 
-      const lastReceivedMap = new Map();
+      const resp = await fetch(`/api/v1/systems/snapshot?${params.toString()}`);
+      if (!resp.ok) throw new Error(await resp.text());
 
-      for (const tag of reportServiceTags) {
-        const historyResponse = await getSystemHistory(tag);
-        const history = Array.isArray(historyResponse) ? historyResponse : [];
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `snapshot_${reportDate}_${reportMode}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
 
-        console.log(`for ST ${tag}`, history);
-
-        const reportDTMillis = DateTime.fromISO(reportDT).toMillis();
-
-        const locationOneName = locations.find(
-          (location) => location.id === 1
-        )?.name;
-
-        const lastReceivedEvent = history
-          .filter(
-            (e) => DateTime.fromISO(e.changed_at).toMillis() <= reportDTMillis
-          ) // only events on/before reportDT
-          .sort(
-            (a, b) =>
-              DateTime.fromISO(b.changed_at).toMillis() -
-              DateTime.fromISO(a.changed_at).toMillis()
-          ) // newest → oldest
-          .find((e) => e.to_location === locationOneName);
-
-        if (lastReceivedEvent) {
-          lastReceivedMap.set(tag, lastReceivedEvent.changed_at);
-        }
-      }
-      console.log(reportData);
-      const report = reportData.map((unit) => {
-        const unitData = filteredSystems.find(
-          (fs) => fs.service_tag === unit.service_tag
-        );
-
-        const flattenedNotes =
-          Array.isArray(unit.notes_history) && unit.notes_history.length
-            ? [...unit.notes_history]
-                .reverse()
-                .map((e) => {
-                  const mmdd = DateTime.fromISO(e.changed_at)
-                    .setZone(serverTimeReport.zone) // use this if you want server-local dates
-                    .toFormat("MM/dd");
-                  const fromLoc = e.from_location ?? "";
-                  const toLoc = e.to_location ?? "";
-                  const note = (e.note ?? "").trim();
-                  const by = e.moved_by ?? "";
-                  return fromLoc
-                    ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
-                    : `${mmdd} - [${toLoc}] [via] ${by}`;
-                })
-                .join("\n")
-            : "";
-
-        return {
-          "First Received On": unitData
-            ? formatDateHumanReadable(unitData.date_created)
-            : null,
-          "Last Received On": lastReceivedMap.has(unit.service_tag)
-            ? formatDateHumanReadable(lastReceivedMap.get(unit.service_tag))
-            : null,
-          PIC:
-            unit.location.slice(0, 3) === "RMA" ? unit.location.slice(4) : "",
-          From: unit.factory_code ? unit.factory_code : "Not Set",
-          Status: unit.location,
-          "Service Tag": unit.service_tag,
-          DPN: unit.dpn ? unit.dpn : "Not Set",
-          Config: unit.config ? unit.config : "Not Set",
-          Issue: unitData ? unitData.issue : unit.issue, // fallback to snapshot
-          "Note History": flattenedNotes,
-        };
-      });
-
-      if (report.length > 0) {
-        downloadCSV(`snapshot_${reportDate}.csv`, report);
-        showToast(
-          `Report for ${reportDate} donwloading`,
-          "success",
-          3000,
-          "top-right"
-        );
-      } else {
-        showToast("No data for that date", "error", 3000, "top-right");
-      }
+      showToast(
+        `Report for ${reportDate} downloading`,
+        "success",
+        3000,
+        "top-right"
+      );
     } catch (err) {
       console.error("Failed to generate report", err);
       showToast("Failed to generate report", "error", 3000, "top-right");
