@@ -821,37 +821,38 @@ router.get("/snapshot", async (req, res) => {
       day: "2-digit",
     });
 
+    // right above the CSV building loop, next to your MM/DD formatter:
+    const fmtDateTime = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Denver", // <- server zone or FE-provided timezone
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      // timeZoneName: "short",   // uncomment if you want "PDT"/"CST" etc.
+    });
+
     const lines = [];
     lines.push(header.join(","));
 
     for (const r of rows) {
+      const firstLocal = r.first_received_on
+        ? fmtDateTime.format(new Date(r.first_received_on))
+        : "";
+
+      const lastLocal =
+        includeReceivedFlag && r.last_received_on
+          ? fmtDateTime.format(new Date(r.last_received_on))
+          : "";
+
       const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
 
-      let noteHistoryText = "";
-      if (
-        includeNoteFlag &&
-        Array.isArray(r.notes_history) &&
-        r.notes_history.length
-      ) {
-        const reversed = [...r.notes_history].reverse(); // oldest -> newest
-        noteHistoryText = reversed
-          .map((e) => {
-            const dt = new Date(e.changed_at);
-            const mmdd = fmt.format(dt);
-            const fromLoc = e.from_location || "";
-            const toLoc = e.to_location || "";
-            const note = (e.note || "").trim();
-            const by = e.moved_by || "";
-            return fromLoc
-              ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
-              : `${mmdd} - [${toLoc}] [via] ${by}`;
-          })
-          .join("\n");
-      }
+      // ... your existing noteHistoryText build ...
 
       const row = [
-        r.first_received_on || "",
-        includeReceivedFlag ? r.last_received_on || "" : "",
+        firstLocal, // was r.first_received_on
+        includeReceivedFlag ? lastLocal : "", // was r.last_received_on
         pic,
         r.factory_code || "Not Set",
         r.location || "",
