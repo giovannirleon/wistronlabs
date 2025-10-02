@@ -92,11 +92,11 @@ function Header() {
             Home
           </Link>
           <Link
-            to="/tracking"
+            to="/stations"
             className={`${linkBase} ${pathname === "/stations" ? active : ""}`}
             onClick={() => setMenuOpen(false)}
           >
-            Tracking
+            Stations
           </Link>
           <Link
             to="/shipping"
