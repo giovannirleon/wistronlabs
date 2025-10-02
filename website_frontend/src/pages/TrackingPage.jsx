@@ -27,6 +27,7 @@ import { useHistoryFetch } from "../hooks/useHistoryFetch.jsx";
 
 function TrackingPage() {
   const FRONTEND_URL = import.meta.env.VITE_URL;
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -347,7 +348,9 @@ function TrackingPage() {
       // If you were passing "locations" before, keep doing it:
       // params.set("locations", activeLocationNames.join(","));
 
-      const resp = await fetch(`/api/v1/systems/snapshot?${params.toString()}`);
+      const resp = await fetch(
+        `${BACKEND_URL}/systems/snapshot?${params.toString()}`
+      );
       if (!resp.ok) throw new Error(await resp.text());
 
       const blob = await resp.blob();

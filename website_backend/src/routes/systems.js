@@ -805,86 +805,97 @@ router.get("/snapshot", async (req, res) => {
 
     const rows = snapshotResult.rows;
 
-    // Cache JSON only (not CSV stream)
-    if (!noCacheFlag && !wantCSV) {
-      snapshotCache.set(cacheKey, rows, 300);
+
+if (!wantCSV) {
+  if (!noCacheFlag) snapshotCache.set(cacheKey, rows, 300);
+  return res.json(rows);
+}
+
+// ===== CSV branch (no streaming) =====
+try {
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="snapshot_${(date || "").slice(0, 10)}_${mode}.csv"`
+  );
+  res.setHeader("Cache-Control", "no-store");
+
+  const header = [
+    "First Received On",
+    "Last Received On",
+    "PIC",
+    "From",
+    "Status",
+    "Service Tag",
+    "DPN",
+    "Config",
+    "Issue",
+    "Note History",
+  ];
+
+  const csvEsc = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  // mirror your FE MM/DD (server-side, keep it simple and robust)
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || "UTC",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const lines = [];
+  lines.push(header.join(","));
+
+  for (const r of rows) {
+    // PIC: 'RMA XYZ' => 'XYZ'
+    const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
+
+    // build "Note History" exactly like FE (oldest -> newest, MM/DD - [from -> to] - note [via] by)
+    let noteHistoryText = "";
+    if (includeNoteFlag && Array.isArray(r.notes_history) && r.notes_history.length) {
+      const reversed = [...r.notes_history].reverse(); // oldest -> newest
+      noteHistoryText = reversed
+        .map((e) => {
+          const dt = new Date(e.changed_at); // ISO Z from SQL
+          const mmdd = fmt.format(dt);
+          const fromLoc = e.from_location || "";
+          const toLoc   = e.to_location   || "";
+          const note    = (e.note || "").trim();
+          const by      = e.moved_by || "";
+          return fromLoc
+            ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
+            : `${mmdd} - [${toLoc}] [via] ${by}`;
+        })
+        .join("\n");
     }
 
-    if (!wantCSV) {
-      // Preserve JSON behavior (unchanged)
-      return res.json(rows);
-    }
+    const row = [
+      r.first_received_on || "",
+      includeReceivedFlag ? r.last_received_on || "" : "",
+      pic,
+      r.factory_code || "Not Set",
+      r.location || "",
+      r.service_tag || "",
+      r.dpn || "Not Set",
+      r.config || "Not Set",
+      r.issue || "",
+      noteHistoryText,
+    ].map(csvEsc);
 
-    // --- CSV response (matches your FE mapping/columns) ---
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="snapshot_${(date || "").slice(0, 10)}_${mode}.csv"`
-    );
-
-    const header = [
-      "First Received On",
-      "Last Received On",
-      "PIC",
-      "From",
-      "Status",
-      "Service Tag",
-      "DPN",
-      "Config",
-      "Issue",
-      "Note History",
-    ];
-    res.write(header.join(",") + "\n");
-
-    const csvEsc = (v) => {
-      const s = String(v ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-
-    for (const r of rows) {
-      const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
-      const row = [
-        toMDY(r.first_received_on),
-        includeReceivedFlag ? toMDY(r.last_received_on) : "",
-        pic,
-        r.factory_code || "Not Set",
-        r.location || "",
-        r.service_tag || "",
-        r.dpn || "Not Set",
-        r.config || "Not Set",
-        r.issue || "",
-        includeNoteFlag
-          ? Array.isArray(r.notes_history) && r.notes_history.length
-            ? [...r.notes_history] // copy
-                .reverse() // FE parity: oldest -> newest
-                .map((e) => {
-                  const dt = new Date(e.changed_at); // ISO Z from SQL
-                  const mmdd = new Intl.DateTimeFormat(displayZone, {
-                    month: "2-digit",
-                    day: "2-digit",
-                  }).format(dt);
-                  const fromLoc = e.from_location || "";
-                  const toLoc = e.to_location || "";
-                  const note = (e.note || "").trim();
-                  const by = e.moved_by || "";
-                  return fromLoc
-                    ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
-                    : `${mmdd} - [${toLoc}] [via] ${by}`;
-                })
-                .join("\n")
-            : ""
-          : "",
-      ].map(csvEsc);
-
-      res.write(row.join(",") + "\n");
-    }
-
-    res.end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch snapshot" });
+    lines.push(row.join(","));
   }
-});
+
+  const csv = lines.join("\n");
+  // send once (prevents chunked truncation)
+  return res.status(200).send(csv);
+} catch (e) {
+  console.error("CSV build/send failed:", e);
+  // nothing written yet if we only used `res.send` at the end
+  return res.status(500).json({ error: "Failed to generate CSV" });
+}
+
 
 /**
  * GET /api/v1/systems/history
