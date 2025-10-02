@@ -823,7 +823,7 @@ router.get("/snapshot", async (req, res) => {
 
     // right above the CSV building loop, next to your MM/DD formatter:
     const fmtDateTime = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Denver", // <- server zone or FE-provided timezone
+      timeZone: "America/Chicago", // <- server zone or FE-provided timezone
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -848,7 +848,27 @@ router.get("/snapshot", async (req, res) => {
 
       const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
 
-      // ... your existing noteHistoryText build ...
+      let noteHistoryText = "";
+      if (
+        includeNoteFlag &&
+        Array.isArray(r.notes_history) &&
+        r.notes_history.length
+      ) {
+        const reversed = [...r.notes_history].reverse(); // oldest -> newest
+        noteHistoryText = reversed
+          .map((e) => {
+            const dt = new Date(e.changed_at);
+            const mmdd = fmt.format(dt);
+            const fromLoc = e.from_location || "";
+            const toLoc = e.to_location || "";
+            const note = (e.note || "").trim();
+            const by = e.moved_by || "";
+            return fromLoc
+              ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
+              : `${mmdd} - [${toLoc}] [via] ${by}`;
+          })
+          .join("\n");
+      }
 
       const row = [
         firstLocal, // was r.first_received_on
