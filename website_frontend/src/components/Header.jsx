@@ -93,7 +93,7 @@ function Header() {
           </Link>
           <Link
             to="/tracking"
-            className={`${linkBase} ${pathname === "/tracking" ? active : ""}`}
+            className={`${linkBase} ${pathname === "/stations" ? active : ""}`}
             onClick={() => setMenuOpen(false)}
           >
             Tracking
@@ -101,6 +101,7 @@ function Header() {
           <Link
             to="/shipping"
             className={`${linkBase} ${pathname === "/shipping" ? active : ""}`}
+            onClick={() => setMenuOpen(false)}
           >
             Shipping
           </Link>
