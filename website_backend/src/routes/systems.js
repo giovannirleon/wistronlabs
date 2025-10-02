@@ -611,17 +611,18 @@ router.get("/", async (req, res) => {
 });
 
 // systems.js (same file, same route)
+// systems.js (same file)
 router.get("/snapshot", async (req, res) => {
   const {
-    date, // REQUIRED: EOD ISO (you already send this)
-    locations, // OPTIONAL: comma-separated names (you already support this)
-    includeNote, // OPTIONAL (you already support this)
-    noCache, // OPTIONAL (you already support this)
-    mode = "cumulative", // NEW: 'perday' | 'cumulative'
-    start, // NEW: SoD ISO, required when mode=perday (frontend already computes)
-    includeReceived, // NEW: 'true' to compute "Last Received On"
-    format, // NEW: 'csv' to stream CSV
-    timezone, // NEW: for notes "MM/dd" display (falls back to server tz)
+    date, // REQUIRED: EOD ISO
+    locations, // OPTIONAL: comma-separated names
+    includeNote, // OPTIONAL
+    noCache, // OPTIONAL
+    mode = "cumulative", // 'perday' | 'cumulative'
+    start, // SoD ISO, required when mode=perday
+    includeReceived, // 'true' to compute "Last Received On"
+    format, // 'csv' to return CSV
+    timezone, // for MM/DD in notes
   } = req.query;
 
   if (!date) {
@@ -630,9 +631,9 @@ router.get("/snapshot", async (req, res) => {
       .json({ error: "Missing required `date` query param" });
   }
   if (mode === "perday" && !start) {
-    return res.status(400).json({
-      error: "When mode=perday, `start` (start-of-day ISO) is required",
-    });
+    return res
+      .status(400)
+      .json({ error: "When mode=perday, `start` is required" });
   }
 
   const includeNoteFlag =
@@ -644,9 +645,8 @@ router.get("/snapshot", async (req, res) => {
     includeReceived === true;
   const wantCSV = format === "csv";
 
-  // inactive locations you exclude "before start of day" in per-day mode
-  const INACTIVE_LOCATION_IDS = [6, 7, 8, 9]; // <- your FE uses [6,7,8,9]
-  const RECEIVED_LOCATION_ID = 1; // <- where we compute "Last Received On"
+  const INACTIVE_LOCATION_IDS = [6, 7, 8, 9];
+  const RECEIVED_LOCATION_ID = 1;
 
   const serverZone = process.env.SERVER_TZ || "UTC";
   const displayZone = timezone || serverZone;
@@ -662,19 +662,22 @@ router.get("/snapshot", async (req, res) => {
     }
   }
 
+  // Build params
   const params = [date];
   const locationFilterSQL = [];
-
   if (locations) {
-    const locationList = locations.split(",").map((loc) => loc.trim());
-    if (locationList.length > 0) {
-      const placeholders = locationList.map((_, idx) => `$${idx + 2}`);
+    const list = locations
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.length) {
+      const placeholders = list.map((_, i) => `$${i + 2}`);
       locationFilterSQL.push(`AND l.name IN (${placeholders.join(", ")})`);
-      params.push(...locationList);
+      params.push(...list);
     }
   }
 
-  // Notes aggregate (kept from your code)
+  // Notes aggregate
   const selectNotesAggregate = includeNoteFlag
     ? `,
         nh.notes_history`
@@ -686,8 +689,7 @@ router.get("/snapshot", async (req, res) => {
         SELECT COALESCE(
           json_agg(
             json_build_object(
-              'changed_at', to_char(h2.changed_at AT TIME ZONE 'UTC',
-                      'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+              'changed_at', to_char(h2.changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
               'from_location', l_from.name,
               'to_location', l_to.name,
               'note', h2.note,
@@ -699,26 +701,22 @@ router.get("/snapshot", async (req, res) => {
         ) AS notes_history
         FROM system_location_history h2
         LEFT JOIN location l_from ON h2.from_location_id = l_from.id
-        JOIN location l_to ON h2.to_location_id = l_to.id
-        LEFT JOIN users   u     ON h2.moved_by         = u.id
+        JOIN location l_to   ON h2.to_location_id = l_to.id
+        LEFT JOIN users   u  ON h2.moved_by       = u.id
         WHERE h2.system_id = s.id
           AND h2.changed_at <= $1
       ) nh ON TRUE
     `
     : ``;
 
-  // per-day extra WHERE clause (exclude inactive locations before start-of-day)
-  // NOTE: $X placeholders added after we finalize param list
-  const perDayExclusionSQL =
-    mode === "perday"
-      ? `AND NOT ( l.id = ANY($${
-          params.length + 2
-        }::int[]) AND h.changed_at < $${params.length + 1} )`
-      : ``;
-
+  // Per-day exclusion SQL: compute placeholder numbers BEFORE pushing the two params
+  let perDayExclusionSQL = ``;
   if (mode === "perday") {
-    params.push(start); // $...+1
-    params.push(INACTIVE_LOCATION_IDS); // $...+2
+    const startIdx = params.length + 1; // will be $X (start)
+    const inactiveIdx = params.length + 2; // will be $Y (int[] of inactive IDs)
+    perDayExclusionSQL = `AND NOT ( l.id = ANY($${inactiveIdx}::int[]) AND h.changed_at < $${startIdx} )`;
+    params.push(start); // $startIdx
+    params.push(INACTIVE_LOCATION_IDS); // $inactiveIdx
   }
 
   try {
@@ -736,40 +734,25 @@ router.get("/snapshot", async (req, res) => {
       SELECT 
         s.service_tag,
         COALESCE(f.code, 'Not Entered Yet') AS factory_code,
-        -- Prefer system.issue, but you already surfaced snapshot.issue as fallback before; keep system.issue here
         s.issue,
         d.name   AS dpn,
         d.config AS config,
         l.name   AS location,
-
-        -- when it got to its current location (<= EOD)
-        to_char(h.changed_at AT TIME ZONE 'UTC',
-                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
-
+        to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
         ${selectNotesAggregate}
-
-        -- NEW: first_received_on (first history timestamp)
-        , to_char(first_history.first_at AT TIME ZONE 'UTC',
-                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
-
-        -- NEW: last_received_on (latest TO 'Received' <= EOD), only if requested
+        , to_char(first_history.first_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
         ${
           includeReceivedFlag
             ? `,
-           to_char(last_recv.last_received_at AT TIME ZONE 'UTC',
-                   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_received_on
-        `
+        to_char(last_recv.last_received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_received_on`
             : ``
         }
-
       FROM system s
       JOIN latest_state h  ON h.system_id = s.id
       JOIN location l      ON h.to_location_id = l.id
       LEFT JOIN factory f  ON s.factory_id = f.id
       LEFT JOIN dpn d      ON s.dpn_id     = d.id
       ${lateralJoinNotesAggregate}
-
-      -- NEW: first history per system
       LEFT JOIN LATERAL (
         SELECT h0.changed_at AS first_at
         FROM system_location_history h0
@@ -777,8 +760,6 @@ router.get("/snapshot", async (req, res) => {
         ORDER BY h0.changed_at ASC
         LIMIT 1
       ) AS first_history ON TRUE
-
-      -- NEW: last 'Received' event per system (<= EOD) — only joins if asked
       ${
         includeReceivedFlag
           ? `
@@ -790,11 +771,9 @@ router.get("/snapshot", async (req, res) => {
           AND h3.to_location_id = ${RECEIVED_LOCATION_ID}
         ORDER BY h3.changed_at DESC
         LIMIT 1
-      ) AS last_recv ON TRUE
-      `
+      ) AS last_recv ON TRUE`
           : ``
       }
-
       WHERE 1=1
       ${locationFilterSQL.join(" ")}
       ${perDayExclusionSQL}
@@ -805,97 +784,94 @@ router.get("/snapshot", async (req, res) => {
 
     const rows = snapshotResult.rows;
 
-
-if (!wantCSV) {
-  if (!noCacheFlag) snapshotCache.set(cacheKey, rows, 300);
-  return res.json(rows);
-}
-
-// ===== CSV branch (no streaming) =====
-try {
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="snapshot_${(date || "").slice(0, 10)}_${mode}.csv"`
-  );
-  res.setHeader("Cache-Control", "no-store");
-
-  const header = [
-    "First Received On",
-    "Last Received On",
-    "PIC",
-    "From",
-    "Status",
-    "Service Tag",
-    "DPN",
-    "Config",
-    "Issue",
-    "Note History",
-  ];
-
-  const csvEsc = (v) => {
-    const s = String(v ?? "");
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-
-  // mirror your FE MM/DD (server-side, keep it simple and robust)
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone || "UTC",
-    month: "2-digit",
-    day: "2-digit",
-  });
-
-  const lines = [];
-  lines.push(header.join(","));
-
-  for (const r of rows) {
-    // PIC: 'RMA XYZ' => 'XYZ'
-    const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
-
-    // build "Note History" exactly like FE (oldest -> newest, MM/DD - [from -> to] - note [via] by)
-    let noteHistoryText = "";
-    if (includeNoteFlag && Array.isArray(r.notes_history) && r.notes_history.length) {
-      const reversed = [...r.notes_history].reverse(); // oldest -> newest
-      noteHistoryText = reversed
-        .map((e) => {
-          const dt = new Date(e.changed_at); // ISO Z from SQL
-          const mmdd = fmt.format(dt);
-          const fromLoc = e.from_location || "";
-          const toLoc   = e.to_location   || "";
-          const note    = (e.note || "").trim();
-          const by      = e.moved_by || "";
-          return fromLoc
-            ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
-            : `${mmdd} - [${toLoc}] [via] ${by}`;
-        })
-        .join("\n");
+    if (!wantCSV) {
+      if (!noCacheFlag) snapshotCache.set(cacheKey, rows, 300);
+      return res.json(rows);
     }
 
-    const row = [
-      r.first_received_on || "",
-      includeReceivedFlag ? r.last_received_on || "" : "",
-      pic,
-      r.factory_code || "Not Set",
-      r.location || "",
-      r.service_tag || "",
-      r.dpn || "Not Set",
-      r.config || "Not Set",
-      r.issue || "",
-      noteHistoryText,
-    ].map(csvEsc);
+    // ---- CSV (send once, no streaming) ----
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="snapshot_${(date || "").slice(0, 10)}_${mode}.csv"`
+    );
+    res.setHeader("Cache-Control", "no-store");
 
-    lines.push(row.join(","));
+    const header = [
+      "First Received On",
+      "Last Received On",
+      "PIC",
+      "From",
+      "Status",
+      "Service Tag",
+      "DPN",
+      "Config",
+      "Issue",
+      "Note History",
+    ];
+
+    const csvEsc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: displayZone,
+      month: "2-digit",
+      day: "2-digit",
+    });
+
+    const lines = [];
+    lines.push(header.join(","));
+
+    for (const r of rows) {
+      const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
+
+      let noteHistoryText = "";
+      if (
+        includeNoteFlag &&
+        Array.isArray(r.notes_history) &&
+        r.notes_history.length
+      ) {
+        const reversed = [...r.notes_history].reverse(); // oldest -> newest
+        noteHistoryText = reversed
+          .map((e) => {
+            const dt = new Date(e.changed_at);
+            const mmdd = fmt.format(dt);
+            const fromLoc = e.from_location || "";
+            const toLoc = e.to_location || "";
+            const note = (e.note || "").trim();
+            const by = e.moved_by || "";
+            return fromLoc
+              ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
+              : `${mmdd} - [${toLoc}] [via] ${by}`;
+          })
+          .join("\n");
+      }
+
+      const row = [
+        r.first_received_on || "",
+        includeReceivedFlag ? r.last_received_on || "" : "",
+        pic,
+        r.factory_code || "Not Set",
+        r.location || "",
+        r.service_tag || "",
+        r.dpn || "Not Set",
+        r.config || "Not Set",
+        r.issue || "",
+        noteHistoryText,
+      ].map(csvEsc);
+
+      lines.push(row.join(","));
+    }
+
+    const csv = lines.join("\n");
+    return res.status(200).send(csv);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to fetch snapshot" });
   }
-
-  const csv = lines.join("\n");
-  // send once (prevents chunked truncation)
-  return res.status(200).send(csv);
-} catch (e) {
-  console.error("CSV build/send failed:", e);
-  // nothing written yet if we only used `res.send` at the end
-  return res.status(500).json({ error: "Failed to generate CSV" });
-}
-
+});
 
 /**
  * GET /api/v1/systems/history
