@@ -16,13 +16,13 @@ function Header() {
   const active = "bg-white/20 text-white";
 
   const [user, setUser] = useState(null);
-  const { getUser } = useApi();
+  const { getMe } = useApi();
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        const data = await getUser(); // ← await the Promise
+        const data = await getMe(); // ← await the Promise
         if (!isMounted) return;
         setUser(data?.user ?? null); // ← store the actual user object
       } catch (e) {
@@ -33,7 +33,7 @@ function Header() {
     return () => {
       isMounted = false;
     };
-  }, [token, getUser]);
+  }, [token, getMe]);
   // ...
 
   return (

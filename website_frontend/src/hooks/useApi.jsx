@@ -369,7 +369,19 @@ function useApi() {
   const getDpns = () => fetchJSON(`/systems/dpn`);
   const getFactories = () => fetchJSON(`/systems/factory`);
 
-  const getUser = () => fetchJSON(`/auth/me`);
+  const getMe = () => fetchJSON(`/auth/me`);
+
+  const getUsers = ({ page, page_size, search, is_admin } = {}) => {
+    const qs = buildQueryString({ page, page_size, search, is_admin });
+    return fetchJSON(`/auth/users${qs}`);
+  };
+
+  const setUserAdmin = (username, isAdmin) =>
+    fetchJSON(`/auth/users/${encodeURIComponent(username)}/admin`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin: !!isAdmin }),
+    });
 
   // tiny convenience wrappers
   const lockPallet = (pallet_number) => setPalletLock(pallet_number, true);
@@ -409,7 +421,9 @@ function useApi() {
     createPallet,
     getDpns,
     getFactories,
-    getUser,
+    getMe,
+    getUsers,
+    setUserAdmin,
   };
 }
 

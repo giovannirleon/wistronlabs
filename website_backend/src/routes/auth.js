@@ -349,6 +349,34 @@ function authenticateToken(req, res, next) {
   });
 }
 
+// PATCH /auth/users/:username/admin { admin: boolean }
+router.patch(
+  "/users/:username/admin",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const targetUsername = (req.params.username || "").trim().toLowerCase();
+    const { admin } = req.body;
+
+    if (!targetUsername)
+      return res.status(400).json({ error: "Invalid username" });
+    if (typeof admin !== "boolean")
+      return res.status(400).json({ error: "`admin` must be boolean" });
+
+    // Block self de-admin
+    if (
+      req.user?.username?.toLowerCase() === targetUsername &&
+      admin === false
+    ) {
+      return res
+        .status(400)
+        .json({ error: "You cannot remove your own admin role" });
+    }
+
+    // (Optional) prevent removing last admin, then UPDATE users SET admin=$1 WHERE username=$2 ...
+  }
+);
+
 router.post("/refresh", (req, res) => {
   const token = req.cookies.refreshToken;
   if (!token) return res.status(401).json({ error: "Missing refresh token" });
