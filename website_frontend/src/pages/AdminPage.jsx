@@ -20,7 +20,6 @@ function AdminPage() {
     return m;
   }, [baselineUsers]);
 
-  // Load once (avoid dependency-loop). If ESLint complains, you can memoize API funcs or disable the rule here.
   useEffect(() => {
     let alive = true;
     (async () => {

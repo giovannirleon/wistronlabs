@@ -355,25 +355,58 @@ router.patch(
   authenticateToken,
   requireAdmin,
   async (req, res) => {
-    const targetUsername = (req.params.username || "").trim().toLowerCase();
-    const { admin } = req.body;
+    try {
+      const targetUsername = (req.params.username || "").trim().toLowerCase();
+      const { admin } = req.body;
 
-    if (!targetUsername)
-      return res.status(400).json({ error: "Invalid username" });
-    if (typeof admin !== "boolean")
-      return res.status(400).json({ error: "`admin` must be boolean" });
+      if (!targetUsername) {
+        return res.status(400).json({ error: "Invalid username" });
+      }
+      if (typeof admin !== "boolean") {
+        return res.status(400).json({ error: "`admin` must be boolean" });
+      }
 
-    // Block self de-admin
-    if (
-      req.user?.username?.toLowerCase() === targetUsername &&
-      admin === false
-    ) {
-      return res
-        .status(400)
-        .json({ error: "You cannot remove your own admin role" });
+      // Block self de-admin
+      if (
+        req.user?.username?.toLowerCase() === targetUsername &&
+        admin === false
+      ) {
+        return res
+          .status(400)
+          .json({ error: "You cannot remove your own admin role" });
+      }
+
+      // Ensure target exists + get current admin state
+      const { rows: targetRows } = await db.query(
+        "SELECT id, username, admin FROM users WHERE username = $1",
+        [targetUsername]
+      );
+      if (!targetRows.length) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Optional: prevent removing the last remaining admin
+      if (targetRows[0].admin === true && admin === false) {
+        const { rows: cnt } = await db.query(
+          "SELECT COUNT(*)::int AS cnt FROM users WHERE admin = true"
+        );
+        if (cnt[0].cnt <= 1) {
+          return res
+            .status(400)
+            .json({ error: "Cannot remove the last remaining admin" });
+        }
+      }
+
+      await db.query("UPDATE users SET admin = $1 WHERE username = $2", [
+        admin,
+        targetUsername,
+      ]);
+
+      return res.json({ username: targetUsername, isAdmin: !!admin });
+    } catch (err) {
+      console.error("PATCH /auth/users/:username/admin failed:", err);
+      return res.status(500).json({ error: "Failed to update admin role" });
     }
-
-    // (Optional) prevent removing last admin, then UPDATE users SET admin=$1 WHERE username=$2 ...
   }
 );
 
