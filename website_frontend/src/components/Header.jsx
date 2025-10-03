@@ -159,6 +159,7 @@ function Header() {
             <Link
               to="/admin"
               className={`${linkBase} ${pathname === "/admin" ? active : ""}`}
+              onClick={() => setMenuOpen(false)}
             >
               Admin
             </Link>
