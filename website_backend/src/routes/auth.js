@@ -230,9 +230,20 @@ router.post("/change-password", authenticateToken, async (req, res) => {
   }
 });
 
-// 🔷 Example: WhoAmI (protected)
-router.get("/me", authenticateToken, (req, res) => {
-  res.json({ message: "Authenticated", user: req.user });
+router.get("/me", authenticateToken, async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT username, admin FROM users WHERE id = $1`,
+    [req.user.userId]
+  );
+  if (!rows.length) return res.status(404).json({ error: "User not found" });
+  res.json({
+    message: "Authenticated",
+    user: {
+      userId: req.user.userId,
+      username: rows[0].username,
+      isAdmin: !!rows[0].admin,
+    },
+  });
 });
 
 // 🔷 Middleware: Authenticate JWT or internal API key

@@ -369,6 +369,8 @@ function useApi() {
   const getDpns = () => fetchJSON(`/systems/dpn`);
   const getFactories = () => fetchJSON(`/systems/factory`);
 
+  const getUser = () => fetchJSON(`/auth/me`);
+
   // tiny convenience wrappers
   const lockPallet = (pallet_number) => setPalletLock(pallet_number, true);
   const unlockPallet = (pallet_number) => setPalletLock(pallet_number, false);
@@ -407,6 +409,7 @@ function useApi() {
     createPallet,
     getDpns,
     getFactories,
+    getUser,
   };
 }
 

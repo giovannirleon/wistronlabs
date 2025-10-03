@@ -1,6 +1,7 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { AuthContext } from "../context/AuthContext";
 import { Link, useLocation } from "react-router-dom";
+import useApi from "../hooks/useApi";
 
 function Header() {
   const LOCATION = import.meta.env.VITE_LOCATION;
@@ -14,6 +15,28 @@ function Header() {
     "text-slate-300 text-base md:text-sm font-medium border border-white/20 px-4 py-2 md:px-3 md:py-1 rounded hover:bg-white/10 hover:text-white";
   const active = "bg-white/20 text-white";
 
+  const [user, setUser] = useState(null);
+  const { getUser } = useApi();
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const data = await getUser(); // ← await the Promise
+        if (!isMounted) return;
+        setUser(data?.user ?? null); // ← store the actual user object
+      } catch (e) {
+        console.error("getUser failed:", e);
+        if (isMounted) setUser(null);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [token, getUser]);
+  // ...
+
+  console.log(user);
   return (
     <header className="sticky top-0 z-10 bg-blue-900 text-white px-4 py-2 flex items-center justify-between h-[60px]">
       {/* Left: logo + title */}
