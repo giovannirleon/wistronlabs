@@ -112,9 +112,8 @@ function StationPage() {
   return (
     <>
       {/* Station Status */}
-      <main className="md:max-w-10/12 mx-auto mt-8 bg-white rounded shadow-md p-4">
-        <h1 className="text-2xl font-semibold mb-6">Station Status</h1>
-
+      <main className="md:max-w-10/12  mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
+        <h1 className="text-3xl font-semibold text-gray-800">Station Status</h1>
         <div className="flex flex-col md:flex-row justify-between gap-8 mt-8 w-full">
           {LOCATION === "TSS" ? (
             <>

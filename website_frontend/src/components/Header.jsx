@@ -36,7 +36,6 @@ function Header() {
   }, [token, getUser]);
   // ...
 
-  console.log(user);
   return (
     <header className="sticky top-0 z-10 bg-blue-900 text-white px-4 py-2 flex items-center justify-between h-[60px]">
       {/* Left: logo + title */}
@@ -86,14 +85,25 @@ function Header() {
             Log In
           </Link>
         )}
-        <a
-          href="https://github.com/giovannirleon/wistronlabs"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={linkBase}
-        >
-          Need help?
-        </a>
+        {token && user?.isAdmin && (
+          <Link
+            to="/admin"
+            className={`${linkBase} ${pathname === "/admin" ? active : ""}`}
+          >
+            Admin
+          </Link>
+        )}
+        {!user?.isAdmin && (
+          <a
+            href="https://github.com/giovannirleon/wistronlabs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkBase}
+            onClick={() => setMenuOpen(false)}
+          >
+            Need help?
+          </a>
+        )}
       </div>
 
       {/* Hamburger toggle */}
@@ -145,15 +155,25 @@ function Header() {
               Log In
             </Link>
           )}
-          <a
-            href="https://github.com/giovannirleon/wistronlabs"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={linkBase}
-            onClick={() => setMenuOpen(false)}
-          >
-            Need help?
-          </a>
+          {token && user?.isAdmin && (
+            <Link
+              to="/admin"
+              className={`${linkBase} ${pathname === "/admin" ? active : ""}`}
+            >
+              Admin
+            </Link>
+          )}
+          {!user?.isAdmin && (
+            <a
+              href="https://github.com/giovannirleon/wistronlabs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={linkBase}
+              onClick={() => setMenuOpen(false)}
+            >
+              Need help?
+            </a>
+          )}
         </div>
       )}
     </header>

@@ -246,6 +246,84 @@ router.get("/me", authenticateToken, async (req, res) => {
   });
 });
 
+// GET /auth/users  (admin-only)
+// Supports ?page=1&page_size=50&search=gmail.com&is_admin=true
+router.get("/users", authenticateToken, requireAdmin, async (req, res) => {
+  let { page = 1, page_size = 50, search, is_admin } = req.query;
+
+  page = Math.max(1, parseInt(page, 10) || 1);
+  page_size = Math.min(200, Math.max(1, parseInt(page_size, 10) || 50));
+
+  const where = [];
+  const params = [];
+
+  if (search) {
+    params.push(`%${search.toLowerCase()}%`);
+    where.push(`LOWER(username) LIKE $${params.length}`);
+  }
+
+  if (is_admin === "true" || is_admin === "false") {
+    params.push(is_admin === "true");
+    where.push(`admin = $${params.length}`);
+  }
+
+  const whereSQL = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const limitParam = params.push(page_size);
+  const offsetParam = params.push((page - 1) * page_size);
+
+  try {
+    const { rows } = await db.query(
+      `
+      SELECT id, username, admin, created_at
+      FROM users
+      ${whereSQL}
+      ORDER BY created_at DESC
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+      `,
+      params
+    );
+
+    // count query uses only the WHERE params (no limit/offset)
+    const countParams = params.slice(0, where.length);
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*)::int AS count FROM users ${whereSQL}`,
+      countParams
+    );
+
+    res.json({
+      page,
+      page_size,
+      total: countRows[0].count,
+      users: rows.map((u) => ({
+        id: u.id,
+        username: u.username,
+        isAdmin: !!u.admin,
+        createdAt: u.created_at,
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to list users" });
+  }
+});
+
+// middleware: DB-backed admin check (fresh every request)
+async function requireAdmin(req, res, next) {
+  try {
+    const { rows } = await db.query("SELECT admin FROM users WHERE id = $1", [
+      req.user.userId,
+    ]);
+    if (!rows.length || !rows[0].admin) {
+      return res.status(403).json({ error: "Admin required" });
+    }
+    next();
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to check admin" });
+  }
+}
+
 // 🔷 Middleware: Authenticate JWT or internal API key
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
