@@ -367,6 +367,27 @@ function useApi() {
     });
 
   const getDpns = () => fetchJSON(`/systems/dpn`);
+
+  const createDpn = ({ name, config }) =>
+    fetchJSON(`/systems/dpn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name.trim(),
+        config: (config ?? "").trim() || null,
+      }),
+    });
+
+  const updateDpn = (id, payload) =>
+    fetchJSON(`/systems/dpn/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload), // { name?, config? }
+    });
+
+  const deleteDpn = (id) =>
+    fetchJSON(`/systems/dpn/${encodeURIComponent(id)}`, { method: "DELETE" });
+
   const getFactories = () => fetchJSON(`/systems/factory`);
 
   const getMe = () => fetchJSON(`/auth/me`);
@@ -420,6 +441,9 @@ function useApi() {
     unlockPallet,
     createPallet,
     getDpns,
+    createDpn,
+    updateDpn,
+    deleteDpn,
     getFactories,
     getMe,
     getUsers,
