@@ -388,7 +388,31 @@ function useApi() {
   const deleteDpn = (id) =>
     fetchJSON(`/systems/dpn/${encodeURIComponent(id)}`, { method: "DELETE" });
 
+  // Factory API
   const getFactories = () => fetchJSON(`/systems/factory`);
+
+  const createFactory = ({ name, code, ppid_code }) =>
+    fetchJSON(`/systems/factory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name.trim(),
+        code: code.trim(),
+        ppid_code: ppid_code?.trim() || null,
+      }),
+    });
+
+  const updateFactory = (id, payload) =>
+    fetchJSON(`/systems/factory/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload), // { name?, code?, ppid_code? }
+    });
+
+  const deleteFactory = (id) =>
+    fetchJSON(`/systems/factory/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
 
   const getMe = () => fetchJSON(`/auth/me`);
 
@@ -445,6 +469,9 @@ function useApi() {
     updateDpn,
     deleteDpn,
     getFactories,
+    createFactory,
+    updateFactory,
+    deleteFactory,
     getMe,
     getUsers,
     setUserAdmin,

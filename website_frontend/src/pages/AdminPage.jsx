@@ -16,6 +16,10 @@ function AdminPage() {
     createDpn,
     updateDpn,
     deleteDpn,
+    getFactories,
+    createFactory,
+    updateFactory,
+    deleteFactory,
   } = useApi();
   const [users, setUsers] = useState([]);
   const [baselineUsers, setBaselineUsers] = useState([]); // snapshot to diff from
@@ -36,12 +40,44 @@ function AdminPage() {
   const [deletingId, setDeletingId] = useState(null);
   const { confirm, ConfirmDialog } = useConfirm();
 
+  const [factories, setFactories] = useState([]);
+  const [baselineFactories, setBaselineFactories] = useState([]);
+  const [factoryLoading, setFactoryLoading] = useState(false);
+  const [factorySaving, setFactorySaving] = useState(false);
+  const [factoryErr, setFactoryErr] = useState(null);
+  const [factoryQ, setFactoryQ] = useState("");
+  const [deletingFactoryId, setDeletingFactoryId] = useState(null);
+
   // username -> original isAdmin
   const baselineMap = useMemo(() => {
     const m = {};
     for (const u of baselineUsers) m[u.username.toLowerCase()] = !!u.isAdmin;
     return m;
   }, [baselineUsers]);
+
+  useEffect(() => {
+    let alive = true;
+    const loadFactories = async () => {
+      if (tab !== "factories" || factoryLoading || baselineFactories.length)
+        return;
+      try {
+        setFactoryLoading(true);
+        const list = await getFactories(); // expect {id,name,code,ppid_code}
+        if (!alive) return;
+        setFactories(list || []);
+        setBaselineFactories(list || []);
+      } catch (e) {
+        if (!alive) return;
+        setFactoryErr(e.message || "Failed to load factories");
+      } finally {
+        if (alive) setFactoryLoading(false);
+      }
+    };
+    loadFactories();
+    return () => {
+      alive = false;
+    };
+  }, [tab]);
 
   useEffect(() => {
     let alive = true;
@@ -130,6 +166,158 @@ function AdminPage() {
       );
     });
   }, [dpns, dpnBaselineMap]);
+
+  const factoryBaselineMap = useMemo(() => {
+    const m = new Map();
+    baselineFactories.forEach((f) =>
+      m.set(f.id, {
+        name: f.name,
+        code: f.code,
+        ppid_code: f.ppid_code ?? "",
+      })
+    );
+    return m;
+  }, [baselineFactories]);
+
+  const filteredFactories = useMemo(() => {
+    const q = factoryQ.trim().toLowerCase();
+    if (!q) return factories;
+    return factories.filter(
+      (f) =>
+        f.name.toLowerCase().includes(q) ||
+        f.code.toLowerCase().includes(q) ||
+        (f.ppid_code || "").toLowerCase().includes(q)
+    );
+  }, [factories, factoryQ]);
+
+  const factoryHasChanges = useMemo(() => {
+    return factories.some((f) => {
+      if (typeof f.id !== "number") {
+        return f.name?.trim() || f.code?.trim() || f.ppid_code?.trim();
+      }
+      const base = factoryBaselineMap.get(f.id);
+      return (
+        base &&
+        (base.name !== f.name ||
+          base.code !== f.code ||
+          (base.ppid_code ?? "") !== (f.ppid_code ?? ""))
+      );
+    });
+  }, [factories, factoryBaselineMap]);
+
+  const sanitizeFactoryField = (s = "") => s.trim().toUpperCase();
+
+  const addBlankFactoryRow = () => {
+    const newId = `new-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+    setFactories((cur) => [
+      { id: newId, name: "", code: "", ppid_code: "" },
+      ...cur,
+    ]);
+  };
+
+  const onFactoryCellChange = (id, field, value) => {
+    setFactories((cur) =>
+      cur.map((f) => (f.id === id ? { ...f, [field]: value } : f))
+    );
+  };
+
+  const onFactoryDiscard = () => {
+    setFactories(baselineFactories);
+    setFactoryErr(null);
+  };
+
+  const onFactorySave = async (e) => {
+    e.preventDefault();
+    setFactoryErr(null);
+    if (!factoryHasChanges) return;
+    setFactorySaving(true);
+    try {
+      const newRows = factories.filter(
+        (f) => typeof f.id !== "number" && (f.name?.trim() || f.code?.trim())
+      );
+      const changedRows = factories.filter((f) => {
+        if (typeof f.id !== "number") return false;
+        const base = factoryBaselineMap.get(f.id);
+        return (
+          base &&
+          (base.name !== f.name ||
+            base.code !== f.code ||
+            (base.ppid_code ?? "") !== (f.ppid_code ?? ""))
+        );
+      });
+
+      for (const row of newRows) {
+        await createFactory({
+          name: sanitizeFactoryField(row.name),
+          code: sanitizeFactoryField(row.code),
+          ppid_code: row.ppid_code.trim(),
+        });
+      }
+
+      for (const row of changedRows) {
+        const base = factoryBaselineMap.get(row.id);
+        const payload = {};
+        const nameSan = sanitizeFactoryField(row.name);
+        const codeSan = sanitizeFactoryField(row.code);
+        const ppidSan = row.ppid_code.trim();
+        if (nameSan !== base.name) payload.name = nameSan;
+        if (codeSan !== base.code) payload.code = codeSan;
+        if (ppidSan !== base.ppid_code) payload.ppid_code = ppidSan;
+        if (Object.keys(payload).length > 0) {
+          await updateFactory(row.id, payload);
+        }
+      }
+
+      const fresh = await getFactories();
+      setFactories(fresh || []);
+      setBaselineFactories(fresh || []);
+      showToast("Factories saved", "success", 2500, "bottom-right");
+    } catch (e2) {
+      console.error("Saving factories failed:", e2);
+      setFactoryErr(e2.message || "Failed to save factories");
+      showToast("Failed to save factories", "error", 3000, "bottom-right");
+    } finally {
+      setFactorySaving(false);
+    }
+  };
+
+  const handleDeleteFactory = async (row) => {
+    if (typeof row.id !== "number") {
+      setFactories((cur) => cur.filter((f) => f.id !== row.id));
+      return;
+    }
+    const confirmed = await confirm({
+      title: "Confirm Deletion",
+      message: `Are you sure you want to delete factory ${row.name}?`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      confirmClass: "bg-red-600 text-white hover:bg-red-700",
+      cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
+    });
+    if (!confirmed) {
+      showToast("Deletion cancelled", "info", 3000, "bottom-right");
+      return;
+    }
+    try {
+      setDeletingFactoryId(row.id);
+      await deleteFactory(row.id);
+      setFactories((cur) => cur.filter((f) => f.id !== row.id));
+      setBaselineFactories((cur) => cur.filter((f) => f.id !== row.id));
+      showToast(`Deleted ${row.name}`, "success", 2200, "bottom-right");
+    } catch (e) {
+      const msg =
+        e?.body?.error ||
+        (e?.status === 409
+          ? "Cannot delete factory: referenced by pallets or systems"
+          : e?.message) ||
+        "Failed to delete factory";
+      showToast(msg, "error", 3500, "bottom-right");
+    } finally {
+      setDeletingFactoryId(null);
+    }
+  };
 
   const sanitizeName = (s = "") => s.trim().toUpperCase();
   const sanitizeConfig = (s = "") => s.trim().toUpperCase();
@@ -379,6 +567,16 @@ function AdminPage() {
             }`}
           >
             DPNs
+          </button>
+          <button
+            onClick={() => setTab("factories")}
+            className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 ${
+              tab === "factories"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Factories
           </button>
         </div>
 
@@ -630,6 +828,157 @@ function AdminPage() {
                 }`}
               >
                 {dpnSaving ? "Saving…" : "Save DPNs"}
+              </button>
+            </div>
+          </form>
+        )}
+        {tab === "factories" && (
+          <form onSubmit={onFactorySave} className="space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={addBlankFactoryRow}
+                  className="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  + Add row
+                </button>
+                <div className="relative">
+                  <input
+                    value={factoryQ}
+                    onChange={(e) => setFactoryQ(e.target.value)}
+                    placeholder="Search factory name/code"
+                    className="rounded-lg border border-gray-300 px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="absolute left-3 top-2.5 text-gray-400">
+                    🔎
+                  </span>
+                </div>
+              </div>
+              <div className="flex-1" />
+              {factoryErr && (
+                <div className="text-red-600 text-sm">{factoryErr}</div>
+              )}
+            </div>
+
+            <div className="overflow-auto rounded-xl border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="text-left font-medium px-3 py-2">Name</th>
+                    <th className="text-left font-medium px-3 py-2">Code</th>
+                    <th className="text-left font-medium px-3 py-2">
+                      PPID Code
+                    </th>
+                    <th className="text-right font-medium px-3 py-2 w-28">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {factoryLoading ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-6 text-center text-gray-500"
+                      >
+                        Loading…
+                      </td>
+                    </tr>
+                  ) : filteredFactories.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-6 text-center text-gray-500"
+                      >
+                        No matching factories
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredFactories.map((f) => {
+                      const isNew = typeof f.id !== "number";
+                      const base = isNew ? null : factoryBaselineMap.get(f.id);
+                      const changed =
+                        isNew ||
+                        (base &&
+                          (base.name !== f.name ||
+                            base.code !== f.code ||
+                            (base.ppid_code ?? "") !== (f.ppid_code ?? "")));
+
+                      return (
+                        <tr
+                          key={f.id}
+                          className={changed ? "bg-amber-50/40" : ""}
+                        >
+                          {["name", "code", "ppid_code"].map((field) => (
+                            <td key={field} className="px-3 py-2 align-middle">
+                              <input
+                                value={f[field] ?? ""}
+                                onChange={(e) =>
+                                  onFactoryCellChange(
+                                    f.id,
+                                    field,
+                                    e.target.value
+                                  )
+                                }
+                                className={`w-full rounded-md border px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                  changed
+                                    ? "border-amber-300"
+                                    : "border-gray-300"
+                                }`}
+                                placeholder={`e.g. ${
+                                  field === "name"
+                                    ? "Juarez"
+                                    : field === "code"
+                                    ? "MX"
+                                    : "WSJ00"
+                                }`}
+                              />
+                            </td>
+                          ))}
+                          <td className="px-3 py-2 align-middle">
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFactory(f)}
+                                disabled={
+                                  deletingFactoryId === f.id || factorySaving
+                                }
+                                className="px-3 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                {deletingFactoryId === f.id
+                                  ? "Deleting…"
+                                  : "Delete"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="sticky bottom-0 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-t pt-3 pb-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onFactoryDiscard}
+                disabled={factorySaving || !factoryHasChanges}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Discard changes
+              </button>
+              <button
+                type="submit"
+                disabled={factorySaving || !factoryHasChanges}
+                className={`px-4 py-2 rounded-lg text-white ${
+                  factoryHasChanges
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-blue-300 cursor-not-allowed"
+                }`}
+              >
+                {factorySaving ? "Saving…" : "Save Factories"}
               </button>
             </div>
           </form>
