@@ -330,16 +330,18 @@ router.get("/dpn", async (req, res) => {
     if (q && q.trim()) {
       const like = `%${q.trim()}%`;
       const { rows } = await db.query(
-        `SELECT id, name, config
+        `SELECT id, name, config, dell_customer
            FROM dpn
-          WHERE name ILIKE $1 OR CAST(config AS TEXT) ILIKE $1
+          WHERE name ILIKE $1
+           OR CAST(config AS TEXT) ILIKE $1
+           OR dell_customer ILIKE $1
           ORDER BY name ASC`,
         [like]
       );
       return res.json(rows);
     }
     const { rows } = await db.query(
-      `SELECT id, name, config FROM dpn ORDER BY name ASC`
+      `SELECT id, name, config, dell_customer FROM dpn ORDER BY name ASC`
     );
     return res.json(rows);
   } catch (e) {
@@ -352,7 +354,7 @@ router.get("/dpn", async (req, res) => {
 router.get("/dpn/:id", async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, name, config FROM dpn WHERE id = $1`,
+      `SELECT id, name, config, dell_customer FROM dpn WHERE id = $1`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "DPN not found" });
@@ -365,16 +367,16 @@ router.get("/dpn/:id", async (req, res) => {
 
 // POST dpn (admin)
 router.post("/dpn", authenticateToken, ensureAdmin, async (req, res) => {
-  const { name, config } = req.body || {};
+  const { name, config, dell_customer } = req.body || {};
   if (!name) {
     return res.status(400).json({ error: "name is required" });
   }
   try {
     const { rows } = await db.query(
-      `INSERT INTO dpn (name, config)
-       VALUES ($1, $2)
-       RETURNING id, name, config`,
-      [name.trim(), config ?? null]
+      `INSERT INTO dpn (name, config, dell_customer)
+        VALUES ($1, $2, $3)
+        RETURNING id, name, config, dell_customer`,
+      [name.trim(), (config ?? "").trim(), (dell_customer ?? "").trim()]
     );
     return res.status(201).json(rows[0]);
   } catch (e) {
@@ -388,8 +390,12 @@ router.post("/dpn", authenticateToken, ensureAdmin, async (req, res) => {
 
 // PATCH dpn (admin)
 router.patch("/dpn/:id", authenticateToken, ensureAdmin, async (req, res) => {
-  const { name, config } = req.body || {};
-  if (typeof name === "undefined" && typeof config === "undefined") {
+  const { name, config, dell_customer } = req.body || {};
+  if (
+    typeof name === "undefined" &&
+    typeof config === "undefined" &&
+    typeof dell_customer === "undefined"
+  ) {
     return res.status(400).json({ error: "Nothing to update" });
   }
 
@@ -401,14 +407,17 @@ router.patch("/dpn/:id", authenticateToken, ensureAdmin, async (req, res) => {
   }
   if (typeof config !== "undefined") {
     fields.push(`config = $${fields.length + 1}`);
-    vals.push(config);
+    vals.push((config ?? "").trim());
   }
-
+  if (typeof dell_customer !== "undefined") {
+    fields.push(`dell_customer = $${fields.length + 1}`);
+    vals.push((dell_customer ?? "").trim());
+  }
   try {
     const { rows } = await db.query(
       `UPDATE dpn SET ${fields.join(", ")}
          WHERE id = $${fields.length + 1}
-       RETURNING id, name, config`,
+       RETURNING id, name, config, dell_customer`,
       [...vals, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "DPN not found" });
@@ -519,6 +528,7 @@ router.get("/", async (req, res) => {
             location_id: "s.location_id",
             location: "l.name",
             dpn: "d.name",
+            dell_customer: "d.dell_customer",
             manufactured_date: "s.manufactured_date",
             serial: "s.serial",
             rev: "s.rev",
@@ -534,6 +544,7 @@ router.get("/", async (req, res) => {
     issue: "s.issue",
     location: "l.name",
     dpn: "d.name",
+    dell_customer: "d.dell_customer",
     manufactured_date: "s.manufactured_date",
     serial: "s.serial",
     rev: "s.rev",
@@ -567,6 +578,7 @@ router.get("/", async (req, res) => {
           s.issue,
           d.name AS dpn,              
           d.config AS config,
+          d.dell_customer AS dell_customer,
           s.manufactured_date,
           s.serial,
           s.rev,
@@ -641,8 +653,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// systems.js (same file, same route)
-// systems.js (same file)
 router.get("/snapshot", async (req, res) => {
   const {
     date, // REQUIRED: EOD ISO
@@ -1397,6 +1407,7 @@ router.get("/:service_tag", async (req, res) => {
         s.issue,
         d.name   AS dpn,
         d.config AS config,
+        d.dell_customer AS dell_customer,
         s.manufactured_date,
         s.serial,
         s.rev,
