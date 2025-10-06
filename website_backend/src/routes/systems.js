@@ -181,13 +181,14 @@ function isPgUniqueViolation(err) {
 // ---------- FACTORY CRUD ----------
 
 // GET factories (optional ?q= search by code or name)
+// GET factories (optional ?q= search by code or name)
 router.get("/factory", async (req, res) => {
   const { q } = req.query;
   try {
     if (q && q.trim()) {
       const like = `%${q.trim()}%`;
       const { rows } = await db.query(
-        `SELECT id, code, name
+        `SELECT id, code, name, ppid_code
            FROM factory
           WHERE code ILIKE $1 OR name ILIKE $1
           ORDER BY code ASC`,
@@ -196,7 +197,7 @@ router.get("/factory", async (req, res) => {
       return res.json(rows);
     }
     const { rows } = await db.query(
-      `SELECT id, code, name FROM factory ORDER BY code ASC`
+      `SELECT id, code, name, ppid_code FROM factory ORDER BY code ASC`
     );
     return res.json(rows);
   } catch (e) {
@@ -209,7 +210,7 @@ router.get("/factory", async (req, res) => {
 router.get("/factory/:id", async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, code, name FROM factory WHERE id = $1`,
+      `SELECT id, code, name, ppid_code FROM factory WHERE id = $1`,
       [req.params.id]
     );
     if (!rows.length)
@@ -231,7 +232,7 @@ router.post("/factory", authenticateToken, ensureAdmin, async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO factory (code, name)
        VALUES ($1, $2)
-       RETURNING id, code, name`,
+       RETURNING id, code, name, ppid_code`,
       [code.trim(), name.trim()]
     );
     return res.status(201).json(rows[0]);
@@ -270,7 +271,7 @@ router.patch(
       const { rows } = await db.query(
         `UPDATE factory SET ${fields.join(", ")}
          WHERE id = $${fields.length + 1}
-       RETURNING id, code, name`,
+       RETURNING id, code, name, ppid_code`,
         [...vals, req.params.id]
       );
       if (!rows.length)
