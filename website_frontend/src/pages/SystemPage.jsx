@@ -17,7 +17,6 @@ import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
 import SystemRMALabel from "../components/SystemRMALabel.jsx";
 
 import Station from "../components/Station.jsx";
-import Tooltip from "../components/Tooltip.jsx";
 
 import { formatDateHumanReadable } from "../utils/date_format";
 import { allowedNextLocations } from "../helpers/NextAllowedLocations.jsx";
@@ -39,6 +38,7 @@ function SystemPage() {
   const [locations, setLocations] = useState([]);
   const [stations, setStations] = useState([]); // new
 
+  const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState(null);
@@ -93,12 +93,45 @@ function SystemPage() {
     getSystemPallet,
     getPallets,
     getServerTime,
+    getMe,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!token) return; // only run if user is logged in
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const meData = await getMe();
+
+        // only update if data actually changed
+        setMe((prev) => {
+          const newUser = meData?.user ?? null;
+          if (
+            !prev ||
+            prev.id !== newUser?.id ||
+            prev.isAdmin !== newUser?.isAdmin
+          ) {
+            return newUser;
+          }
+          return prev;
+        });
+      } catch (err) {
+        if (!cancelled) setMe(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // 👇 only depend on token so it runs once per login/logout
+  }, [token]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -149,6 +182,8 @@ function SystemPage() {
   );
 
   const handleDelete = async () => {
+    console.log("deleting");
+
     const confirmed = await confirm({
       title: "Confirm Deletion",
       message: `Are you sure you want to delete this unit? This action cannot be undone.`,
@@ -169,11 +204,10 @@ function SystemPage() {
         });
         setSelectedStation(""); // reset selected station after deletion
       }
-
       await deleteSystem(serviceTag);
 
       showToast("Unit deleted successfully", "success", 3000, "bottom-right");
-      navigate("/tracking"); // redirect to tracking page
+      navigate("/"); // redirect to home page
     } catch (err) {
       console.error(err);
       console.log("Error deleting unit:", err);
@@ -503,7 +537,6 @@ function SystemPage() {
         (s) => (s.service_tag || "").toUpperCase() === target
       )
     )?.pallet_number ?? null;
-
   return (
     <>
       <ConfirmDialog />
@@ -562,11 +595,7 @@ function SystemPage() {
                 >
                   Details
                 </button>
-                <Tooltip
-                  text="Please log in to delete a unit"
-                  position="botom"
-                  show={!token == true}
-                >
+                {me?.isAdmin && (
                   <button
                     type="button"
                     onClick={handleDelete}
@@ -576,7 +605,7 @@ function SystemPage() {
                   >
                     Delete Unit
                   </button>
-                </Tooltip>
+                )}
               </div>
             </div>
 
