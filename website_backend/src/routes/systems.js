@@ -1784,20 +1784,25 @@ router.patch(
 );
 
 // DELETE /api/v1/systems/:service_tag
-router.delete("/:service_tag", authenticateToken, async (req, res) => {
-  const { service_tag } = req.params;
+router.delete(
+  "/:service_tag",
+  authenticateToken,
+  ensureAdmin,
+  async (req, res) => {
+    const { service_tag } = req.params;
 
-  const result = await db.query(
-    "DELETE FROM system WHERE service_tag = $1 RETURNING service_tag",
-    [service_tag]
-  );
+    const result = await db.query(
+      "DELETE FROM system WHERE service_tag = $1 RETURNING service_tag",
+      [service_tag]
+    );
 
-  if (result.rowCount === 0) {
-    return res.status(404).json({ error: "System not found" });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "System not found" });
+    }
+
+    res.json({ message: "System deleted" });
   }
-
-  res.json({ message: "System deleted" });
-});
+);
 
 router.get("/:service_tag/pallet", async (req, res) => {
   const { service_tag } = req.params;
