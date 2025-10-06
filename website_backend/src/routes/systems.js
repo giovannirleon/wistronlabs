@@ -1331,7 +1331,7 @@ router.post("/", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // DPN upsert from parsed.dpn
+    // DPN upsert
     const upsertDpn = await client.query(
       `INSERT INTO dpn (name) VALUES ($1)
        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
@@ -1340,18 +1340,16 @@ router.post("/", authenticateToken, async (req, res) => {
     );
     const dpn_id = upsertDpn.rows[0].id;
 
-    // factory_id via dynamic lookup by ppid_code
+    // factory via PPID code
     const facRes = await client.query(
       `SELECT id FROM factory WHERE ppid_code = $1`,
       [parsed.factoryCodeRaw]
     );
     const factory_id = facRes.rows[0]?.id || null;
-
-    if (!factory_id) {
+    if (!factory_id)
       throw new Error(`Unknown factory PPID code: ${parsed.factoryCodeRaw}`);
-    }
 
-    // insert system (auto note is "added to system")
+    // insert system
     const ins = await client.query(
       `
       INSERT INTO system
@@ -1374,7 +1372,6 @@ router.post("/", authenticateToken, async (req, res) => {
         rack_service_tag.trim().toUpperCase(),
       ]
     );
-
     const system_id = ins.rows[0].id;
 
     await client.query(
@@ -1385,9 +1382,50 @@ router.post("/", authenticateToken, async (req, res) => {
     );
 
     await client.query("COMMIT");
-    return res
-      .status(201)
-      .json({ service_tag: service_tag.trim().toUpperCase() });
+
+    // respond immediately
+    const stUpper = service_tag.trim().toUpperCase();
+    res.status(201).json({ service_tag: stUpper });
+
+    // fire-and-forget webhook AFTER response
+    setImmediate(() => {
+      try {
+        const controller = new AbortController();
+        // keep it from holding the event loop open
+        const timer = setTimeout(() => controller.abort(), 5000);
+        timer.unref?.();
+
+        fetch("http://host.docker.internal:9000", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Auth-Token": process.env.HOST_RUNNER_TOKEN || "",
+          },
+          body: JSON.stringify({
+            script: "/opt/hooks/on-system-created.sh",
+            args: [stUpper],
+          }),
+          signal: controller.signal,
+        })
+          .then(async (r) => {
+            const body = await r.text().catch(() => "");
+            if (!r.ok) {
+              console.warn(
+                `host-runner non-200: ${r.status} ${r.statusText} body=${body}`
+              );
+            } else {
+              console.log(`host-runner OK: ${body}`);
+            }
+          })
+          .catch((e) => {
+            // log and move on; never throw
+            console.error("host-runner call failed:", e);
+          })
+          .finally(() => clearTimeout(timer));
+      } catch (e) {
+        console.error("host-runner scheduling failed:", e);
+      }
+    });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
