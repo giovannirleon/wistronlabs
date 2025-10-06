@@ -1388,44 +1388,37 @@ router.post("/", authenticateToken, async (req, res) => {
     res.status(201).json({ service_tag: stUpper });
 
     // fire-and-forget webhook AFTER response
-    setImmediate(() => {
-      try {
-        const controller = new AbortController();
-        // keep it from holding the event loop open
-        const timer = setTimeout(() => controller.abort(), 5000);
-        timer.unref?.();
+    // inside your POST /api/v1/systems after COMMIT
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000); // 5s for ACK
+      const stUpper = service_tag.trim().toUpperCase();
 
-        fetch("http://host.docker.internal:9000", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Auth-Token": process.env.HOST_RUNNER_TOKEN || "",
-          },
-          body: JSON.stringify({
-            script: "/opt/hooks/on-system-created.sh",
-            args: [stUpper],
-          }),
-          signal: controller.signal,
-        })
-          .then(async (r) => {
-            const body = await r.text().catch(() => "");
-            if (!r.ok) {
-              console.warn(
-                `host-runner non-200: ${r.status} ${r.statusText} body=${body}`
-              );
-            } else {
-              console.log(`host-runner OK: ${body}`);
-            }
-          })
-          .catch((e) => {
-            // log and move on; never throw
-            console.error("host-runner call failed:", e);
-          })
-          .finally(() => clearTimeout(timer));
-      } catch (e) {
-        console.error("host-runner scheduling failed:", e);
+      const resp = await fetch("http://host.docker.internal:9000/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Auth-Token": process.env.HOST_RUNNER_TOKEN || "",
+        },
+        body: JSON.stringify({
+          script: "/opt/hooks/on-system-created.sh",
+          args: [stUpper],
+          wait: "ack", // immediate acknowledgement
+          // Or: wait: "done", timeout: 3  // try to wait up to 3s for completion
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      const text = await resp.text();
+      if (!resp.ok) {
+        console.warn(`host-runner ack failed: ${resp.status} ${text}`);
+      } else {
+        console.log(`host-runner ack: ${text}`);
       }
-    });
+    } catch (e) {
+      console.error("host-runner call failed:", e);
+    }
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
