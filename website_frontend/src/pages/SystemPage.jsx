@@ -535,7 +535,8 @@ function SystemPage() {
                 <span>
                   {system?.config && (
                     <span className="mr-2 inline-block mt-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs sm:text-sm font-bold rounded-full uppercase">
-                      Config {system.config}
+                      Config {system.config}{" "}
+                      {system.dell_customer && `- ${system.dell_customer}`}
                     </span>
                   )}
                   {system?.issue && (

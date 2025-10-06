@@ -96,7 +96,11 @@ function AdminPage() {
   const dpnBaselineMap = useMemo(() => {
     const m = new Map();
     baselineDpns.forEach((d) =>
-      m.set(d.id, { name: d.name, config: d.config ?? "" })
+      m.set(d.id, {
+        name: d.name,
+        config: d.config ?? "",
+        dell_customer: d.dell_customer ?? "",
+      })
     );
     return m;
   }, [baselineDpns]);
@@ -107,24 +111,29 @@ function AdminPage() {
     return dpns.filter(
       (d) =>
         (d.name || "").toLowerCase().includes(q) ||
-        (d.config || "").toLowerCase().includes(q)
+        (d.config || "").toLowerCase().includes(q) ||
+        (d.dell_customer || "").toLowerCase().includes(q)
     );
   }, [dpns, dpnQ]);
 
   const dpnHasChanges = useMemo(() => {
-    // new rows have no numeric id (we’ll tag them with id like "new-123")
     return dpns.some((d) => {
-      if (typeof d.id !== "number") return d.name?.trim() || d.config?.trim(); // new
+      if (typeof d.id !== "number") {
+        return d.name?.trim() || d.config?.trim() || d.dell_customer?.trim();
+      }
       const base = dpnBaselineMap.get(d.id);
       return (
         base &&
-        (base.name !== d.name || (base.config ?? "") !== (d.config ?? ""))
+        (base.name !== d.name ||
+          (base.config ?? "") !== (d.config ?? "") ||
+          (base.dell_customer ?? "") !== (d.dell_customer ?? ""))
       );
     });
   }, [dpns, dpnBaselineMap]);
 
   const sanitizeName = (s = "") => s.trim().toUpperCase();
   const sanitizeConfig = (s = "") => s.trim().toUpperCase();
+  const sanitizeCustomer = (s = "") => s.trim();
 
   const validateRow = (row) => {
     const name = sanitizeName(row.name);
@@ -134,11 +143,13 @@ function AdminPage() {
   };
 
   const addBlankRow = () => {
-    // "Excel-like" add: create a new editable row at top
     const newId = `new-${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 6)}`;
-    setDpns((cur) => [{ id: newId, name: "", config: "" }, ...cur]);
+    setDpns((cur) => [
+      { id: newId, name: "", config: "", dell_customer: "" },
+      ...cur,
+    ]);
   };
 
   const onCellChange = (id, field, value) => {
@@ -168,28 +179,34 @@ function AdminPage() {
         const base = dpnBaselineMap.get(d.id);
         return (
           base &&
-          (base.name !== d.name || (base.config ?? "") !== (d.config ?? ""))
+          (base.name !== d.name ||
+            (base.config ?? "") !== (d.config ?? "") ||
+            (base.dell_customer ?? "") !== (d.dell_customer ?? ""))
         );
       });
 
-      // Create new DPNs
+      // NEW rows
       for (const row of newRows) {
         const name = sanitizeName(row.name);
         const config = sanitizeConfig(row.config);
+        const dell_customer = sanitizeCustomer(row.dell_customer);
         const errMsg = validateRow({ name, config });
         if (errMsg) throw new Error(`Row "${row.name || "(new)"}": ${errMsg}`);
-        await createDpn({ name, config });
+        await createDpn({ name, config, dell_customer });
       }
 
-      // Patch changed DPNs (send only changed fields)
+      // CHANGED rows
       for (const row of changedRows) {
         const base = dpnBaselineMap.get(row.id);
         const payload = {};
         const nameSan = sanitizeName(row.name);
         const configSan = sanitizeConfig(row.config);
+        const customerSan = sanitizeCustomer(row.dell_customer);
         if (nameSan !== base.name) payload.name = nameSan;
         if ((configSan ?? "") !== (base.config ?? ""))
           payload.config = configSan;
+        if ((customerSan ?? "") !== (base.dell_customer ?? ""))
+          payload.dell_customer = customerSan;
         if (Object.keys(payload).length > 0) {
           await updateDpn(row.id, payload);
         }
@@ -468,9 +485,10 @@ function AdminPage() {
                   <input
                     value={dpnQ}
                     onChange={(e) => setDpnQ(e.target.value)}
-                    placeholder="Search DPN or config"
+                    placeholder="Search DPN, config, customer"
                     className="rounded-lg border border-gray-300 px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+
                   <span className="absolute left-3 top-2.5 text-gray-400">
                     🔎
                   </span>
@@ -487,6 +505,9 @@ function AdminPage() {
                   <tr>
                     <th className="text-left font-medium px-3 py-2">DPN</th>
                     <th className="text-left font-medium px-3 py-2">Config</th>
+                    <th className="text-left font-medium px-3 py-2">
+                      Dell Customer
+                    </th>
                     <th className="text-right font-medium px-3 py-2 w-28">
                       Actions
                     </th>
@@ -496,7 +517,7 @@ function AdminPage() {
                   {dpnLoading ? (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="px-3 py-6 text-center text-gray-500"
                       >
                         Loading…
@@ -505,7 +526,7 @@ function AdminPage() {
                   ) : filteredDpns.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="px-3 py-6 text-center text-gray-500"
                       >
                         No matching DPNs
@@ -519,7 +540,9 @@ function AdminPage() {
                         isNew ||
                         (base &&
                           (base.name !== d.name ||
-                            (base.config ?? "") !== (d.config ?? "")));
+                            (base.config ?? "") !== (d.config ?? "") ||
+                            (base.dell_customer ?? "") !==
+                              (d.dell_customer ?? "")));
 
                       return (
                         <tr
@@ -548,6 +571,22 @@ function AdminPage() {
                                 changed ? "border-amber-300" : "border-gray-300"
                               }`}
                               placeholder="e.g. B1"
+                            />
+                          </td>
+                          <td className="px-3 py-2 align-middle">
+                            <input
+                              value={d.dell_customer ?? ""}
+                              onChange={(e) =>
+                                onCellChange(
+                                  d.id,
+                                  "dell_customer",
+                                  e.target.value
+                                )
+                              }
+                              className={`w-full rounded-md border px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                changed ? "border-amber-300" : "border-gray-300"
+                              }`}
+                              placeholder="e.g. META / NVIDIA"
                             />
                           </td>
                           <td className="px-3 py-2 align-middle">
