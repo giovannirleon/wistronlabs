@@ -70,8 +70,8 @@ function parseAndValidatePPID(ppidRaw) {
 
   if (!/^[A-Z0-9]{3}$/.test(prefix)) throw new Error("Invalid prefix format");
   if (!/^[A-Z0-9]{5}$/.test(dpn)) throw new Error("Invalid DPN format");
-  if (!/^[A-Z0-9]{5}$/.test(factoryCodeRaw) || !FACTORY_MAP[factoryCodeRaw]) {
-    throw new Error(`Unknown or invalid factory code: ${factoryCodeRaw}`);
+  if (!/^[A-Z0-9]{5}$/.test(factoryCodeRaw)) {
+    throw new Error(`Invalid factory code format: ${factoryCodeRaw}`);
   }
   if (!/^[A-Z0-9]{3}$/.test(dateCode))
     throw new Error("Invalid date code format");
@@ -147,11 +147,13 @@ function decodeDateCode(code) {
   return new Date(year, month - 1, day);
 }
 
-const FACTORY_MAP = {
-  WSJ00: "MX", // Juarez
-  WS900: "A1", // Hsinchu
-  WSM00: "N2", // Hukou
-};
+async function getFactoryByPPIDCode(ppidCode) {
+  const result = await db.query(
+    `SELECT id, code, name FROM factory WHERE ppid_code = $1`,
+    [ppidCode]
+  );
+  return result.rows[0] || null;
+}
 
 // ---------- helpers ----------
 async function ensureAdmin(req, res, next) {
@@ -1337,13 +1339,16 @@ router.post("/", authenticateToken, async (req, res) => {
     );
     const dpn_id = upsertDpn.rows[0].id;
 
-    // factory_id via FACTORY_MAP
-    const factoryShort = FACTORY_MAP[parsed.factoryCodeRaw];
+    // factory_id via dynamic lookup by ppid_code
     const facRes = await client.query(
-      `SELECT id FROM factory WHERE code = $1`,
-      [factoryShort]
+      `SELECT id FROM factory WHERE ppid_code = $1`,
+      [parsed.factoryCodeRaw]
     );
     const factory_id = facRes.rows[0]?.id || null;
+
+    if (!factory_id) {
+      throw new Error(`Unknown factory PPID code: ${parsed.factoryCodeRaw}`);
+    }
 
     // insert system (auto note is "added to system")
     const ins = await client.query(
@@ -1636,12 +1641,16 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
   }
 
   try {
-    // factory_id
-    const factoryShortCode = FACTORY_MAP[parsed.factoryCodeRaw];
-    const { rows } = await db.query("SELECT id FROM factory WHERE code = $1", [
-      factoryShortCode,
-    ]);
+    // factory_id via dynamic ppid_code
+    const { rows } = await db.query(
+      "SELECT id FROM factory WHERE ppid_code = $1",
+      [parsed.factoryCodeRaw]
+    );
     const factoryId = rows.length ? rows[0].id : null;
+
+    if (!factoryId) {
+      throw new Error(`Unknown factory PPID code: ${parsed.factoryCodeRaw}`);
+    }
 
     // dpn_id from parsed.dpn
     const upsert = await db.query(
