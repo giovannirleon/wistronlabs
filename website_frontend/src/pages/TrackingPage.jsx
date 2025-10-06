@@ -162,7 +162,7 @@ function TrackingPage() {
   const { showToast, Toast } = useToast();
   const isMobile = useIsMobile();
 
-  async function addOrUpdateSystem(service_tag, issue, note) {
+  async function addOrUpdateSystem(service_tag, issue, ppid, rack_service_tag) {
     const { data: inactiveSystems } = await fetchSystems({
       page_size: 150,
       inactive: true,
@@ -172,7 +172,14 @@ function TrackingPage() {
       all: true,
     });
 
-    const payload = { service_tag, issue, location_id: 1, note };
+    const payload = {
+      service_tag,
+      issue,
+      location_id: 1, // "Received"
+      ppid,
+      rack_service_tag,
+      // note not sent; server sets "added to system"
+    };
 
     const inactive = inactiveSystems.find(
       (sys) =>
@@ -184,18 +191,20 @@ function TrackingPage() {
       if (inactive) {
         const confirmed = await confirm({
           title: "Re-enter System?",
-          message: `${service_tag} already exists as inactive. Move it back to received?`,
+          message: `${service_tag} exists as inactive. Move it back to Received?`,
           confirmText: "Confirm",
           cancelText: "Cancel",
-          confirmClass: "bg-blue-600 text-white hover:bg-blue-700",
-          cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
         });
         if (!confirmed) {
           showToast(`Skipped ${service_tag}`, "error", 3000, "top-right");
-          return;
+          return false;
         }
 
-        await moveSystemToReceived(service_tag, issue, note);
+        // If you want to update PPID/rack tag for re-entry as well, do it here (optional):
+        // await api.patch(`/systems/${service_tag}/ppid`, { ppid });
+        // await api.patch(`/systems/${service_tag}/rack-service-tag`, { rack_service_tag });
+
+        await moveSystemToReceived(service_tag, issue, "added to system");
         showToast(
           `${service_tag} moved back to received`,
           "success",
@@ -221,18 +230,22 @@ function TrackingPage() {
 
     if (!bulkMode) {
       const service_tag = formData.get("service_tag")?.trim().toUpperCase();
-      const issue = formData.get("issue")?.trim();
-      const note = formData.get("note")?.trim();
+      const issue = formData.get("issue")?.trim() || null;
+      const ppid = formData.get("ppid")?.trim().toUpperCase();
+      const rack_service_tag = formData.get("rack_service_tag")?.trim();
 
-      if (!service_tag || !issue || !note) {
+      if (!service_tag || !ppid || !rack_service_tag) {
         setAddSystemFormError(true);
         return;
       }
-
       setAddSystemFormError(false);
 
-      // Add system first
-      const ok = await addOrUpdateSystem(service_tag, issue, note);
+      const ok = await addOrUpdateSystem(
+        service_tag,
+        issue,
+        ppid,
+        rack_service_tag
+      );
 
       // Generate and open PDF
 
@@ -266,7 +279,6 @@ function TrackingPage() {
         setAddSystemFormError(true);
         return;
       }
-
       setAddSystemFormError(false);
 
       const systemsPDF = [];
@@ -274,13 +286,20 @@ function TrackingPage() {
 
       const lines = csv.split("\n");
       for (const line of lines) {
-        const [rawTag, issue, note] = line.split(/\t|,/).map((s) => s.trim());
-        if (!rawTag || !issue) {
+        const [rawTag, issue, ppid, rackServiceTag] = line
+          .split(/\t|,/)
+          .map((s) => (s ?? "").trim());
+        if (!rawTag || !ppid || !rackServiceTag) {
           console.warn(`Skipping invalid line: ${line}`);
           continue;
         }
 
-        ok = await addOrUpdateSystem(rawTag.toUpperCase(), issue, note || null);
+        ok = await addOrUpdateSystem(
+          rawTag.toUpperCase(),
+          issue || null,
+          ppid.toUpperCase(),
+          rackServiceTag
+        );
 
         systemsPDF.push({
           service_tag: rawTag.toUpperCase(),

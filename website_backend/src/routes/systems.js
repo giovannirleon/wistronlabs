@@ -54,6 +54,37 @@ async function getDeletedUserId() {
 // RMA location IDs (must match DB)
 const RMA_LOCATION_IDS = [6, 7, 8];
 
+function parseAndValidatePPID(ppidRaw) {
+  const ppid = (ppidRaw || "").trim().toUpperCase();
+
+  if (ppid.length !== 23 || !/^[A-Z0-9]+$/.test(ppid)) {
+    throw new Error("PPID must be exactly 23 uppercase alphanumeric chars");
+  }
+
+  const prefix = ppid.slice(0, 3);
+  const dpn = ppid.slice(3, 8);
+  const factoryCodeRaw = ppid.slice(8, 13);
+  const dateCode = ppid.slice(13, 16);
+  const serial = ppid.slice(16, 20);
+  const rev = ppid.slice(20, 23);
+
+  if (!/^[A-Z0-9]{3}$/.test(prefix)) throw new Error("Invalid prefix format");
+  if (!/^[A-Z0-9]{5}$/.test(dpn)) throw new Error("Invalid DPN format");
+  if (!/^[A-Z0-9]{5}$/.test(factoryCodeRaw) || !FACTORY_MAP[factoryCodeRaw]) {
+    throw new Error(`Unknown or invalid factory code: ${factoryCodeRaw}`);
+  }
+  if (!/^[A-Z0-9]{3}$/.test(dateCode))
+    throw new Error("Invalid date code format");
+  const manufacturedDate = decodeDateCode(dateCode);
+  if (!manufacturedDate || isNaN(manufacturedDate.getTime())) {
+    throw new Error("Invalid date code (cannot decode)");
+  }
+  if (!/^[A-Z0-9]{4}$/.test(serial)) throw new Error("Invalid serial format");
+  if (!/^[A-Z0-9]{3}$/.test(rev)) throw new Error("Invalid revision format");
+
+  return { ppid, dpn, factoryCodeRaw, manufacturedDate, serial, rev };
+}
+
 /**
  * Assign a system to a pallet (or create a new pallet)
  * Pallets are segregated by factory_id AND dpn.
@@ -1262,42 +1293,94 @@ router.get("/:service_tag/history", async (req, res) => {
 
 // POST /api/v1/systems
 router.post("/", authenticateToken, async (req, res) => {
-  const { service_tag, issue, location_id, note } = req.body;
+  const { service_tag, issue, location_id, ppid, rack_service_tag } = req.body;
 
-  if (!service_tag || !location_id || !note) {
-    return res
-      .status(400)
-      .json({ error: "service_tag, location_id, and note are required" });
+  if (
+    !service_tag?.trim() ||
+    !location_id ||
+    !ppid?.trim() ||
+    !rack_service_tag?.trim()
+  ) {
+    return res.status(400).json({
+      error:
+        "service_tag, location_id, ppid, and rack_service_tag are required",
+    });
   }
 
+  let parsed;
   try {
-    await db.query("BEGIN");
+    parsed = parseAndValidatePPID(ppid);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
 
-    const insertSystem = await db.query(
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // DPN upsert from parsed.dpn
+    const upsertDpn = await client.query(
+      `INSERT INTO dpn (name) VALUES ($1)
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [parsed.dpn]
+    );
+    const dpn_id = upsertDpn.rows[0].id;
+
+    // factory_id via FACTORY_MAP
+    const factoryShort = FACTORY_MAP[parsed.factoryCodeRaw];
+    const facRes = await client.query(
+      `SELECT id FROM factory WHERE code = $1`,
+      [factoryShort]
+    );
+    const factory_id = facRes.rows[0]?.id || null;
+
+    // insert system (auto note is "added to system")
+    const ins = await client.query(
       `
-      INSERT INTO system (service_tag, issue, location_id)
-      VALUES ($1, $2, $3) RETURNING id
-    `,
-      [service_tag, issue, location_id]
+      INSERT INTO system
+        (service_tag, issue, location_id, ppid, dpn_id, factory_id,
+         manufactured_date, serial, rev, rack_service_tag)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id
+      `,
+      [
+        service_tag.trim().toUpperCase(),
+        issue ?? null,
+        location_id,
+        parsed.ppid,
+        dpn_id,
+        factory_id,
+        parsed.manufacturedDate,
+        parsed.serial,
+        parsed.rev,
+        rack_service_tag.trim().toUpperCase(),
+      ]
     );
 
-    const system_id = insertSystem.rows[0].id;
+    const system_id = ins.rows[0].id;
 
-    await db.query(
-      `
-      INSERT INTO system_location_history (system_id, from_location_id, to_location_id, note, moved_by)
-      VALUES ($1, NULL, $2, $3, $4)
-    `,
-      [system_id, location_id, note, req.user.userId]
+    await client.query(
+      `INSERT INTO system_location_history
+         (system_id, from_location_id, to_location_id, note, moved_by)
+       VALUES ($1, NULL, $2, $3, $4)`,
+      [system_id, location_id, "added to system", req.user.userId]
     );
 
-    await db.query("COMMIT");
-
-    res.status(201).json({ service_tag });
+    await client.query("COMMIT");
+    return res
+      .status(201)
+      .json({ service_tag: service_tag.trim().toUpperCase() });
   } catch (err) {
-    await db.query("ROLLBACK");
+    await client.query("ROLLBACK");
     console.error(err);
-    res.status(500).json({ error: "Failed to create system" });
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "Service tag already exists" });
+    }
+    return res.status(500).json({ error: "Failed to create system" });
+  } finally {
+    client.release();
   }
 });
 
@@ -1525,81 +1608,45 @@ router.patch("/:service_tag/issue", authenticateToken, async (req, res) => {
   }
 });
 
+// PATCH /api/v1/systems/:service_tag/ppid
 router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
   const { service_tag } = req.params;
   const { ppid } = req.body;
 
-  // Length check
-  if (!ppid || ppid.length !== 23) {
-    return res
-      .status(400)
-      .json({ error: "PPID must be exactly 23 characters" });
+  if (!ppid?.trim()) {
+    return res.status(400).json({ error: "ppid is required" });
   }
 
-  // Allowed chars check
-  if (!/^[A-Z0-9]+$/.test(ppid)) {
-    return res
-      .status(400)
-      .json({ error: "PPID must be uppercase alphanumeric" });
-  }
-
-  // Parse fields
-  const prefix = ppid.substring(0, 3);
-  const dpn = ppid.substring(3, 8);
-  const factoryCodeRaw = ppid.substring(8, 13);
-  const dateCode = ppid.substring(13, 16);
-  const serial = ppid.substring(16, 20);
-  const rev = ppid.substring(20, 23);
-
-  // Validate each part
-  if (!/^[A-Z0-9]{3}$/.test(prefix)) {
-    return res.status(400).json({ error: "Invalid prefix format" });
-  }
-  if (!/^[A-Z0-9]{5}$/.test(dpn)) {
-    return res.status(400).json({ error: "Invalid DPN format" });
-  }
-  if (!/^[A-Z0-9]{5}$/.test(factoryCodeRaw) || !FACTORY_MAP[factoryCodeRaw]) {
-    return res
-      .status(400)
-      .json({ error: `Unknown or invalid factory code: ${factoryCodeRaw}` });
-  }
-  if (!/^[A-Z0-9]{3}$/.test(dateCode)) {
-    return res.status(400).json({ error: "Invalid date code format" });
-  }
-  const manufacturedDate = decodeDateCode(dateCode);
-  if (!manufacturedDate || isNaN(manufacturedDate.getTime())) {
-    return res.status(400).json({ error: "Invalid date code (cannot decode)" });
-  }
-  if (!/^[A-Z0-9]{4}$/.test(serial)) {
-    return res.status(400).json({ error: "Invalid serial format" });
-  }
-  if (!/^[A-Z0-9]{3}$/.test(rev)) {
-    return res.status(400).json({ error: "Invalid revision format" });
+  let parsed;
+  try {
+    parsed = parseAndValidatePPID(ppid);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
   }
 
   try {
-    // Get factory_id from FACTORY_MAP
-    const factoryShortCode = FACTORY_MAP[factoryCodeRaw];
+    // factory_id
+    const factoryShortCode = FACTORY_MAP[parsed.factoryCodeRaw];
     const { rows } = await db.query("SELECT id FROM factory WHERE code = $1", [
       factoryShortCode,
     ]);
     const factoryId = rows.length ? rows[0].id : null;
 
-    // dpnCode is parsed from PPID (chars 4..8)
+    // dpn_id from parsed.dpn
     const upsert = await db.query(
       `INSERT INTO dpn (name) VALUES ($1)
        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
        RETURNING id`,
-      [dpn]
+      [parsed.dpn]
     );
     const dpnId = upsert.rows[0].id;
 
     const fields = [
-      { column: "ppid", value: ppid },
+      { column: "ppid", value: parsed.ppid },
       { column: "dpn_id", value: dpnId },
-      { column: "manufactured_date", value: manufacturedDate },
-      { column: "serial", value: serial },
-      { column: "rev", value: rev },
+      { column: "manufactured_date", value: parsed.manufacturedDate },
+      { column: "serial", value: parsed.serial },
+      { column: "rev", value: parsed.rev },
     ];
     if (factoryId) fields.push({ column: "factory_id", value: factoryId });
 
@@ -1608,10 +1655,14 @@ router.patch("/:service_tag/ppid", authenticateToken, async (req, res) => {
       .join(", ");
     const values = fields.map((f) => f.value);
 
-    await db.query(`UPDATE system SET ${setClauses} WHERE service_tag = $1`, [
-      service_tag,
-      ...values,
-    ]);
+    const result = await db.query(
+      `UPDATE system SET ${setClauses} WHERE service_tag = $1 RETURNING service_tag`,
+      [service_tag, ...values]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "System not found" });
+    }
 
     res.json({ message: "System PPID fields updated successfully" });
   } catch (err) {
