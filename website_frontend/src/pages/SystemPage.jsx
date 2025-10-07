@@ -253,13 +253,13 @@ function SystemPage() {
       // Optionally, you can also update the state directly if needed
       //setHistory((prev) => prev.slice(0, -1)); // remove last entry from state
     } catch (err) {
-      console.error(err.response);
-      showToast(
-        "Error deleting last location entry",
-        "error",
-        3000,
-        "bottom-right"
-      );
+      const message =
+        (err?.body && (err.body.error || err.body.message)) ||
+        err.message ||
+        "Error deleting last location entry";
+
+      console.error("Delete last history failed:", err.status, err.body || err);
+      showToast(message, "error", 3000, "bottom-right");
     }
   };
 
