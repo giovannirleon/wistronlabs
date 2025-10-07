@@ -1381,7 +1381,7 @@ router.post("/", authenticateToken, async (req, res) => {
       [
         system_id,
         location_id,
-        `added to system with issue ${issue}`,
+        `added to system with issue "${issue}"`,
         req.user.userId,
       ]
     );
