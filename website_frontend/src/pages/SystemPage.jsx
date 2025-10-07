@@ -328,7 +328,9 @@ function SystemPage() {
               : name;
             //push entry
             entries.push({
-              name: `L10 test ran on ${nameLocal}`,
+              name: nameLocal?.startsWith("L11")
+                ? nameLocal
+                : `L10 test ran on ${nameLocal}`,
               href: new URL(href, link).href, // RESOLVE robustly (handles absolute or relative)
               name_title: "File Name",
               date: formattedDate,
