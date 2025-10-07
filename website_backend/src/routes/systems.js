@@ -1394,11 +1394,11 @@ router.post("/", authenticateToken, async (req, res) => {
       const timer = setTimeout(() => controller.abort(), 5000); // 5s for ACK
       const stUpper = service_tag.trim().toUpperCase();
 
-      const resp = await fetch("http://host.docker.internal:9000/", {
+      const resp = await fetch("http://172.17.0.1:9000/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Auth-Token": process.env.HOST_RUNNER_TOKEN || "",
+          "X-Auth-Token": process.env.WEBHOOK_TOKEN || "",
         },
         body: JSON.stringify({
           script: "/opt/hooks/on-system-created.sh",

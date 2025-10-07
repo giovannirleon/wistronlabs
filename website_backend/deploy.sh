@@ -120,6 +120,14 @@ for loc in $selected; do
       ensure_newline
       echo \"INTERNAL_API_KEY=\$APIKEY\" >> .env
     fi
+
+    # --- WEBHOOK_TOKEN ---
+    if ! grep -q \"^WEBHOOK_TOKEN=\" .env; then
+      echo \"Generating new WEBHOOK_TOKEN...\"
+      TOKEN=\$(openssl rand -hex 32)
+      ensure_newline
+      echo \"WEBHOOK_TOKEN=\$TOKEN\" >> .env
+    fi
     '"
 
     # Start backend containers
