@@ -26,6 +26,16 @@ function SearchContainer({
   const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? false);
   const [searchTerm, setSearchTerm] = useState("");
 
+  // add near top of component body
+  const hasActionColumn =
+    !!onAction &&
+    (actionButtonVisibleIf === null ||
+      data.some(
+        (item) =>
+          item &&
+          item[actionButtonVisibleIf.field] === actionButtonVisibleIf.equals
+      ));
+
   const filteredDisplayOrder = visibleFields
     ? displayOrder.filter((field) => visibleFields.includes(field))
     : displayOrder;
@@ -110,31 +120,30 @@ function SearchContainer({
         ) : (
           <div>
             {/* Table header */}
-            <div className="flex items-center bg-white border border-gray-300 rounded px-4 py-2 mb-2">
+            <div className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 mb-2">
               {filteredDisplayOrder.map((field, fieldIndex) => {
                 const isFirst = fieldIndex === 0;
-                const isLast = fieldIndex === displayOrder.length - 1;
+                const isLastDataCol =
+                  fieldIndex === filteredDisplayOrder.length - 1;
 
                 const alignment = isFirst
                   ? "text-left"
-                  : isLast
+                  : isLastDataCol
                   ? "text-right"
                   : "text-left";
-
                 const headerLabel = getHeaderLabel(data, field);
 
                 return (
                   <button
                     key={field}
                     className={`text-gray-500 text-sm flex-1 ${alignment} ${
-                      !allowSort ? "cursor-default" : ""
-                    }`}
+                      hasActionColumn && isLastDataCol ? "pr-3 sm:pr-4" : ""
+                    } ${!allowSort ? "cursor-default" : ""}`}
                     disabled={!allowSort}
                     onClick={() => {
                       if (!allowSort) return;
-                      if (sortBy === field) {
-                        setSortAsc(!sortAsc);
-                      } else {
+                      if (sortBy === field) setSortAsc(!sortAsc);
+                      else {
                         setSortBy(field);
                         setSortAsc(true);
                       }
@@ -146,13 +155,9 @@ function SearchContainer({
                 );
               })}
 
-              {/* Optional empty header cell for action button */}
-              {onAction && (
-                <span
-                  className={`text-gray-500 text-sm w-4 text-right`}
-                  aria-hidden
-                >
-                  {/* could also put text like "Action" */}
+              {hasActionColumn && (
+                <span className="shrink-0 w-10 text-right text-gray-500 text-sm">
+                  Action
                 </span>
               )}
             </div>

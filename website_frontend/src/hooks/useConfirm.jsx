@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function useConfirm() {
   const [isOpen, setIsOpen] = useState(false);
@@ -36,6 +36,18 @@ export default function useConfirm() {
     setIsOpen(false);
     resolveFn(false);
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, handleCancel, handleConfirm]);
 
   const ConfirmDialog = () =>
     isOpen ? (

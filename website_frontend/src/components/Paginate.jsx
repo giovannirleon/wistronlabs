@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import ReactPaginate from "react-paginate";
 
@@ -24,11 +24,13 @@ function Items({
     <>
       {currentItems.map((item, index) => {
         const commonClasses =
-          "flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 my-1";
-
+          "flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 my-1 select-text";
         if (!item) {
           return (
-            <div key={index} className={commonClasses + " invisible"}>
+            <div
+              key={`placeholder-${index}`}
+              className={commonClasses + " invisible"}
+            >
               {filteredDisplayOrder.map((field, fieldIndex) => {
                 const alignment =
                   fieldIndex === 0
@@ -44,20 +46,26 @@ function Items({
                 return (
                   <span
                     key={field}
-                    className={`flex-1 ${alignment} ${truncateClasses}`}
+                    className={`flex-1 ${alignment} ${truncateClasses} select-text ${
+                      hasActionColumn &&
+                      fieldIndex === filteredDisplayOrder.length - 1
+                        ? "pr-3 sm:pr-4"
+                        : ""
+                    }`}
                   >
                     filler
                   </span>
                 );
               })}
+
               {hasActionColumn && (
-                <button
-                  type="button"
-                  className={`${actionButtonClass} invisible`}
-                  aria-hidden
-                >
-                  ×
-                </button>
+                <div className="shrink-0 w-7 flex justify-end">
+                  <button
+                    type="button"
+                    className={`${actionButtonClass} invisible inline-flex items-center justify-center rounded-full w-7 h-7 border`}
+                    aria-hidden
+                  />
+                </div>
               )}
             </div>
           );
@@ -102,7 +110,12 @@ function Items({
           return (
             <span
               key={field}
-              className={`flex-1 ${alignment} ${classes} ${truncateClasses}`}
+              className={`flex-1 ${alignment} ${classes} ${truncateClasses} select-text ${
+                hasActionColumn &&
+                fieldIndex === filteredDisplayOrder.length - 1
+                  ? "pr-3 sm:pr-4"
+                  : ""
+              }`}
             >
               {content}
             </span>
@@ -114,21 +127,27 @@ function Items({
           (!actionButtonVisibleIf ||
             item[actionButtonVisibleIf.field] === actionButtonVisibleIf.equals);
 
-        const ActionButton = hasActionColumn ? (
-          <button
-            type="button"
-            className={`${actionButtonClass} ${
-              isButtonVisible ? "" : "invisible"
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isButtonVisible) onAction?.(item);
-            }}
-            aria-label="Action"
-            title="Action"
-          >
-            ×
-          </button>
+        const ActionCell = hasActionColumn ? (
+          <div className="shrink-0 w-10 flex justify-end">
+            <button
+              type="button"
+              className={`${actionButtonClass} ${
+                isButtonVisible ? "" : "invisible"
+              } 
+                  inline-flex items-center justify-center rounded-full 
+                  w-7 h-7 text-2xl leading-none border border-gray-300 
+                  bg-white hover:bg-blue-50 focus:outline-none 
+                  focus-visible:ring-2 focus-visible:ring-blue-600`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isButtonVisible) onAction?.(item);
+              }}
+              aria-label="Action"
+              title="Action"
+            >
+              X
+            </button>
+          </div>
         ) : null;
 
         const Wrapper = ({ children }) => {
@@ -190,9 +209,9 @@ function Items({
         };
 
         return (
-          <Wrapper key={index}>
+          <Wrapper key={item.id ?? item.link ?? `${item.changed_at}-${index}`}>
             {RowContent}
-            {ActionButton}
+            {ActionCell}
           </Wrapper>
         );
       })}
@@ -237,17 +256,22 @@ export default function PaginatedItems({
   }, [searchTerm, items.length, defaultPage, pageCount]);
 
   const endOffset = itemOffset + itemsPerPage;
-  const currentItems = items.slice(itemOffset, endOffset);
-
+  const currentItems = useMemo(
+    () => items.slice(itemOffset, endOffset),
+    [items, itemOffset, endOffset]
+  );
   const handlePageClick = ({ selected }) => {
     const newOffset = selected * itemsPerPage;
     setItemOffset(newOffset);
   };
 
-  const paddedItems = [
-    ...currentItems,
-    ...Array(itemsPerPage - currentItems.length).fill(null),
-  ];
+  const paddedItems = useMemo(
+    () => [
+      ...currentItems,
+      ...Array(itemsPerPage - currentItems.length).fill(null),
+    ],
+    [currentItems, itemsPerPage]
+  );
 
   return (
     <>

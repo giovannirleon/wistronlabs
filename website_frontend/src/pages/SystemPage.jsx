@@ -516,7 +516,7 @@ function SystemPage() {
       } catch (err) {
         console.error("Failed to fetch stations:", err);
       }
-    }, 1000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, []);
@@ -532,7 +532,7 @@ function SystemPage() {
   }, [isResolved]);
 
   const target = serviceTag.trim().toUpperCase();
-
+  console.log("TEST");
   const isInPalletNumber =
     releasedPallets.find((p) =>
       p.active_systems?.some(
@@ -912,9 +912,9 @@ function SystemPage() {
                     allowSearch={false}
                     defaultPage="last"
                     truncate={isMobile ?? true}
-                    onAction={handleDeleteLastHistoryEntry}
+                    onAction={token && handleDeleteLastHistoryEntry}
                     actionButtonClass={
-                      "ml-2 text-xs text-grey-200 hover:text-red-400"
+                      token && "ml-2 text-xs text-grey-200 hover:text-red-400"
                     }
                     actionButtonVisibleIf={{
                       field: "changed_at",

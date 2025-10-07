@@ -1378,7 +1378,12 @@ router.post("/", authenticateToken, async (req, res) => {
       `INSERT INTO system_location_history
          (system_id, from_location_id, to_location_id, note, moved_by)
        VALUES ($1, NULL, $2, $3, $4)`,
-      [system_id, location_id, "added to system", req.user.userId]
+      [
+        system_id,
+        location_id,
+        `added to system with issue ${issue}`,
+        req.user.userId,
+      ]
     );
 
     await client.query("COMMIT");

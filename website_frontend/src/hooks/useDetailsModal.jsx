@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { DateTime } from "luxon";
 import useApi from "./useApi";
 
@@ -42,11 +42,26 @@ export default function useDetailsModal(showToast, onUpdated) {
       await navigator.clipboard.writeText(details.ppid);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
-      showToast?.("PPID copied", "success", 1500, "bottom-right");
+      // showToast?.("PPID copied", "success", 1500, "bottom-right");
     } catch {
-      showToast?.("Failed to copy PPID", "error", 2000, "bottom-right");
+      //showToast?.("Failed to copy PPID", "error", 2000, "bottom-right");
     }
   };
+
+  // ⬇️ Close on Esc when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeDetails(); // ensures all related state resets
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, closeDetails]);
 
   const handleManualSubmit = async (e) => {
     e.preventDefault();
