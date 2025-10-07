@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { DateTime } from "luxon";
 
-const PROGRESS_WINDOW_MIN = 100; // how long until the bar reaches 100%
+const PROGRESS_WINDOW_MIN = 110; // how long until the bar reaches 100%
 
 function Station({
   stationInfo,
