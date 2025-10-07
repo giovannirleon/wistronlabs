@@ -1385,14 +1385,13 @@ router.post("/", authenticateToken, async (req, res) => {
 
     // respond immediately
     const stUpper = service_tag.trim().toUpperCase();
+    const rackUpper = rack_service_tag.trim().toUpperCase();
     res.status(201).json({ service_tag: stUpper });
 
     // fire-and-forget webhook AFTER response
-    // inside your POST /api/v1/systems after COMMIT
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000); // 5s for ACK
-      const stUpper = service_tag.trim().toUpperCase();
 
       const resp = await fetch("http://172.17.0.1:9000/", {
         method: "POST",
@@ -1402,9 +1401,8 @@ router.post("/", authenticateToken, async (req, res) => {
         },
         body: JSON.stringify({
           script: "/opt/hooks/on-system-created.sh",
-          args: [stUpper],
-          wait: "ack", // immediate acknowledgement
-          // Or: wait: "done", timeout: 3  // try to wait up to 3s for completion
+          args: [stUpper, rackUpper], // <-- unit, rack
+          wait: "ack", // immediate acknowledgement from host-runner
         }),
         signal: controller.signal,
       });
