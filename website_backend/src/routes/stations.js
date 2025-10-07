@@ -9,6 +9,7 @@ router.get("/", async (req, res) => {
     const { rows } = await db.query(`
       SELECT s.id, s.station_name, s.status, s.message,
              s.system_id,
+             s.last_updated,
              sys.service_tag AS system_service_tag
       FROM station s
       LEFT JOIN system sys ON s.system_id = sys.id
@@ -29,6 +30,7 @@ router.get("/:station_name", async (req, res) => {
       `
       SELECT s.id, s.station_name, s.status, s.message,
              s.system_id,
+             s.last_updated,
              sys.service_tag AS system_service_tag
       FROM station s
       LEFT JOIN system sys ON s.system_id = sys.id
@@ -50,48 +52,75 @@ router.get("/:station_name", async (req, res) => {
 // PATCH one station by station_name
 router.patch("/:station_name", async (req, res) => {
   const station_name = req.params.station_name;
+  // Only these fields affect last_updated
   const { system_id, status, message } = req.body;
 
-  const updates = [];
-  const values = [];
-  let idx = 1;
-
-  if ("system_id" in req.body) {
-    updates.push(`system_id = $${idx++}`);
-    values.push(system_id);
-  }
-  if ("status" in req.body) {
-    updates.push(`status = $${idx++}`);
-    values.push(status);
-  }
-  if ("message" in req.body) {
-    updates.push(`message = $${idx++}`);
-    values.push(message);
-  }
-
-  if (updates.length === 0) {
-    return res.status(400).json({ error: "No fields provided to update" });
-  }
-
-  values.push(station_name);
-
-  const sql = `
-    UPDATE station
-    SET ${updates.join(", ")}
-    WHERE station_name = $${idx}
-  `;
-
   try {
-    const { rowCount } = await db.query(sql, values);
-
-    if (rowCount === 0) {
+    // 1) Load current values
+    const curRes = await db.query(
+      `SELECT system_id, status, message, last_updated FROM station WHERE station_name = $1`,
+      [station_name]
+    );
+    if (curRes.rowCount === 0) {
       return res.status(404).json({ error: "Station not found" });
     }
+    const current = curRes.rows[0];
 
-    res.json({ message: "Station updated" });
+    // 2) Determine effective changes (ignore same-value updates)
+    const updates = [];
+    const values = [];
+    let i = 1;
+
+    const wantSystem = Object.prototype.hasOwnProperty.call(
+      req.body,
+      "system_id"
+    );
+    const wantStatus = Object.prototype.hasOwnProperty.call(req.body, "status");
+    const wantMessage = Object.prototype.hasOwnProperty.call(
+      req.body,
+      "message"
+    );
+
+    if (wantSystem && system_id !== current.system_id) {
+      updates.push(`system_id = $${i++}`);
+      values.push(system_id);
+    }
+    if (wantStatus && status !== current.status) {
+      updates.push(`status = $${i++}`);
+      values.push(status);
+    }
+    if (wantMessage && (message ?? "") !== (current.message ?? "")) {
+      updates.push(`message = $${i++}`);
+      values.push(message ?? "");
+    }
+
+    // Nothing really changed → return current state without bumping last_updated
+    if (updates.length === 0) {
+      return res.json({
+        message: "No effective changes",
+        last_updated: current.last_updated,
+      });
+    }
+
+    // 3) Apply changes + bump last_updated
+    updates.push(`last_updated = NOW()`);
+
+    values.push(station_name);
+    const sql = `
+      UPDATE station
+         SET ${updates.join(", ")}
+       WHERE station_name = $${i}
+       RETURNING station_name, system_id, status, message, last_updated
+    `;
+
+    const updRes = await db.query(sql, values);
+    return res.json({
+      message: "Station updated",
+      ...updRes.rows[0],
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update station" });
+    return res.status(500).json({ error: "Failed to update station" });
   }
 });
 
@@ -124,11 +153,11 @@ router.post("/", async (req, res) => {
   try {
     const result = await db.query(
       `
-      INSERT INTO station (station_name, system_id, status, message)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO station (station_name, system_id, status, message, last_updated)
+      VALUES ($1, $2, $3, $4, NOW())
       RETURNING *
       `,
-      [station_name, system_id || null, status || 0, message || ""]
+      [station_name, system_id ?? null, status ?? 0, message ?? ""]
     );
 
     res.status(201).json(result.rows[0]);
