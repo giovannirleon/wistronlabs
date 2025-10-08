@@ -783,7 +783,7 @@ router.get("/snapshot", async (req, res) => {
         d.config AS config,
         d.dell_customer AS dell_customer,
         l.name   AS location,
-        to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
+        to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
         ${selectNotesAggregate}
         , to_char(first_history.first_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
         ${
@@ -845,6 +845,7 @@ router.get("/snapshot", async (req, res) => {
     const header = [
       "First Received On",
       "Last Received On",
+      "Date Modified",
       "PIC",
       "From",
       "Status",
@@ -892,6 +893,10 @@ router.get("/snapshot", async (req, res) => {
           ? fmtDateTime.format(new Date(r.last_received_on))
           : "";
 
+      const modifiedLocal = r.date_modified
+        ? fmtDateTime.format(new Date(r.date_modified))
+        : "";
+
       const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
 
       let noteHistoryText = "";
@@ -919,6 +924,7 @@ router.get("/snapshot", async (req, res) => {
       const row = [
         firstLocal, // was r.first_received_on
         includeReceivedFlag ? lastLocal : "", // was r.last_received_on
+        modifiedLocal,
         pic,
         r.factory_code || "",
         r.location || "",
