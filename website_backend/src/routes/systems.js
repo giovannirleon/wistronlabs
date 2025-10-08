@@ -961,7 +961,7 @@ router.get("/snapshot", async (req, res) => {
         r.location || "",
         r.service_tag || "",
         r.dpn || "",
-        r.config || "",
+        `Config ${r.config}` || "",
         r.dell_customer || "",
         r.issue || "",
         noteHistoryText,
