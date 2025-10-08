@@ -781,6 +781,7 @@ router.get("/snapshot", async (req, res) => {
         s.issue,
         d.name   AS dpn,
         d.config AS config,
+        d.dell_customer AS dell_customer,
         l.name   AS location,
         to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of
         ${selectNotesAggregate}
@@ -850,6 +851,7 @@ router.get("/snapshot", async (req, res) => {
       "Service Tag",
       "DPN",
       "Config",
+      "Dell Customer",
       "Issue",
       "Note History",
     ];
@@ -918,11 +920,12 @@ router.get("/snapshot", async (req, res) => {
         firstLocal, // was r.first_received_on
         includeReceivedFlag ? lastLocal : "", // was r.last_received_on
         pic,
-        r.factory_code || "Not Set",
+        r.factory_code || "",
         r.location || "",
         r.service_tag || "",
-        r.dpn || "Not Set",
-        r.config || "Not Set",
+        r.dpn || "",
+        r.config || "",
+        r.dell_customer || "",
         r.issue || "",
         noteHistoryText,
       ].map(csvEsc);
