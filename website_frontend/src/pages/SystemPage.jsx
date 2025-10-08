@@ -859,7 +859,7 @@ function SystemPage() {
                     ]}
                     visibleFields={
                       isMobile
-                        ? ["to_location", "note", "moved_by"]
+                        ? ["to_location", "note"]
                         : ["to_location", "note", "moved_by", "changed_at"]
                     }
                     defaultSortBy={"changed_at"}
