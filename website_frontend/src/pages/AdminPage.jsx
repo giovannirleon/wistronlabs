@@ -20,6 +20,10 @@ function AdminPage() {
     createFactory,
     updateFactory,
     deleteFactory,
+    getParts,
+    createPart,
+    updatePart,
+    deletePart,
   } = useApi();
   const [users, setUsers] = useState([]);
   const [baselineUsers, setBaselineUsers] = useState([]); // snapshot to diff from
@@ -48,12 +52,44 @@ function AdminPage() {
   const [factoryQ, setFactoryQ] = useState("");
   const [deletingFactoryId, setDeletingFactoryId] = useState(null);
 
+  // Parts
+  const [parts, setParts] = useState([]);
+  const [baselineParts, setBaselineParts] = useState([]);
+  const [partLoading, setPartLoading] = useState(false);
+  const [partSaving, setPartSaving] = useState(false);
+  const [partErr, setPartErr] = useState(null);
+  const [partQ, setPartQ] = useState("");
+  const [deletingPartId, setDeletingPartId] = useState(null);
+
   // username -> original isAdmin
   const baselineMap = useMemo(() => {
     const m = {};
     for (const u of baselineUsers) m[u.username.toLowerCase()] = !!u.isAdmin;
     return m;
   }, [baselineUsers]);
+
+  useEffect(() => {
+    let alive = true;
+    const loadParts = async () => {
+      if (tab !== "parts" || partLoading || baselineParts.length) return;
+      try {
+        setPartLoading(true);
+        const list = await getParts();
+        if (!alive) return;
+        setParts(list || []);
+        setBaselineParts(list || []);
+      } catch (e) {
+        if (!alive) return;
+        setPartErr(e.message || "Failed to load parts");
+      } finally {
+        if (alive) setPartLoading(false);
+      }
+    };
+    loadParts();
+    return () => {
+      alive = false;
+    };
+  }, [tab]);
 
   useEffect(() => {
     let alive = true;
@@ -204,6 +240,123 @@ function AdminPage() {
       );
     });
   }, [factories, factoryBaselineMap]);
+
+  const partBaselineMap = useMemo(() => {
+    const m = new Map();
+    baselineParts.forEach((p) => m.set(p.id, { name: p.name }));
+    return m;
+  }, [baselineParts]);
+
+  const filteredParts = useMemo(() => {
+    const q = partQ.trim().toLowerCase();
+    if (!q) return parts;
+    return parts.filter((p) => (p.name || "").toLowerCase().includes(q));
+  }, [parts, partQ]);
+
+  const partHasChanges = useMemo(() => {
+    return parts.some((p) => {
+      if (typeof p.id !== "number") return !!p.name?.trim();
+      const base = partBaselineMap.get(p.id);
+      return base && base.name !== p.name;
+    });
+  }, [parts, partBaselineMap]);
+
+  const sanitizePartName = (s = "") => s.trim().toUpperCase(); // match your DPN/Factory style
+
+  const addBlankPartRow = () => {
+    const newId = `new-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+    setParts((cur) => [{ id: newId, name: "" }, ...cur]);
+  };
+
+  const onPartCellChange = (id, value) => {
+    setParts((cur) =>
+      cur.map((p) => (p.id === id ? { ...p, name: value } : p))
+    );
+  };
+
+  const onPartDiscard = () => {
+    setParts(baselineParts);
+    setPartErr(null);
+  };
+
+  const onPartSave = async (e) => {
+    e.preventDefault();
+    setPartErr(null);
+    if (!partHasChanges) return;
+
+    setPartSaving(true);
+    try {
+      // new vs changed
+      const newRows = parts.filter(
+        (p) => typeof p.id !== "number" && p.name?.trim()
+      );
+      const changedRows = parts.filter((p) => {
+        if (typeof p.id !== "number") return false;
+        const base = partBaselineMap.get(p.id);
+        return base && base.name !== p.name;
+      });
+
+      // create
+      for (const row of newRows) {
+        const name = sanitizePartName(row.name);
+        if (!name)
+          throw new Error(`Row "${row.name || "(new)"}": Name required`);
+        await createPart({ name });
+      }
+
+      // update
+      for (const row of changedRows) {
+        const base = partBaselineMap.get(row.id);
+        const nameSan = sanitizePartName(row.name);
+        if (nameSan !== base.name) {
+          await updatePart(row.id, { name: nameSan });
+        }
+      }
+
+      // refresh
+      const fresh = await getParts();
+      setParts(fresh || []);
+      setBaselineParts(fresh || []);
+    } catch (e2) {
+      console.error("Saving parts failed:", e2);
+      setPartErr(e2.message || "Failed to save parts");
+    } finally {
+      setPartSaving(false);
+    }
+  };
+
+  const handleDeletePart = async (row) => {
+    if (typeof row.id !== "number") {
+      setParts((cur) => cur.filter((p) => p.id !== row.id));
+      return;
+    }
+    const confirmed = await confirm({
+      title: "Confirm Deletion",
+      message: `Delete part "${row.name}"?`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      confirmClass: "bg-red-600 text-white hover:bg-red-700",
+      cancelClass: "bg-gray-200 text-gray-700 hover:bg-gray-300",
+    });
+    if (!confirmed) {
+      showToast("Deletion cancelled", "info", 3000, "bottom-right");
+      return;
+    }
+    try {
+      setDeletingPartId(row.id);
+      await deletePart(row.id);
+      setParts((cur) => cur.filter((p) => p.id !== row.id));
+      setBaselineParts((cur) => cur.filter((p) => p.id !== row.id));
+      showToast(`Deleted ${row.name}`, "success", 2200, "bottom-right");
+    } catch (e) {
+      const msg = e?.body?.error || e?.message || "Failed to delete part";
+      showToast(msg, "error", 3500, "bottom-right");
+    } finally {
+      setDeletingPartId(null);
+    }
+  };
 
   const sanitizeFactoryField = (s = "") => s.trim().toUpperCase();
 
@@ -577,6 +730,16 @@ function AdminPage() {
             }`}
           >
             Factories
+          </button>
+          <button
+            onClick={() => setTab("parts")}
+            className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 ${
+              tab === "parts"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Parts
           </button>
         </div>
 
@@ -979,6 +1142,134 @@ function AdminPage() {
                 }`}
               >
                 {factorySaving ? "Saving…" : "Save Factories"}
+              </button>
+            </div>
+          </form>
+        )}
+        {tab === "parts" && (
+          <form onSubmit={onPartSave} className="space-y-4">
+            {/* Toolbar */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={addBlankPartRow}
+                  className="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  + Add row
+                </button>
+                <div className="relative">
+                  <input
+                    value={partQ}
+                    onChange={(e) => setPartQ(e.target.value)}
+                    placeholder="Search part name"
+                    className="rounded-lg border border-gray-300 px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="absolute left-3 top-2.5 text-gray-400">
+                    🔎
+                  </span>
+                </div>
+              </div>
+              <div className="flex-1" />
+              {partErr && <div className="text-red-600 text-sm">{partErr}</div>}
+            </div>
+
+            {/* Grid */}
+            <div className="overflow-auto rounded-xl border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="text-left font-medium px-3 py-2">Part</th>
+                    <th className="text-right font-medium px-3 py-2 w-28">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {partLoading ? (
+                    <tr>
+                      <td
+                        colSpan={2}
+                        className="px-3 py-6 text-center text-gray-500"
+                      >
+                        Loading…
+                      </td>
+                    </tr>
+                  ) : filteredParts.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={2}
+                        className="px-3 py-6 text-center text-gray-500"
+                      >
+                        No matching parts
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredParts.map((p) => {
+                      const isNew = typeof p.id !== "number";
+                      const base = isNew ? null : partBaselineMap.get(p.id);
+                      const changed = isNew || (base && base.name !== p.name);
+
+                      return (
+                        <tr
+                          key={p.id}
+                          className={changed ? "bg-amber-50/40" : ""}
+                        >
+                          <td className="px-3 py-2 align-middle">
+                            <input
+                              value={p.name ?? ""}
+                              onChange={(e) =>
+                                onPartCellChange(p.id, e.target.value)
+                              }
+                              className={`w-full rounded-md border px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                changed ? "border-amber-300" : "border-gray-300"
+                              }`}
+                              placeholder="e.g. FAN MODULE"
+                            />
+                          </td>
+                          <td className="px-3 py-2 align-middle">
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePart(p)}
+                                disabled={deletingPartId === p.id || partSaving}
+                                className="px-3 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                title="Delete Part"
+                              >
+                                {deletingPartId === p.id
+                                  ? "Deleting…"
+                                  : "Delete"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Actions */}
+            <div className="sticky bottom-0 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-t pt-3 pb-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onPartDiscard}
+                disabled={partSaving || !partHasChanges}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Discard changes
+              </button>
+              <button
+                type="submit"
+                disabled={partSaving || !partHasChanges}
+                className={`px-4 py-2 rounded-lg text-white ${
+                  partHasChanges
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-blue-300 cursor-not-allowed"
+                }`}
+              >
+                {partSaving ? "Saving…" : "Save Parts"}
               </button>
             </div>
           </form>

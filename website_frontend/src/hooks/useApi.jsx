@@ -414,6 +414,31 @@ function useApi() {
       method: "DELETE",
     });
 
+  // PARTS (same pattern as DPNs/Factories)
+  const getParts = ({ q } = {}) =>
+    fetchJSON(`/systems/part${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+
+  const createPart = ({ name }) =>
+    fetchJSON(`/systems/part`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: String(name || "").trim() }),
+    });
+
+  const updatePart = (id, payload) =>
+    fetchJSON(`/systems/part/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: String(payload?.name || "").trim(),
+      }),
+    });
+
+  const deletePart = (id) =>
+    fetchJSON(`/systems/part/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+
   const getMe = () => fetchJSON(`/auth/me`);
 
   const getUsers = ({ page, page_size, search, is_admin } = {}) => {
@@ -475,6 +500,10 @@ function useApi() {
     getMe,
     getUsers,
     setUserAdmin,
+    getParts,
+    createPart,
+    updatePart,
+    deletePart,
   };
 }
 

@@ -178,28 +178,39 @@ function isPgUniqueViolation(err) {
   return err && err.code === "23505";
 }
 
-
-
 // ---------- PART CRUD ----------
 
-// GET /api/v1/systems/part  (?q= to search by name)
+// GET /api/v1/systems/part  (?q= to search by part name, ?category_id=123 to filter)
 router.get("/part", async (req, res) => {
-  const { q } = req.query;
-  try {
-    if (q && q.trim()) {
-      const like = `%${q.trim()}%`;
-      const { rows } = await db.query(
-        `SELECT id, name
-           FROM parts
-          WHERE name ILIKE $1
-          ORDER BY name ASC`,
-        [like]
-      );
-      return res.json(rows);
-    }
+  const { q, category_id } = req.query;
+  const params = [];
+  const where = [];
 
+  if (q && q.trim()) {
+    params.push(`%${q.trim()}%`);
+    where.push(`p.name ILIKE $${params.length}`);
+  }
+  if (category_id) {
+    params.push(category_id);
+    where.push(`p.part_category_id = $${params.length}`);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  try {
     const { rows } = await db.query(
-      `SELECT id, name FROM parts ORDER BY name ASC`
+      `
+      SELECT
+        p.id,
+        p.name,
+        p.part_category_id,
+        pc.name AS category_name
+      FROM parts p
+      LEFT JOIN part_categories pc ON pc.id = p.part_category_id
+      ${whereSql}
+      ORDER BY p.name ASC
+      `,
+      params
     );
     return res.json(rows);
   } catch (e) {
@@ -212,7 +223,16 @@ router.get("/part", async (req, res) => {
 router.get("/part/:id", async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, name FROM parts WHERE id = $1`,
+      `
+      SELECT
+        p.id,
+        p.name,
+        p.part_category_id,
+        pc.name AS category_name
+      FROM parts p
+      LEFT JOIN part_categories pc ON pc.id = p.part_category_id
+      WHERE p.id = $1
+      `,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "Part not found" });
@@ -223,23 +243,25 @@ router.get("/part/:id", async (req, res) => {
   }
 });
 
-// POST /api/v1/systems/part   (admin)
+// POST /api/v1/systems/part   { name, part_category_id? }  (admin)
 router.post("/part", authenticateToken, ensureAdmin, async (req, res) => {
-  const { name } = req.body || {};
-  if (!name?.trim()) {
+  const { name, part_category_id } = req.body || {};
+  const cleanName = (name || "").trim();
+  if (!cleanName) {
     return res.status(400).json({ error: "name is required" });
   }
   try {
     const { rows } = await db.query(
-      `INSERT INTO parts (name)
-       VALUES ($1)
-       RETURNING id, name`,
-      [name.trim()]
+      `
+      INSERT INTO parts (name, part_category_id)
+      VALUES ($1, $2)
+      RETURNING id, name, part_category_id
+      `,
+      [cleanName, part_category_id || null]
     );
     return res.status(201).json(rows[0]);
   } catch (e) {
     console.error(e);
-    // will trigger if you add a unique index on name later
     if (isPgUniqueViolation(e)) {
       return res.status(409).json({ error: "Part name already exists" });
     }
@@ -247,19 +269,33 @@ router.post("/part", authenticateToken, ensureAdmin, async (req, res) => {
   }
 });
 
-// PATCH /api/v1/systems/part/:id   (admin)
+// PATCH /api/v1/systems/part/:id   { name?, part_category_id? }  (admin)
 router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
-  const { name } = req.body || {};
-  if (typeof name === "undefined") {
+  const { name, part_category_id } = req.body || {};
+
+  const fields = [];
+  const vals = [];
+  if (typeof name !== "undefined") {
+    fields.push(`name = $${fields.length + 1}`);
+    vals.push(String(name || "").trim());
+  }
+  if (typeof part_category_id !== "undefined") {
+    fields.push(`part_category_id = $${fields.length + 1}`);
+    vals.push(part_category_id || null);
+  }
+  if (!fields.length) {
     return res.status(400).json({ error: "Nothing to update" });
   }
+
   try {
     const { rows } = await db.query(
-      `UPDATE parts
-          SET name = $1
-        WHERE id = $2
-    RETURNING id, name`,
-      [String(name ?? "").trim(), req.params.id]
+      `
+      UPDATE parts
+         SET ${fields.join(", ")}
+       WHERE id = $${fields.length + 1}
+   RETURNING id, name, part_category_id
+      `,
+      [...vals, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "Part not found" });
     return res.json(rows[0]);
@@ -272,28 +308,143 @@ router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/v1/systems/part/:id   (admin)
-router.delete(
-  "/part/:id",
+// ---------- PART CATEGORY CRUD ----------
+
+// GET /api/v1/systems/part-category (?q= to search by name)
+router.get("/part-category", async (req, res) => {
+  const { q } = req.query;
+  try {
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      const { rows } = await db.query(
+        `SELECT id, name
+           FROM part_categories
+          WHERE name ILIKE $1
+          ORDER BY name ASC`,
+        [like]
+      );
+      return res.json(rows);
+    }
+    const { rows } = await db.query(
+      `SELECT id, name FROM part_categories ORDER BY name ASC`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to list part categories" });
+  }
+});
+
+// GET /api/v1/systems/part-category/:id
+router.get("/part-category/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name FROM part_categories WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length)
+      return res.status(404).json({ error: "Part category not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to fetch part category" });
+  }
+});
+
+// POST /api/v1/systems/part-category (admin)
+router.post(
+  "/part-category",
   authenticateToken,
   ensureAdmin,
   async (req, res) => {
+    const { name } = req.body || {};
+    if (!name?.trim()) {
+      return res.status(400).json({ error: "name is required" });
+    }
     try {
-      // If later you reference parts from other tables, add a guard here.
-      const del = await db.query(`DELETE FROM parts WHERE id = $1`, [
-        req.params.id,
-      ]);
-      if (del.rowCount === 0) {
-        return res.status(404).json({ error: "Part not found" });
-      }
-      return res.json({ message: "Part deleted" });
+      const { rows } = await db.query(
+        `INSERT INTO part_categories (name)
+         VALUES ($1)
+         RETURNING id, name`,
+        [name.trim()]
+      );
+      return res.status(201).json(rows[0]);
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ error: "Failed to delete part" });
+      if (isPgUniqueViolation(e)) {
+        return res
+          .status(409)
+          .json({ error: "Part category name already exists" });
+      }
+      return res.status(500).json({ error: "Failed to create part category" });
     }
   }
 );
 
+// PATCH /api/v1/systems/part-category/:id (admin)
+router.patch(
+  "/part-category/:id",
+  authenticateToken,
+  ensureAdmin,
+  async (req, res) => {
+    const { name } = req.body || {};
+    if (typeof name === "undefined") {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+    try {
+      const { rows } = await db.query(
+        `UPDATE part_categories
+            SET name = $1
+          WHERE id = $2
+      RETURNING id, name`,
+        [String(name ?? "").trim(), req.params.id]
+      );
+      if (!rows.length)
+        return res.status(404).json({ error: "Part category not found" });
+      return res.json(rows[0]);
+    } catch (e) {
+      console.error(e);
+      if (isPgUniqueViolation(e)) {
+        return res
+          .status(409)
+          .json({ error: "Part category name already exists" });
+      }
+      return res.status(500).json({ error: "Failed to update part category" });
+    }
+  }
+);
+
+// DELETE /api/v1/systems/part-category/:id (admin)
+// If referenced by parts, block with 409.
+router.delete(
+  "/part-category/:id",
+  authenticateToken,
+  ensureAdmin,
+  async (req, res) => {
+    try {
+      const { rows: ref } = await db.query(
+        `SELECT EXISTS(SELECT 1 FROM parts WHERE part_category_id = $1) AS used`,
+        [req.params.id]
+      );
+      if (ref[0].used) {
+        return res.status(409).json({
+          error: "Cannot delete category: referenced by parts",
+        });
+      }
+
+      const del = await db.query(`DELETE FROM part_categories WHERE id = $1`, [
+        req.params.id,
+      ]);
+      if (del.rowCount === 0) {
+        return res.status(404).json({ error: "Part category not found" });
+      }
+      return res.json({ message: "Part category deleted" });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Failed to delete part category" });
+    }
+  }
+);
 
 // ---------- FACTORY CRUD ----------
 
