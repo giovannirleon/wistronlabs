@@ -1,56 +1,52 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { DateTime } from "luxon";
 import useApi from "../hooks/useApi";
 
 function Footer() {
-  const [baseTime, setBaseTime] = useState(null);
-  const [secondsElapsed, setSecondsElapsed] = useState(0);
   const { getServerTime } = useApi();
+  const [serverZone, setServerZone] = useState(null);
+  const [tick, setTick] = useState(0); // increments every second
 
-  // Fetch server time once
+  // 1) Get server timezone once
   useEffect(() => {
-    const fetchTime = async () => {
-      const response = await getServerTime();
-      setBaseTime(response.localtime); // keep the server's string
-      setSecondsElapsed(0);
+    let alive = true;
+    (async () => {
+      try {
+        const res = await getServerTime(); // expect { zone: "America/Chicago", localtime: "..." }
+        if (!alive) return;
+        setServerZone(res?.zone || "UTC");
+      } catch {
+        // Fallback to client's zone if API fails
+        setServerZone(
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+        );
+      }
+    })();
+    return () => {
+      alive = false;
     };
-    fetchTime();
+  }, [getServerTime]);
+
+  // 2) Tick every second
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => (t + 1) % 1e9), 1000);
+    return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    if (!baseTime) return;
-
-    const interval = setInterval(() => {
-      setSecondsElapsed((prev) => prev + 1);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [baseTime]);
-
-  // Render updated time
-  let displayTime = "Loading...";
-  if (baseTime) {
-    const [datePart, timePart, period] = baseTime.split(/,?\s+/);
-    let [month, day, year] = datePart.split("/").map(Number);
-    let [hours, minutes, seconds] = timePart.split(":").map(Number);
-
-    if (period === "PM" && hours < 12) hours += 12;
-    if (period === "AM" && hours === 12) hours = 0;
-
-    let date = new Date(year, month - 1, day, hours, minutes, seconds);
-    date.setSeconds(date.getSeconds() + secondsElapsed);
-
-    const hh = String(date.getHours() % 12 || 12).padStart(2, "0");
-    const mm = String(date.getMinutes()).padStart(2, "0");
-    const ss = String(date.getSeconds()).padStart(2, "0");
-    const ampm = date.getHours() >= 12 ? "PM" : "AM";
-
-    displayTime = `${hh}:${mm}:${ss} ${ampm}`;
-  }
+  // 3) Compute display time from client's UTC -> server zone
+  const displayTime = useMemo(() => {
+    if (!serverZone) return "Loading...";
+    // Use client's current UTC time, then convert to the server zone
+    const dt = DateTime.utc().setZone(serverZone);
+    return dt.toFormat("hh:mm:ss a"); // e.g., 07:12:04 PM
+  }, [serverZone, tick]);
 
   return (
     <footer className="bg-blue-900 text-white px-4 py-2 flex justify-between items-center text-sm h-[40px]">
       <div>
-        Server Local Time: <span className="font-mono">{displayTime}</span>
+        Server Local Time
+        {serverZone ? ` (${serverZone})` : ""}:{" "}
+        <span className="font-mono">{displayTime}</span>
       </div>
       <div>&copy; {new Date().getFullYear()} Wistron</div>
     </footer>
