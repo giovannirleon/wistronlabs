@@ -120,7 +120,7 @@ function SearchContainer({
         ) : (
           <div>
             {/* Table header */}
-            <div className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 mb-2">
+            <div className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 mb-2 min-w-0 overflow-hidden">
               {filteredDisplayOrder.map((field, fieldIndex) => {
                 const isFirst = fieldIndex === 0;
                 const isLastDataCol =
@@ -136,7 +136,7 @@ function SearchContainer({
                 return (
                   <button
                     key={field}
-                    className={`text-gray-500 text-sm flex-1 ${alignment} ${
+                    className={`text-gray-500 text-sm flex-1 min-w-0 ${alignment} ${
                       hasActionColumn && isLastDataCol ? "pr-3 sm:pr-4" : ""
                     } ${!allowSort ? "cursor-default" : ""}`}
                     disabled={!allowSort}

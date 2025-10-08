@@ -35,7 +35,7 @@ function Items({
           return (
             <div
               key={`placeholder-${index}`}
-              className={commonClasses + " invisible"}
+              className={commonClasses + " invisible w-full min-w-0"}
             >
               {filteredDisplayOrder.map((field, fieldIndex) => {
                 const alignment =
@@ -52,7 +52,7 @@ function Items({
                 return (
                   <span
                     key={field}
-                    className={`flex-1 ${alignment} ${truncateClasses} select-text ${
+                    className={`flex-1 min-w-0 ${alignment} ${truncateClasses} select-text ${
                       hasActionColumn &&
                       fieldIndex === filteredDisplayOrder.length - 1
                         ? "pr-3 sm:pr-4"
@@ -116,7 +116,7 @@ function Items({
           return (
             <span
               key={field}
-              className={`flex-1 ${alignment} ${classes} ${truncateClasses} select-text ${
+              className={`flex-1 min-w-0 ${alignment} ${classes} ${truncateClasses} select-text ${
                 hasActionColumn &&
                 fieldIndex === filteredDisplayOrder.length - 1
                   ? "pr-3 sm:pr-4"
@@ -159,7 +159,7 @@ function Items({
         return (
           <div
             key={item.id ?? item.link ?? `${item.changed_at}-${index}`}
-            className={commonClasses + hoverClass}
+            className={commonClasses + hoverClass + " w-full min-w-0"}
           >
             {/* Link wraps ONLY the data cells */}
             {linkType === "external" ? (
@@ -172,7 +172,7 @@ function Items({
                   return (
                     <a
                       href={href}
-                      className="flex flex-1 items-center gap-x-4"
+                      className="flex flex-1 min-w-0 items-center gap-x-4"
                       onClick={(e) => {
                         e.preventDefault();
                         try {
@@ -208,7 +208,7 @@ function Items({
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex flex-1 items-center gap-x-4"
+                    className="flex flex-1 min-w-0 items-center gap-x-4"
                   >
                     {RowContent}
                   </a>
@@ -217,12 +217,12 @@ function Items({
             ) : linkType === "internal" ? (
               <Link
                 to={`/${item.link || ""}`}
-                className="flex flex-1 items-center gap-x-4"
+                className="flex flex-1 min-w-0 items-center gap-x-4"
               >
                 {RowContent}
               </Link>
             ) : (
-              <div className="flex flex-1 items-center gap-x-4">
+              <div className="flex flex-1 min-w-0 items-center gap-x-4">
                 {RowContent}
               </div>
             )}
