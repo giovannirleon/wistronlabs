@@ -25,6 +25,12 @@ function Items({
       {currentItems.map((item, index) => {
         const commonClasses =
           "flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 my-1 select-text";
+
+        const hoverClass =
+          linkType === "internal" || linkType === "external"
+            ? " hover:bg-blue-50"
+            : "";
+
         if (!item) {
           return (
             <div
@@ -150,69 +156,80 @@ function Items({
           </div>
         ) : null;
 
-        const Wrapper = ({ children }) => {
-          if (linkType === "external") {
-            const href = item.href || "#";
-            const isDir = href.endsWith("/");
-            if (isDir && rootHref && onDirChange) {
-              return (
-                <a
-                  href={href}
-                  className={commonClasses + " hover:bg-blue-50 cursor-pointer"}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    try {
-                      const url = new URL(href, window.location.origin);
-                      const root = new URL(rootHref, window.location.origin);
-                      let rel = decodeURIComponent(
-                        url.pathname.replace(root.pathname, "")
-                      );
-                      rel = rel.replace(/^\/+/, "").replace(/\/?$/, "/");
-                      onDirChange(rel);
-                    } catch {
-                      // Fallback: string replace if URL ctor fails
-                      let rel = decodeURIComponent(href.replace(rootHref, ""))
-                        .replace(/^\/+/, "")
-                        .replace(/\/?$/, "/");
-                      onDirChange(rel);
-                    }
-                  }}
-                  rel="noopener noreferrer"
-                >
-                  {children}
-                </a>
-              );
-            }
+        return (
+          <div
+            key={item.id ?? item.link ?? `${item.changed_at}-${index}`}
+            className={commonClasses + hoverClass}
+          >
+            {/* Link wraps ONLY the data cells */}
+            {linkType === "external" ? (
+              (() => {
+                const href = item.href || "#";
+                const isDir = href.endsWith("/");
 
-            // normal file
-            return (
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={commonClasses + " hover:bg-blue-50"}
-              >
-                {children}
-              </a>
-            );
-          } else if (linkType === "internal") {
-            return (
+                if (isDir && rootHref && onDirChange) {
+                  // Directory: clickable <a> that calls onDirChange instead of navigating
+                  return (
+                    <a
+                      href={href}
+                      className="flex flex-1 items-center gap-x-4"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        try {
+                          const url = new URL(href, window.location.origin);
+                          const root = new URL(
+                            rootHref,
+                            window.location.origin
+                          );
+                          let rel = decodeURIComponent(
+                            url.pathname.replace(root.pathname, "")
+                          );
+                          rel = rel.replace(/^\/+/, "").replace(/\/?$/, "/");
+                          onDirChange(rel);
+                        } catch {
+                          let rel = decodeURIComponent(
+                            href.replace(rootHref, "")
+                          )
+                            .replace(/^\/+/, "")
+                            .replace(/\/?$/, "/");
+                          onDirChange(rel);
+                        }
+                      }}
+                      rel="noopener noreferrer"
+                    >
+                      {RowContent}
+                    </a>
+                  );
+                }
+
+                // Normal external link
+                return (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-1 items-center gap-x-4"
+                  >
+                    {RowContent}
+                  </a>
+                );
+              })()
+            ) : linkType === "internal" ? (
               <Link
                 to={`/${item.link || ""}`}
-                className={commonClasses + " hover:bg-blue-50"}
+                className="flex flex-1 items-center gap-x-4"
               >
-                {children}
+                {RowContent}
               </Link>
-            );
-          }
-          return <div className={commonClasses}>{children}</div>;
-        };
+            ) : (
+              <div className="flex flex-1 items-center gap-x-4">
+                {RowContent}
+              </div>
+            )}
 
-        return (
-          <Wrapper key={item.id ?? item.link ?? `${item.changed_at}-${index}`}>
-            {RowContent}
+            {/* Action button sits OUTSIDE the link */}
             {ActionCell}
-          </Wrapper>
+          </div>
         );
       })}
     </>
