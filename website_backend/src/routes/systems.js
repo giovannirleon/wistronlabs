@@ -778,7 +778,15 @@ router.get("/snapshot", async (req, res) => {
       SELECT 
         s.service_tag,
         COALESCE(f.code, 'Not Entered Yet') AS factory_code,
-        s.issue,
+       CASE
+          WHEN s.issue ILIKE 'RMA%' THEN
+            regexp_replace(s.issue, '\\s*\\((PENDING|SHIPPED)\\)$', '', 'i')
+            || CASE WHEN COALESCE(ops.on_open_pallet, FALSE)
+                    THEN ' (PENDING)'
+                    ELSE ' (SHIPPED)'
+              END
+          ELSE s.issue
+        END AS issue,
         d.name   AS dpn,
         d.config AS config,
         d.dell_customer AS dell_customer,
@@ -819,6 +827,15 @@ router.get("/snapshot", async (req, res) => {
       ) AS last_recv ON TRUE`
           : ``
       }
+      LEFT JOIN LATERAL (
+        SELECT TRUE AS on_open_pallet
+        FROM pallet p
+        JOIN pallet_system ps ON ps.pallet_id = p.id
+        WHERE p.status = 'open'
+          AND ps.system_id = s.id
+          AND ps.removed_at IS NULL
+        LIMIT 1
+      ) ops ON TRUE
       WHERE 1=1
       ${locationFilterSQL.join(" ")}
       ${perDayExclusionSQL}
