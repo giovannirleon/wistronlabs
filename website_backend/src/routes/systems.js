@@ -778,19 +778,29 @@ router.get("/snapshot", async (req, res) => {
       SELECT 
         s.service_tag,
         COALESCE(f.code, 'Not Entered Yet') AS factory_code,
-       CASE
-          WHEN s.issue ILIKE 'RMA%' THEN
-            regexp_replace(s.issue, '\\s*\\((PENDING|SHIPPED)\\)$', '', 'i')
-            || CASE WHEN COALESCE(ops.on_open_pallet, FALSE)
-                    THEN ' (PENDING)'
-                    ELSE ' (SHIPPED)'
-              END
-          ELSE s.issue
-        END AS issue,
+        s.issue,
         d.name   AS dpn,
         d.config AS config,
         d.dell_customer AS dell_customer,
-        l.name   AS location,
+        CASE
+        WHEN trim(l.name) ILIKE 'RMA%' THEN
+          regexp_replace(l.name, '\\s*\\((PENDING|COMPLETE)\\)$', '', 'i')
+          ||
+          CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM pallet p
+              JOIN pallet_system ps ON ps.pallet_id = p.id
+              WHERE p.status = 'open'
+                AND ps.system_id = s.id
+                AND ps.removed_at IS NULL
+            )
+            THEN ' (PENDING)'
+            ELSE ' (COMPLETE)'
+          END
+        ELSE l.name
+      END AS location,
+
         to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
         ${selectNotesAggregate}
         , to_char(first_history.first_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
@@ -914,7 +924,11 @@ router.get("/snapshot", async (req, res) => {
         ? fmtDateTime.format(new Date(r.date_modified))
         : "";
 
-      const pic = r.location?.startsWith("RMA ") ? r.location.slice(4) : "";
+      const pic = r.location?.startsWith("RMA ")
+        ? r.location
+            .replace(/^RMA\s+/, "")
+            .replace(/\s+\((PENDING|COMPLETE)\)$/, "")
+        : "";
 
       let noteHistoryText = "";
       if (
