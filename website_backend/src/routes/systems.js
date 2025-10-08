@@ -178,6 +178,123 @@ function isPgUniqueViolation(err) {
   return err && err.code === "23505";
 }
 
+
+
+// ---------- PART CRUD ----------
+
+// GET /api/v1/systems/part  (?q= to search by name)
+router.get("/part", async (req, res) => {
+  const { q } = req.query;
+  try {
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      const { rows } = await db.query(
+        `SELECT id, name
+           FROM parts
+          WHERE name ILIKE $1
+          ORDER BY name ASC`,
+        [like]
+      );
+      return res.json(rows);
+    }
+
+    const { rows } = await db.query(
+      `SELECT id, name FROM parts ORDER BY name ASC`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to list parts" });
+  }
+});
+
+// GET /api/v1/systems/part/:id
+router.get("/part/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name FROM parts WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Part not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to fetch part" });
+  }
+});
+
+// POST /api/v1/systems/part   (admin)
+router.post("/part", authenticateToken, ensureAdmin, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name?.trim()) {
+    return res.status(400).json({ error: "name is required" });
+  }
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO parts (name)
+       VALUES ($1)
+       RETURNING id, name`,
+      [name.trim()]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    // will trigger if you add a unique index on name later
+    if (isPgUniqueViolation(e)) {
+      return res.status(409).json({ error: "Part name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to create part" });
+  }
+});
+
+// PATCH /api/v1/systems/part/:id   (admin)
+router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
+  const { name } = req.body || {};
+  if (typeof name === "undefined") {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
+  try {
+    const { rows } = await db.query(
+      `UPDATE parts
+          SET name = $1
+        WHERE id = $2
+    RETURNING id, name`,
+      [String(name ?? "").trim(), req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Part not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    if (isPgUniqueViolation(e)) {
+      return res.status(409).json({ error: "Part name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to update part" });
+  }
+});
+
+// DELETE /api/v1/systems/part/:id   (admin)
+router.delete(
+  "/part/:id",
+  authenticateToken,
+  ensureAdmin,
+  async (req, res) => {
+    try {
+      // If later you reference parts from other tables, add a guard here.
+      const del = await db.query(`DELETE FROM parts WHERE id = $1`, [
+        req.params.id,
+      ]);
+      if (del.rowCount === 0) {
+        return res.status(404).json({ error: "Part not found" });
+      }
+      return res.json({ message: "Part deleted" });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Failed to delete part" });
+    }
+  }
+);
+
+
 // ---------- FACTORY CRUD ----------
 
 // GET factories (optional ?q= search by code or name)
