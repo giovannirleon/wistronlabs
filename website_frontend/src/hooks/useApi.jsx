@@ -229,7 +229,7 @@ function useApi() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to_location_id: 1,
-        note: `Moving back to received from Inactive - ${note} with issue "${issue}"`,
+        note: `Moving back to received from Inactive with issue "${issue}"`,
       }),
     });
 
