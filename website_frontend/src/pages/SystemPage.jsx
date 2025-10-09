@@ -98,7 +98,7 @@ function SystemPage() {
     getParts, // GET /api/v1/parts
     getPartItems, // GET /api/v1/parts/list?place=inventory
     createPartItem,
-    d,
+    updatePartItem,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
@@ -110,30 +110,38 @@ function SystemPage() {
   const [pendingBlocks, setPendingBlocks] = useState([]); // [{id, part_id, ppid}]
   const [pendingBusy, setPendingBusy] = useState(false);
   const [partOptions, setPartOptions] = useState([]); // [{value,label}]
+  const [unitBadParts, setUnitBadParts] = useState([]); // rows from /parts/list (is_functional=false)
 
-  // Load part options when Pending Parts section shows
   useEffect(() => {
     const showPending =
       toLocationId === 4 || system?.location === "Pending Parts";
-    if (!showPending) return;
+    if (!showPending || !system?.id) return;
 
     let alive = true;
     (async () => {
       try {
-        const parts = await getParts(); // [{id,name}]
+        const rows = await getPartItems({ place: "unit", unit_id: system.id });
         if (!alive) return;
-        setPartOptions(
-          (parts || []).map((p) => ({ value: p.id, label: p.name }))
-        );
+        setUnitBadParts((rows || []).filter((r) => r.is_functional === false));
       } catch (e) {
-        console.error("Failed to load parts:", e);
+        console.error("Failed to load unit bad parts:", e);
       }
     })();
-
     return () => {
       alive = false;
     };
-  }, [toLocationId, system?.location]);
+  }, [toLocationId, system?.location, system?.id]);
+
+  const markExistingWorking = async (ppid) => {
+    try {
+      await updatePartItem(ppid, { is_functional: true });
+      setUnitBadParts((list) => list.filter((r) => r.ppid !== ppid));
+      showToast("Marked as working", "success", 2000, "bottom-right");
+    } catch (e) {
+      const msg = e?.body?.error || e.message || "Failed to update part";
+      showToast(msg, "error", 3200, "bottom-right");
+    }
+  };
 
   // Add a new empty block
   const addBadPartBlock = () => {
@@ -280,6 +288,22 @@ function SystemPage() {
     showToast,
     fetchData
   );
+  // put near the top of SystemPage component file
+  const select40Styles = {
+    control: (base, state) => ({
+      ...base,
+      minHeight: 40,
+      height: 40,
+      borderColor: state.isFocused ? "#60A5FA" : "#D1D5DB", // blue-400 / gray-300
+      boxShadow: "none",
+      "&:hover": { borderColor: state.isFocused ? "#60A5FA" : "#D1D5DB" },
+    }),
+    valueContainer: (base) => ({ ...base, padding: "0 8px" }),
+    indicatorsContainer: (base) => ({ ...base, height: 40 }),
+    input: (base) => ({ ...base, margin: 0, padding: 0 }),
+    placeholder: (base) => ({ ...base, margin: 0 }),
+    singleValue: (base) => ({ ...base, margin: 0 }),
+  };
 
   const handleDelete = async () => {
     console.log("deleting");
@@ -795,6 +819,59 @@ function SystemPage() {
                       </button>
                     </div>
 
+                    {/* Existing non-functional parts for this unit */}
+                    <div className="space-y-2">
+                      {unitBadParts.length > 0 && (
+                        <div className="text-xs font-semibold text-gray-600 uppercase">
+                          Currently Non-functional on this Unit
+                        </div>
+                      )}
+                      {unitBadParts.map((item) => (
+                        <div
+                          key={item.ppid}
+                          className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3"
+                        >
+                          {/* Part name (read-only input for consistent height) */}
+                          <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Part
+                            </label>
+                            <input
+                              className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
+                              value={item.part_name || `#${item.part_id}`}
+                              disabled
+                              readOnly
+                            />
+                          </div>
+
+                          {/* PPID (read-only input) */}
+                          <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              PPID
+                            </label>
+                            <input
+                              className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
+                              value={item.ppid || ""}
+                              disabled
+                              readOnly
+                            />
+                          </div>
+
+                          {/* Mark as Working */}
+                          <div className="md:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => markExistingWorking(item.ppid)}
+                              className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                            >
+                              Mark as Working
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* New blocks to add */}
                     {pendingBlocks.length === 0 ? (
                       <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
                         No pending parts. Click “Add Bad Part” to begin.
@@ -806,13 +883,12 @@ function SystemPage() {
                             partOptions.find(
                               (o) => o.value === block.part_id
                             ) || null;
-
                           return (
                             <div
                               key={block.id}
-                              className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-end gap-3"
+                              className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3"
                             >
-                              {/* Part (Select) */}
+                              {/* Part Select */}
                               <div className="flex-1">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   Part
@@ -820,6 +896,7 @@ function SystemPage() {
                                 <Select
                                   instanceId={`part-${block.id}`}
                                   classNamePrefix="react-select"
+                                  styles={select40Styles}
                                   isClearable
                                   isSearchable
                                   placeholder="Select part"
@@ -835,7 +912,7 @@ function SystemPage() {
                                 />
                               </div>
 
-                              {/* PPID (Text input) */}
+                              {/* PPID Input */}
                               <div className="flex-1">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   PPID
@@ -862,19 +939,18 @@ function SystemPage() {
                                       e.target.value.toUpperCase().trim()
                                     )
                                   }
-                                  className={`w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500
-                    ${
-                      !block.ppid || !block.part_id
-                        ? "border-amber-300"
-                        : "border-gray-300"
-                    }`}
+                                  className={`w-full h-10 rounded-md border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    !block.ppid || !block.part_id
+                                      ? "border-amber-300"
+                                      : "border-gray-300"
+                                  }`}
                                 />
                                 <p className="text-xs text-gray-500 mt-1">
                                   Saved as uppercase.
                                 </p>
                               </div>
 
-                              {/* Mark as Working (remove) */}
+                              {/* Mark as Working (remove new block) */}
                               <div className="md:w-auto">
                                 <button
                                   type="button"

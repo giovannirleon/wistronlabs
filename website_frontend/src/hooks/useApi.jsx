@@ -489,47 +489,36 @@ function useApi() {
   // List (filters optional: { place, part_id, unit_id, q })
   const getPartItems = async (params = {}) => {
     const qs = new URLSearchParams(params).toString();
-    return fetchJSON(`/api/v1/parts/list${qs ? `?${qs}` : ""}`);
+    return fetchJSON(`/parts/${qs ? `?${qs}` : ""}`);
   };
 
   // Read one by PPID
   const getPartItem = async (ppid) =>
-    fetchJSON(
-      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`
-    );
+    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`);
 
   // Create by PPID in path
   // payload = { part_id, place='inventory', unit_id, is_functional=true }
   const createPartItem = async (ppid, payload) =>
-    fetchJSON(
-      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
+    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
   // Update by PPID in path
   // payload can include: { part_id?, place?, unit_id?, is_functional?, ppid? }  // ppid renames
   const updatePartItem = async (ppid, payload) =>
-    fetchJSON(
-      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
+    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
   // Delete by PPID in path
   const deletePartItem = async (ppid) =>
-    fetchJSON(
-      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`,
-      {
-        method: "DELETE",
-      }
-    );
+    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`, {
+      method: "DELETE",
+    });
 
   return {
     getSystems,
