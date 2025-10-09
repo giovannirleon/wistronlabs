@@ -414,30 +414,59 @@ function useApi() {
       method: "DELETE",
     });
 
-  // PARTS (same pattern as DPNs/Factories)
-  const getParts = ({ q } = {}) =>
-    fetchJSON(`/systems/part${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+  // Part Categories API
+  const getPartCategories = ({ q } = {}) =>
+    fetchJSON(
+      `/systems/part-category${q ? `?q=${encodeURIComponent(q)}` : ""}`
+    );
 
-  const createPart = ({ name }) =>
-    fetchJSON(`/systems/part`, {
+  const createPartCategory = ({ name }) =>
+    fetchJSON(`/systems/part-category`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: String(name || "").trim() }),
+    });
+
+  const updatePartCategory = (id, payload) =>
+    fetchJSON(`/systems/part-category/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload), // { name? }
+    });
+
+  const deletePartCategory = (id) =>
+    fetchJSON(`/systems/part-category/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+
+  // Parts
+  const getParts = ({ q, category_id } = {}) => {
+    const qs = [];
+    if (q) qs.push(`q=${encodeURIComponent(q)}`);
+    if (category_id) qs.push(`category_id=${encodeURIComponent(category_id)}`);
+    const suffix = qs.length ? `?${qs.join("&")}` : "";
+    return fetchJSON(`/systems/part${suffix}`);
+  };
+
+  const createPart = ({ name, part_category_id }) =>
+    fetchJSON(`/systems/part`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: String(name || "").trim(),
+        part_category_id: part_category_id || null,
+      }),
     });
 
   const updatePart = (id, payload) =>
     fetchJSON(`/systems/part/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: String(payload?.name || "").trim(),
-      }),
+      body: JSON.stringify(payload), // { name?, part_category_id? }
     });
 
   const deletePart = (id) =>
-    fetchJSON(`/systems/part/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
+    fetchJSON(`/systems/part/${encodeURIComponent(id)}`, { method: "DELETE" });
 
   const getMe = () => fetchJSON(`/auth/me`);
 
@@ -456,6 +485,51 @@ function useApi() {
   // tiny convenience wrappers
   const lockPallet = (pallet_number) => setPalletLock(pallet_number, true);
   const unlockPallet = (pallet_number) => setPalletLock(pallet_number, false);
+
+  // List (filters optional: { place, part_id, unit_id, q })
+  const getPartItems = async (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return fetchJSON(`/api/v1/parts/list${qs ? `?${qs}` : ""}`);
+  };
+
+  // Read one by PPID
+  const getPartItem = async (ppid) =>
+    fetchJSON(
+      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`
+    );
+
+  // Create by PPID in path
+  // payload = { part_id, place='inventory', unit_id, is_functional=true }
+  const createPartItem = async (ppid, payload) =>
+    fetchJSON(
+      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+  // Update by PPID in path
+  // payload can include: { part_id?, place?, unit_id?, is_functional?, ppid? }  // ppid renames
+  const updatePartItem = async (ppid, payload) =>
+    fetchJSON(
+      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+  // Delete by PPID in path
+  const deletePartItem = async (ppid) =>
+    fetchJSON(
+      `/api/v1/parts/${encodeURIComponent(String(ppid).toUpperCase())}`,
+      {
+        method: "DELETE",
+      }
+    );
 
   return {
     getSystems,
@@ -504,6 +578,15 @@ function useApi() {
     createPart,
     updatePart,
     deletePart,
+    getPartCategories,
+    createPartCategory,
+    updatePartCategory,
+    deletePartCategory,
+    getPartItems,
+    getPartItem,
+    createPartItem,
+    updatePartItem,
+    deletePartItem,
   };
 }
 

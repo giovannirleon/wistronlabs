@@ -2,6 +2,7 @@ import { useEffect, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "react-select";
 import { Link, useLocation } from "react-router-dom";
+import CreatableSelect from "react-select/creatable";
 
 import { DateTime } from "luxon";
 
@@ -94,12 +95,111 @@ function SystemPage() {
     getPallets,
     getServerTime,
     getMe,
+    getParts, // GET /api/v1/parts
+    getPartItems, // GET /api/v1/parts/list?place=inventory
+    createPartItem,
+    d,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+
+  // --- Pending Parts state ---
+  const [pendingBlocks, setPendingBlocks] = useState([]); // [{id, part_id, ppid}]
+  const [pendingBusy, setPendingBusy] = useState(false);
+  const [partOptions, setPartOptions] = useState([]); // [{value,label}]
+
+  // Load part options when Pending Parts section shows
+  useEffect(() => {
+    const showPending =
+      toLocationId === 4 || system?.location === "Pending Parts";
+    if (!showPending) return;
+
+    let alive = true;
+    (async () => {
+      try {
+        const parts = await getParts(); // [{id,name}]
+        if (!alive) return;
+        setPartOptions(
+          (parts || []).map((p) => ({ value: p.id, label: p.name }))
+        );
+      } catch (e) {
+        console.error("Failed to load parts:", e);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [toLocationId, system?.location]);
+
+  // Add a new empty block
+  const addBadPartBlock = () => {
+    setPendingBlocks((b) => [
+      ...b,
+      {
+        id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        part_id: null,
+        ppid: "",
+      },
+    ]);
+  };
+
+  // Update a field on a block (reset PPID when Part changes)
+  const updateBlock = (id, field, value) => {
+    setPendingBlocks((list) =>
+      list.map((b) =>
+        b.id === id
+          ? {
+              ...b,
+              [field]: value,
+              ...(field === "part_id" ? { ppid: "" } : {}),
+            }
+          : b
+      )
+    );
+  };
+
+  // Remove a block
+  const removeBlock = (id) =>
+    setPendingBlocks((list) => list.filter((b) => b.id !== id));
+
+  // Cancel all
+  const cancelPending = () => setPendingBlocks([]);
+
+  // Ready to submit?
+  const canSubmitPending =
+    pendingBlocks.length > 0 &&
+    pendingBlocks.every((b) => !!b.part_id && !!(b.ppid || "").trim());
+
+  // Create part_list rows (in unit, non-working)
+  const submitPendingParts = async () => {
+    if (!system?.id || !canSubmitPending) return;
+    setPendingBusy(true);
+    try {
+      await Promise.all(
+        pendingBlocks.map(async (b) => {
+          const ppid = String(b.ppid).toUpperCase().trim(); // save uppercase
+          await createPartItem(ppid, {
+            part_id: b.part_id,
+            place: "unit",
+            unit_id: system.id,
+            is_functional: false,
+          });
+        })
+      );
+      showToast("Added bad parts to unit", "success", 2400, "bottom-right");
+      setPendingBlocks([]);
+      await fetchData(); // refresh
+    } catch (e) {
+      const msg = e?.body?.error || e.message || "Failed to add bad parts";
+      showToast(msg, "error", 3500, "bottom-right");
+    } finally {
+      setPendingBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!token) return; // only run if user is logged in
@@ -678,6 +778,142 @@ function SystemPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     Please select a location above.
                   </p>
+                )}
+                {(toLocationId === 4 ||
+                  system?.location === "Pending Parts") && (
+                  <div className="mt-5 flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-700">
+                        Pending Parts
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={addBadPartBlock}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                      >
+                        + Add Bad Part
+                      </button>
+                    </div>
+
+                    {pendingBlocks.length === 0 ? (
+                      <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
+                        No pending parts. Click “Add Bad Part” to begin.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {pendingBlocks.map((block) => {
+                          const partValue =
+                            partOptions.find(
+                              (o) => o.value === block.part_id
+                            ) || null;
+
+                          return (
+                            <div
+                              key={block.id}
+                              className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-end gap-3"
+                            >
+                              {/* Part (Select) */}
+                              <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Part
+                                </label>
+                                <Select
+                                  instanceId={`part-${block.id}`}
+                                  classNamePrefix="react-select"
+                                  isClearable
+                                  isSearchable
+                                  placeholder="Select part"
+                                  value={partValue}
+                                  onChange={(opt) =>
+                                    updateBlock(
+                                      block.id,
+                                      "part_id",
+                                      opt ? opt.value : null
+                                    )
+                                  }
+                                  options={partOptions}
+                                />
+                              </div>
+
+                              {/* PPID (Text input) */}
+                              <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  PPID
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="text"
+                                  autoCapitalize="characters"
+                                  autoCorrect="off"
+                                  spellCheck="false"
+                                  placeholder="Scan or type PPID"
+                                  value={block.ppid}
+                                  onChange={(e) =>
+                                    updateBlock(
+                                      block.id,
+                                      "ppid",
+                                      e.target.value
+                                    )
+                                  }
+                                  onBlur={(e) =>
+                                    updateBlock(
+                                      block.id,
+                                      "ppid",
+                                      e.target.value.toUpperCase().trim()
+                                    )
+                                  }
+                                  className={`w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500
+                    ${
+                      !block.ppid || !block.part_id
+                        ? "border-amber-300"
+                        : "border-gray-300"
+                    }`}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Saved as uppercase.
+                                </p>
+                              </div>
+
+                              {/* Mark as Working (remove) */}
+                              <div className="md:w-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => removeBlock(block.id)}
+                                  className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                                >
+                                  Mark as Working
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={cancelPending}
+                        disabled={pendingBusy || pendingBlocks.length === 0}
+                        className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitPendingParts}
+                        disabled={pendingBusy || !canSubmitPending}
+                        className={`px-4 py-2 rounded-lg text-white ${
+                          canSubmitPending
+                            ? "bg-blue-600 hover:bg-blue-700"
+                            : "bg-blue-300 cursor-not-allowed"
+                        }`}
+                      >
+                        {pendingBusy ? "Submitting…" : "Submit Change"}
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {(toLocationId === 5 || system?.location === "In L10") && (
