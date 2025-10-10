@@ -8,7 +8,6 @@ export default function Flowchart({ currentLocation_id, locations }) {
     { id: 8, x: 600, y: 200 },
     { id: 7, x: 600, y: 300 },
     { id: 4, x: 200, y: 50 },
-    { id: 3, x: 200, y: 250 },
   ];
 
   const states = locations
@@ -40,14 +39,14 @@ export default function Flowchart({ currentLocation_id, locations }) {
       direction: "right",
       ids: [2],
     },
-    {
-      x: 225,
-      y: 205,
-      stemHeight: 20,
-      totalLenth: 40,
-      direction: "down",
-      ids: [2],
-    },
+    // {
+    //   x: 225,
+    //   y: 205,
+    //   stemHeight: 20,
+    //   totalLenth: 40,
+    //   direction: "down",
+    //   ids: [2],
+    // },
     {
       x: 225,
       y: 145,
@@ -57,12 +56,12 @@ export default function Flowchart({ currentLocation_id, locations }) {
       ids: [2],
     },
     {
-      x: 325,
+      x: 225,
       y: 245,
       stemHeight: 20,
       totalLenth: 40,
       direction: "up",
-      ids: [3],
+      ids: [5],
     },
     {
       x: 325,
@@ -108,15 +107,15 @@ export default function Flowchart({ currentLocation_id, locations }) {
 
   const rects = [
     {
-      x: 360,
+      x: 325,
       y: 215,
-      width: 100,
+      width: 135,
       height: 20,
       direction: "horizontal",
       ids: [2],
     },
     {
-      x: 488,
+      x: 490,
       y: 215,
       width: 97,
       height: 20,
@@ -131,16 +130,16 @@ export default function Flowchart({ currentLocation_id, locations }) {
       direction: "vertical",
       ids: [2, 5],
     },
-    { x: 355, y: 165, width: 70, height: 18, direction: "vertical", ids: [2] },
+    { x: 315, y: 205, width: 30, height: 20, direction: "vertical", ids: [2] },
     { x: 552, y: 165, width: 4, height: 20, direction: "horizontal", ids: [5] },
     { x: 555, y: 25, width: 90, height: 18, direction: "vertical", ids: [5] },
-    { x: 465, y: 205, width: 125, height: 18, direction: "vertical", ids: [5] },
-    { x: 155, y: 180, width: 140, height: 18, direction: "vertical", ids: [5] },
+    { x: 465, y: 205, width: 125, height: 20, direction: "vertical", ids: [5] },
+    { x: 215, y: 225, width: 100, height: 20, direction: "vertical", ids: [5] },
     {
-      x: 155,
+      x: 215,
       y: 315,
-      width: 328,
-      height: 18,
+      width: 270,
+      height: 20,
       direction: "horizontal",
       ids: [5],
     },

@@ -95,10 +95,11 @@ function SystemPage() {
     getPallets,
     getServerTime,
     getMe,
-    getParts, // GET /api/v1/parts
-    getPartItems, // GET /api/v1/parts/list?place=inventory
+    getParts,
+    getPartItems,
     createPartItem,
     updatePartItem,
+    deletePartItem,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
@@ -111,11 +112,19 @@ function SystemPage() {
   const [pendingBusy, setPendingBusy] = useState(false);
   const [partOptions, setPartOptions] = useState([]); // [{value,label}]
   const [unitBadParts, setUnitBadParts] = useState([]); // rows from /parts/list (is_functional=false)
+  const [toRemovePPIDs, setToRemovePPIDs] = useState(new Set());
 
+  // Clear drafts when destination changes, EXCEPT if the unit's current location is "Pending Parts"
   useEffect(() => {
-    const showPending =
-      toLocationId === 4 || system?.location === "Pending Parts";
-    if (!showPending || !system?.id) return;
+    if (system?.location === "Pending Parts") return;
+    setPendingBlocks([]);
+    setToRemovePPIDs(new Set());
+    setFormError(""); // optional
+  }, [toLocationId, system?.location]);
+
+  // ALWAYS load the unit's current non-functional parts when we know the system.id
+  useEffect(() => {
+    if (!system?.id) return;
 
     let alive = true;
     (async () => {
@@ -127,10 +136,41 @@ function SystemPage() {
         console.error("Failed to load unit bad parts:", e);
       }
     })();
+
     return () => {
       alive = false;
     };
-  }, [toLocationId, system?.location, system?.id]);
+  }, [system?.id]);
+
+  useEffect(() => {
+    const showPending =
+      toLocationId === 4 || system?.location === "Pending Parts";
+    if (!showPending) return;
+    let alive = true;
+    (async () => {
+      try {
+        const parts = await getParts(); // [{id,name}]
+        if (!alive) return;
+        setPartOptions(
+          (parts || []).map((p) => ({ value: p.id, label: p.name }))
+        );
+      } catch (e) {
+        console.error("Failed to load parts:", e);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [toLocationId, system?.location]);
+
+  const toggleRemovePPID = (ppid) => {
+    setToRemovePPIDs((prev) => {
+      const next = new Set(prev);
+      if (next.has(ppid)) next.delete(ppid);
+      else next.add(ppid);
+      return next;
+    });
+  };
 
   const markExistingWorking = async (ppid) => {
     try {
@@ -153,6 +193,16 @@ function SystemPage() {
         ppid: "",
       },
     ]);
+  };
+
+  const refreshUnitBadParts = async () => {
+    if (!system?.id) return;
+    try {
+      const rows = await getPartItems({ place: "unit", unit_id: system.id });
+      setUnitBadParts((rows || []).filter((r) => r.is_functional === false));
+    } catch (e) {
+      console.error("Failed to refresh bad parts:", e);
+    }
   };
 
   // Update a field on a block (reset PPID when Part changes)
@@ -244,14 +294,16 @@ function SystemPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      // get system first to know unit_id
+      const systemsData = await getSystem(serviceTag);
+
       const [
-        systemsData,
         locationsData,
         historyData,
         stationData,
         releasedPalletsData,
+        partItemsRows,
       ] = await Promise.all([
-        getSystem(serviceTag),
         getLocations(),
         getSystemHistory(serviceTag),
         getStations(),
@@ -261,18 +313,24 @@ function SystemPage() {
             conditions: [{ field: "status", op: "=", values: ["open"] }],
           },
         }),
+        getPartItems({ place: "unit", unit_id: systemsData.id }),
       ]);
-      setStations(stationData);
+
       setSystem(systemsData);
       setLocations(locationsData);
-      setHistory(historyData); // add link to each history entry
+      setHistory(historyData);
+      setStations(stationData);
       setreleasedPallets(releasedPalletsData);
+      setUnitBadParts(
+        (partItemsRows || []).filter((r) => r.is_functional === false)
+      );
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
   let selectedStationObj = null;
   if (system?.location === "In L10") {
     selectedStationObj = stations.find(
@@ -489,10 +547,75 @@ function SystemPage() {
       return;
     }
 
+    const movingToPending = toId === 4;
+    const newBadCount = pendingBlocks.filter(
+      (b) => b.part_id && (b.ppid || "").trim()
+    ).length;
+
+    if (movingToPending && newBadCount === 0) {
+      setFormError(
+        "Mark at least one part as defective before moving to Pending Parts"
+      );
+      return;
+    }
+
+    const movingToL10 =
+      toId === (locations.find((l) => l.name === "In L10")?.id ?? 5);
+
+    // how many defective parts would still be on the unit after your "mark as working" selections?
+    const remainingBad = unitBadParts.filter(
+      (item) => !toRemovePPIDs.has(item.ppid)
+    ).length;
+
+    if (movingToL10 && remainingBad > 0) {
+      setFormError(
+        "Resolve or remove all defective parts before moving to In L10."
+      );
+      return;
+    }
+
     setFormError("");
     setSubmitting(true);
 
     try {
+      // 1) Create any new bad parts the user added (as in-unit, non-functional)
+      if (pendingBlocks.length > 0) {
+        const toCreate = pendingBlocks.filter(
+          (b) => b.part_id && (b.ppid || "").trim()
+        );
+        await Promise.all(
+          toCreate.map((b) =>
+            createPartItem(String(b.ppid).toUpperCase().trim(), {
+              part_id: b.part_id,
+              place: "unit",
+              unit_id: system.id,
+              is_functional: false,
+            })
+          )
+        );
+      }
+
+      // 2) Delete any existing non-functional parts the user marked as working
+      if (toRemovePPIDs.size > 0) {
+        const removing = Array.from(toRemovePPIDs);
+
+        await Promise.all(
+          removing.map(async (ppid) => {
+            await updatePartItem(ppid, {
+              is_functional: true,
+              place: "inventory",
+              unit_id: null,
+            });
+            await deletePartItem(ppid);
+          })
+        );
+
+        // refresh the list only if we actually removed something
+        await refreshUnitBadParts();
+        setToRemovePPIDs(new Set());
+      }
+
+      // 3) Move the unit
       // ⬅️ Backend now returns { message, pallet_number?, dpn?, factory_code? } when moving into RMA
       const resp = await updateSystemLocation(serviceTag, {
         to_location_id: toId,
@@ -558,8 +681,10 @@ function SystemPage() {
           );
         }
       }
-
+      // Clean up local UI state and refresh
+      setPendingBlocks([]);
       setNote("");
+      setToRemovePPIDs(new Set());
       setToLocationId("");
       setSelectedStation("");
       showToast("Updated System Location", "success", 3000, "bottom-right");
@@ -803,13 +928,11 @@ function SystemPage() {
                     Please select a location above.
                   </p>
                 )}
-                {(toLocationId === 4 ||
-                  system?.location === "Pending Parts") && (
-                  <div className="mt-5 flex flex-col gap-4">
+
+                <div className="mt-5 flex flex-col gap-4">
+                  {(toLocationId === 4 ||
+                    system?.location === "Pending Parts") && (
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-700">
-                        Pending Parts
-                      </h3>
                       <button
                         type="button"
                         onClick={addBadPartBlock}
@@ -818,20 +941,23 @@ function SystemPage() {
                         + Add Bad Part
                       </button>
                     </div>
-
-                    {/* Existing non-functional parts for this unit */}
-                    <div className="space-y-2">
-                      {unitBadParts.length > 0 && (
-                        <div className="text-xs font-semibold text-gray-600 uppercase">
-                          Currently Non-functional on this Unit
-                        </div>
-                      )}
-                      {unitBadParts.map((item) => (
+                  )}
+                  {/* Existing non-functional parts for this unit */}
+                  <div className="space-y-2">
+                    {unitBadParts.length > 0 && (
+                      <label className="block text-sm font-medium text-gray-600 mb-1">
+                        Currently Non-functional Parts in this Unit
+                      </label>
+                    )}
+                    {unitBadParts.map((item) => {
+                      const queued = toRemovePPIDs.has(item.ppid);
+                      return (
                         <div
                           key={item.ppid}
-                          className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3"
+                          className={`border border-gray-300 rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5 ${
+                            queued ? "border-red-300 bg-red-50 " : ""
+                          }`}
                         >
-                          {/* Part name (read-only input for consistent height) */}
                           <div className="flex-1">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                               Part
@@ -844,7 +970,6 @@ function SystemPage() {
                             />
                           </div>
 
-                          {/* PPID (read-only input) */}
                           <div className="flex-1">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                               PPID
@@ -857,146 +982,144 @@ function SystemPage() {
                             />
                           </div>
 
-                          {/* Mark as Working */}
                           <div className="md:w-auto">
                             <button
+                              disabled={submitting}
                               type="button"
-                              onClick={() => markExistingWorking(item.ppid)}
-                              className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                              onClick={() => toggleRemovePPID(item.ppid)}
+                              className={`relative px-3 py-2 rounded-md text-white mt-5 whitespace-nowrap ${
+                                queued
+                                  ? "bg-gray-500 hover:bg-gray-600"
+                                  : "bg-red-600 hover:bg-red-700"
+                              }`}
                             >
-                              Mark as Working
+                              {/* Ghost sets width to longest text */}
+                              <span className="invisible block">
+                                Mark as Working
+                              </span>
+
+                              {/* Real label */}
+                              <span className="absolute inset-0 flex items-center justify-center">
+                                {queued ? "Undo" : "Mark as Working"}
+                              </span>
                             </button>
                           </div>
                         </div>
-                      ))}
-                    </div>
-
-                    {/* New blocks to add */}
-                    {pendingBlocks.length === 0 ? (
-                      <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
-                        No pending parts. Click “Add Bad Part” to begin.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {pendingBlocks.map((block) => {
-                          const partValue =
-                            partOptions.find(
-                              (o) => o.value === block.part_id
-                            ) || null;
-                          return (
-                            <div
-                              key={block.id}
-                              className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3"
-                            >
-                              {/* Part Select */}
-                              <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Part
-                                </label>
-                                <Select
-                                  instanceId={`part-${block.id}`}
-                                  classNamePrefix="react-select"
-                                  styles={select40Styles}
-                                  isClearable
-                                  isSearchable
-                                  placeholder="Select part"
-                                  value={partValue}
-                                  onChange={(opt) =>
-                                    updateBlock(
-                                      block.id,
-                                      "part_id",
-                                      opt ? opt.value : null
-                                    )
-                                  }
-                                  options={partOptions}
-                                />
-                              </div>
-
-                              {/* PPID Input */}
-                              <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  PPID
-                                </label>
-                                <input
-                                  type="text"
-                                  inputMode="text"
-                                  autoCapitalize="characters"
-                                  autoCorrect="off"
-                                  spellCheck="false"
-                                  placeholder="Scan or type PPID"
-                                  value={block.ppid}
-                                  onChange={(e) =>
-                                    updateBlock(
-                                      block.id,
-                                      "ppid",
-                                      e.target.value
-                                    )
-                                  }
-                                  onBlur={(e) =>
-                                    updateBlock(
-                                      block.id,
-                                      "ppid",
-                                      e.target.value.toUpperCase().trim()
-                                    )
-                                  }
-                                  className={`w-full h-10 rounded-md border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    !block.ppid || !block.part_id
-                                      ? "border-amber-300"
-                                      : "border-gray-300"
-                                  }`}
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Saved as uppercase.
-                                </p>
-                              </div>
-
-                              {/* Mark as Working (remove new block) */}
-                              <div className="md:w-auto">
-                                <button
-                                  type="button"
-                                  onClick={() => removeBlock(block.id)}
-                                  className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
-                                >
-                                  Mark as Working
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={cancelPending}
-                        disabled={pendingBusy || pendingBlocks.length === 0}
-                        className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={submitPendingParts}
-                        disabled={pendingBusy || !canSubmitPending}
-                        className={`px-4 py-2 rounded-lg text-white ${
-                          canSubmitPending
-                            ? "bg-blue-600 hover:bg-blue-700"
-                            : "bg-blue-300 cursor-not-allowed"
-                        }`}
-                      >
-                        {pendingBusy ? "Submitting…" : "Submit Change"}
-                      </button>
-                    </div>
+                      );
+                    })}
                   </div>
-                )}
+                  {(toLocationId === 4 ||
+                    system?.location === "Pending Parts") && (
+                    <>
+                      {" "}
+                      {/* New blocks to add */}
+                      {pendingBlocks.length === 0 ? (
+                        <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
+                          No pending parts to be added. Click “Add Bad Part” to
+                          begin.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {pendingBlocks.map((block) => {
+                            const partValue =
+                              partOptions.find(
+                                (o) => o.value === block.part_id
+                              ) || null;
+                            return (
+                              <div
+                                key={block.id}
+                                className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5"
+                              >
+                                {/* Part Select */}
+                                <div className="flex-1">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Part
+                                  </label>
+                                  <Select
+                                    instanceId={`part-${block.id}`}
+                                    classNamePrefix="react-select"
+                                    styles={select40Styles}
+                                    isClearable
+                                    isSearchable
+                                    placeholder="Select part"
+                                    value={partValue}
+                                    onChange={(opt) =>
+                                      updateBlock(
+                                        block.id,
+                                        "part_id",
+                                        opt ? opt.value : null
+                                      )
+                                    }
+                                    options={partOptions}
+                                  />
+                                </div>
+
+                                {/* PPID Input */}
+                                <div className="flex-1">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    PPID
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="text"
+                                    autoCapitalize="characters"
+                                    autoCorrect="off"
+                                    spellCheck="false"
+                                    placeholder="Scan or type PPID"
+                                    value={block.ppid}
+                                    onChange={(e) =>
+                                      updateBlock(
+                                        block.id,
+                                        "ppid",
+                                        e.target.value
+                                      )
+                                    }
+                                    onBlur={(e) =>
+                                      updateBlock(
+                                        block.id,
+                                        "ppid",
+                                        e.target.value.toUpperCase().trim()
+                                      )
+                                    }
+                                    className={`w-full h-10 rounded-md border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                      !block.ppid || !block.part_id
+                                        ? "border-amber-300"
+                                        : "border-gray-300"
+                                    }`}
+                                  />
+                                </div>
+
+                                <div className="md:w-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBlock(block.id)}
+                                    className="relative px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white mt-5 whitespace-nowrap"
+                                  >
+                                    {/* Ghost sets the width to the longest label */}
+                                    <span className="invisible block">
+                                      Mark as Working
+                                    </span>
+
+                                    {/* Real label centered on top */}
+                                    <span className="absolute inset-0 flex items-center justify-center">
+                                      Cancel
+                                    </span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {(toLocationId === 5 || system?.location === "In L10") && (
                   <div className="mt-5 flex flex-col lg:flex-row gap-4">
                     {/* Table on the left */}
-                    <div className="w-full lg:w-3/5">
-                      <table className="w-full bg-white rounded shadow-sm overflow-hidden border-collapse">
+                    <div className="w-full lg:w-3/5 rounded border border-gray-300">
+                      <table className="rounded w-full bg-white  shadow-sm overflow-hidden ">
                         <thead>
                           <tr>
                             <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
