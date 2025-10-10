@@ -6,31 +6,87 @@ const router = express.Router();
 
 /**
  * GET /api/v1/parts/list
- * Optional filters: ?place=inventory|unit&part_id=&unit_id=&q=
+ * Filters (all optional):
+ * - place=inventory|unit
+ * - is_functional=true|false
+ * - part_id=#
+ * - part_name=<text>                (ILIKE)
+ * - part_category_id=#
+ * - part_category_name=<text>       (ILIKE)
+ * - unit_id=#
+ * - unit_service_tag=<text>         (ILIKE)
+ * - q=<text>                        (ILIKE across ppid, part name, unit tag, category)
  */
 router.get("/", async (req, res) => {
-  const { place, part_id, unit_id, q } = req.query;
+  const {
+    place,
+    is_functional,
+    part_id,
+    part_name,
+    part_category_id,
+    part_category_name,
+    unit_id,
+    unit_service_tag,
+    q,
+  } = req.query;
+
   const where = [];
   const params = [];
 
   if (place) {
     params.push(place);
-    where.push(`pl.place   = $${params.length}`);
+    where.push(`pl.place = $${params.length}`);
   }
+
+  if (typeof is_functional !== "undefined") {
+    // Accept "true"/"false"/"1"/"0"
+    const val =
+      is_functional === "true" ||
+      is_functional === "1" ||
+      is_functional === true;
+    params.push(val);
+    where.push(`pl.is_functional = $${params.length}`);
+  }
+
   if (part_id) {
     params.push(part_id);
     where.push(`pl.part_id = $${params.length}`);
   }
+
+  if (part_name && part_name.trim()) {
+    params.push(`%${part_name.trim()}%`);
+    where.push(`p.name ILIKE $${params.length}`);
+  }
+
+  if (part_category_id) {
+    params.push(part_category_id);
+    where.push(`pc.id = $${params.length}`);
+  }
+
+  if (part_category_name && part_category_name.trim()) {
+    params.push(`%${part_category_name.trim()}%`);
+    where.push(`pc.name ILIKE $${params.length}`);
+  }
+
   if (unit_id) {
     params.push(unit_id);
     where.push(`pl.unit_id = $${params.length}`);
   }
+
+  if (unit_service_tag && unit_service_tag.trim()) {
+    params.push(`%${unit_service_tag.trim()}%`);
+    where.push(`s.service_tag ILIKE $${params.length}`);
+  }
+
   if (q && q.trim()) {
+    // single placeholder reused in the ORs on purpose
     params.push(`%${q.trim()}%`);
+    const idx = params.length;
     where.push(
-      `(p.name ILIKE $${params.length} OR pl.ppid ILIKE $${params.length})`
+      `(pl.ppid ILIKE $${idx} OR p.name ILIKE $${idx} OR s.service_tag ILIKE $${idx} OR pc.name ILIKE $${idx})`
     );
   }
+
   const whereSQL = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   try {
@@ -38,11 +94,19 @@ router.get("/", async (req, res) => {
       `
       SELECT
         pl.ppid,
-        pl.id, pl.part_id, p.name AS part_name,
-        pl.place, pl.unit_id, s.service_tag AS unit_service_tag,
-        pl.is_functional, pl.created_at, pl.updated_at
+        pl.id,
+        pl.part_id,
+        p.name AS part_name,
+        pc.name AS part_category_name,
+        pl.place,
+        pl.unit_id,
+        s.service_tag AS unit_service_tag,
+        pl.is_functional,
+        pl.created_at,
+        pl.updated_at
       FROM part_list pl
-      JOIN parts  p  ON p.id = pl.part_id
+      JOIN parts p ON p.id = pl.part_id
+      LEFT JOIN part_categories pc ON pc.id = p.part_category_id
       LEFT JOIN system s ON s.id = pl.unit_id
       ${whereSQL}
       ORDER BY pl.created_at DESC
@@ -208,12 +272,10 @@ router.delete("/:ppid", authenticateToken, async (req, res) => {
       [ppid]
     );
     if (!rows.length) {
-      return res
-        .status(409)
-        .json({
-          error:
-            "Can only delete items that are in inventory (or PPID not found)",
-        });
+      return res.status(409).json({
+        error:
+          "Can only delete items that are in inventory (or PPID not found)",
+      });
     }
     res.json({ message: "Part item deleted" });
   } catch (e) {
