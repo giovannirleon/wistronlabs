@@ -83,13 +83,13 @@ export default function SearchContainerSS({
 
   return (
     <div className="flex flex-col pt-2 space-y-2">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 gap-3">
         <h1 className="text-2xl font-semibold">{title}</h1>
         {allowSearch && (
           <input
             type="text"
             placeholder="Search…"
-            className="border rounded px-2 py-1 text-sm"
+            className="border rounded px-2 py-1 text-sm w-64 md:w-96 lg:w-[32rem]" // 👈 wider
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -98,6 +98,7 @@ export default function SearchContainerSS({
           />
         )}
       </div>
+
       <div className=" bg-gray-100 rounded border border-gray-300 shadow-sm p-4">
         <div className="relative min-h-[300px]">
           {loading && displayedData.length === 0 && (

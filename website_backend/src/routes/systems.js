@@ -1021,6 +1021,31 @@ router.get("/snapshot", async (req, res) => {
     `
     : ``;
 
+  // Unit parts aggregate (always included)
+  const lateralJoinUnitParts = `
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(
+      json_agg(
+        json_build_object(
+          'is_functional', pl.is_functional,
+          'ppid', pl.ppid,
+          'part_name', p.name,
+          'line',
+            CASE WHEN pl.is_functional
+              THEN 'Good Part - ' || COALESCE(p.name, '#' || pl.part_id) || ' - ' || COALESCE(pl.ppid,'')
+              ELSE 'BAD PART - '  || COALESCE(p.name, '#' || pl.part_id) || ' - ' || COALESCE(pl.ppid,'')
+            END
+        )
+        ORDER BY pl.created_at DESC
+      ), '[]'::json
+    ) AS unit_parts
+    FROM part_list pl
+    JOIN parts p ON p.id = pl.part_id
+    WHERE pl.place = 'unit'::part_place
+      AND pl.unit_id = s.id
+  ) up ON TRUE
+`;
+
   // Per-day exclusion SQL: compute placeholder numbers BEFORE pushing the two params
   let perDayExclusionSQL = ``;
   if (mode === "perday") {
@@ -1071,6 +1096,7 @@ router.get("/snapshot", async (req, res) => {
 
         to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
         ${selectNotesAggregate}
+        , up.unit_parts
         , to_char(first_history.first_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
         ${
           includeReceivedFlag
@@ -1084,6 +1110,7 @@ router.get("/snapshot", async (req, res) => {
       LEFT JOIN factory f  ON s.factory_id = f.id
       LEFT JOIN dpn d      ON s.dpn_id     = d.id
       ${lateralJoinNotesAggregate}
+      ${lateralJoinUnitParts}
       LEFT JOIN LATERAL (
         SELECT h0.changed_at AS first_at
         FROM system_location_history h0
@@ -1150,6 +1177,7 @@ router.get("/snapshot", async (req, res) => {
       "Dell Customer",
       "Issue",
       "Note History",
+      "Unit Parts",
     ];
 
     const csvEsc = (v) => {
@@ -1220,6 +1248,11 @@ router.get("/snapshot", async (req, res) => {
           .join("\n");
       }
 
+      let unitPartsText = "";
+      if (Array.isArray(r.unit_parts) && r.unit_parts.length) {
+        unitPartsText = r.unit_parts.map((e) => e.line).join("\n");
+      }
+
       const row = [
         firstLocal, // was r.first_received_on
         includeReceivedFlag ? lastLocal : "", // was r.last_received_on
@@ -1233,6 +1266,7 @@ router.get("/snapshot", async (req, res) => {
         r.dell_customer || "",
         r.issue || "",
         noteHistoryText,
+        unitPartsText,
       ].map(csvEsc);
 
       lines.push(row.join(","));

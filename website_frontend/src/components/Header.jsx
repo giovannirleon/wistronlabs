@@ -70,6 +70,12 @@ function Header() {
         >
           Shipping
         </Link>
+        <Link
+          to="/parts"
+          className={`${linkBase} ${pathname === "/parts" ? active : ""}`}
+        >
+          Parts
+        </Link>
         {token ? (
           <Link
             to="/user"
@@ -137,6 +143,13 @@ function Header() {
             onClick={() => setMenuOpen(false)}
           >
             Shipping
+          </Link>
+          <Link
+            to="/parts"
+            className={`${linkBase} ${pathname === "/parts" ? active : ""}`}
+            onClick={() => setMenuOpen(false)}
+          >
+            Parts
           </Link>
           {token ? (
             <Link

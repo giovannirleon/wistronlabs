@@ -11,6 +11,7 @@ import UserPage from "./pages/UserPage";
 import ResetPassword from "./pages/ResetPassword";
 import HistoryPage from "./pages/HistoryPage";
 import AdminPage from "./pages/AdminPage";
+import PartsPage from "./pages/PartsPage";
 
 import ScrollToTop from "./helpers/ScrollToTop";
 
@@ -36,6 +37,7 @@ function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/shipping" element={<ShippingPage />} />
           <Route path="/:serviceTag" element={<SystemPage />} />
+          <Route path="/parts" element={<PartsPage />} />
           <Route
             path="/user"
             element={

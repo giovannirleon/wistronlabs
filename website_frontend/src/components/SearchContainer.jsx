@@ -69,10 +69,10 @@ function SearchContainer({
 
   return (
     <>
-      <div className="flex justify-between items-center mt-4">
+      <div className="flex justify-between items-center mb-6 gap-3">
         <h1 className="text-2xl font-semibold">{title}</h1>
         {rootHref && onDirChange && (
-          <div className="flex gap-2 mr-2">
+          <div className="flex gap-2 mr-2 pt-5">
             <button
               type="button"
               className="px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-sm font-medium"
@@ -103,13 +103,17 @@ function SearchContainer({
             </button>
           </div>
         )}
+
         {allowSearch && (
           <input
             type="text"
             placeholder="Search…"
-            className="border rounded px-2 py-1 text-sm"
+            className="border rounded px-2 py-1 text-sm w-64 md:w-96 lg:w-[32rem]" // 👈 wider
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              handlePageChange(1);
+            }}
           />
         )}
       </div>

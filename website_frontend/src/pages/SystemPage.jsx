@@ -1,6 +1,6 @@
-import { useEffect, useState, useContext } from "react";
+import { useEffect, useState, useContext, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import Select from "react-select";
+import Select, { components } from "react-select";
 import { Link, useLocation } from "react-router-dom";
 import CreatableSelect from "react-select/creatable";
 
@@ -28,6 +28,65 @@ import useConfirm from "../hooks/useConfirm";
 import useToast from "../hooks/useToast.jsx";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useDetailsModal from "../hooks/useDetailsModal.jsx";
+
+// --- parts select helpers ---
+
+// 1) group and sort parts into react-select "grouped options"
+const buildGroupedPartOptions = (parts = []) => {
+  const byCat = new Map();
+  parts.forEach((p) => {
+    const cat = p.category_name || "Uncategorized";
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push({
+      value: p.id,
+      label: p.name,
+      category_name: cat,
+      part_category_id: p.part_category_id,
+    });
+  });
+
+  return Array.from(byCat.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, options]) => ({
+      label,
+      options: options.sort((a, b) => a.label.localeCompare(b.label)),
+    }));
+};
+
+// 2) search by part label OR category name
+const filterPartOption = (option, rawInput) => {
+  if (!rawInput) return true;
+  const term = rawInput.toLowerCase();
+  const label = (option?.label || "").toLowerCase();
+  const cat = (
+    option?.data?.category_name ??
+    option?.category_name ??
+    ""
+  ).toLowerCase();
+  return label.includes(term) || cat.includes(term);
+};
+
+// 3) optional: custom option line (shows a tiny category chip)
+const PartOption = (props) => {
+  const cat = props.data.category_name;
+  return (
+    <components.Option {...props}>
+      <div className="flex items-center justify-between">
+        <span>{props.label}</span>
+        <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+          {cat}
+        </span>
+      </div>
+    </components.Option>
+  );
+};
+
+// 4) non-selectable group header
+const PartGroupLabel = (group) => (
+  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide py-1">
+    {group.label}
+  </div>
+);
 
 function SystemPage() {
   const FRONTEND_URL = import.meta.env.VITE_URL;
@@ -111,14 +170,33 @@ function SystemPage() {
   const [pendingBlocks, setPendingBlocks] = useState([]); // [{id, part_id, ppid}]
   const [pendingBusy, setPendingBusy] = useState(false);
   const [partOptions, setPartOptions] = useState([]); // [{value,label}]
+  // when partOptions are grouped, this flattens all options for value lookup
+  const flatPartOptions = useMemo(
+    () => partOptions.flatMap((g) => g.options || []),
+    [partOptions]
+  );
   const [unitBadParts, setUnitBadParts] = useState([]); // rows from /parts/list (is_functional=false)
   const [toRemovePPIDs, setToRemovePPIDs] = useState(new Set());
 
-  // Clear drafts when destination changes, EXCEPT if the unit's current location is "Pending Parts"
+  // Map part_id -> part name for quick lookups in note lines
+  const partNameById = useMemo(() => {
+    const m = new Map();
+    flatPartOptions.forEach((o) => m.set(o.value, o.label));
+    return m;
+  }, [flatPartOptions]);
+
+  // Keep “Mark as Working” selections when flipping between destination buttons.
+  // Only clear the temp “pending bad parts” blocks when we’re NOT in the Pending Parts flow.
   useEffect(() => {
-    if (system?.location === "Pending Parts") return;
-    setPendingBlocks([]);
-    setToRemovePPIDs(new Set());
+    const inPendingFlow =
+      toLocationId === 4 || system?.location === "Pending Parts";
+
+    if (!inPendingFlow) {
+      setPendingBlocks([]);
+    }
+
+    // IMPORTANT: do NOT clear toRemovePPIDs here — we want those
+    // mark-as-working toggles to survive destination changes.
     setFormError(""); // optional
   }, [toLocationId, system?.location]);
 
@@ -151,9 +229,7 @@ function SystemPage() {
       try {
         const parts = await getParts(); // [{id,name}]
         if (!alive) return;
-        setPartOptions(
-          (parts || []).map((p) => ({ value: p.id, label: p.name }))
-        );
+        setPartOptions(buildGroupedPartOptions(parts));
       } catch (e) {
         console.error("Failed to load parts:", e);
       }
@@ -567,6 +643,36 @@ function SystemPage() {
       (item) => !toRemovePPIDs.has(item.ppid)
     ).length;
 
+    // Build part-change note lines before we mutate anything
+    const toCreate = pendingBlocks.filter(
+      (b) => b.part_id && (b.ppid || "").trim()
+    );
+    const removing = Array.from(toRemovePPIDs || []);
+
+    // For new bad parts -> "Non Working"
+    const addedNotes = toCreate.map((b) => {
+      const name = partNameById.get(b.part_id) || `#${b.part_id}`;
+      const ppid = String(b.ppid).toUpperCase().trim();
+      return ` - ${name} (${ppid}) in system identified as Non Working.`;
+    });
+
+    // For resolved parts -> "Working"
+    const removedNotes = removing.map((ppid) => {
+      const item = unitBadParts.find((r) => r.ppid === ppid);
+      const name =
+        item?.part_name ||
+        (item?.part_id
+          ? partNameById.get(item.part_id) || `#${item.part_id}`
+          : "Part");
+      return ` - ${name} (${ppid}) in system identified as Working.`;
+    });
+
+    // Final note to send (append changes on a new line, if any)
+    const changeNoteSuffix = [...addedNotes, ...removedNotes].join(" ");
+    const noteToSend = changeNoteSuffix
+      ? `${note.trim()}${note.trim() ? "\n" : ""}${changeNoteSuffix}`
+      : note;
+
     if (movingToL10 && remainingBad > 0) {
       setFormError(
         "Resolve or remove all defective parts before moving to In L10."
@@ -619,7 +725,7 @@ function SystemPage() {
       // ⬅️ Backend now returns { message, pallet_number?, dpn?, factory_code? } when moving into RMA
       const resp = await updateSystemLocation(serviceTag, {
         to_location_id: toId,
-        note,
+        note: noteToSend,
       });
 
       // ✅ Update station mapping
@@ -1022,7 +1128,7 @@ function SystemPage() {
                         <div className="space-y-3">
                           {pendingBlocks.map((block) => {
                             const partValue =
-                              partOptions.find(
+                              flatPartOptions.find(
                                 (o) => o.value === block.part_id
                               ) || null;
                             return (
@@ -1050,7 +1156,10 @@ function SystemPage() {
                                         opt ? opt.value : null
                                       )
                                     }
-                                    options={partOptions}
+                                    options={partOptions} // grouped: [{ label, options: [...] }, ...]
+                                    filterOption={filterPartOption} // search by part OR category
+                                    components={{ Option: PartOption }} // show category chip on each option
+                                    formatGroupLabel={PartGroupLabel} // non-selectable group headers
                                   />
                                 </div>
 
@@ -1118,7 +1227,9 @@ function SystemPage() {
                 {(toLocationId === 5 || system?.location === "In L10") && (
                   <div className="mt-5 flex flex-col lg:flex-row gap-4">
                     {/* Table on the left */}
-                    <div className="w-full lg:w-3/5 rounded border border-gray-300">
+                    <div
+                      className={`w-full lg:w-3/5 rounded border border-gray-300`}
+                    >
                       <table className="rounded w-full bg-white  shadow-sm overflow-hidden ">
                         <thead>
                           <tr>
@@ -1148,46 +1259,48 @@ function SystemPage() {
                     </div>
 
                     {/* Dropdown on the right */}
-                    <div className="w-full lg:w-2/5">
-                      <label
-                        htmlFor="extra-options"
-                        className="block text-sm font-medium text-gray-700 mb-1"
-                      >
-                        Select a Station
-                      </label>
-                      <div
-                        className={
-                          system?.location === "In L10"
-                            ? "opacity-50 pointer-events-none"
-                            : ""
-                        }
-                      >
-                        <Select
-                          instanceId="extra-options"
-                          className="react-select-container"
-                          classNamePrefix="react-select"
-                          isClearable
-                          isSearchable
-                          placeholder="Select a station"
-                          value={
-                            stations
-                              .map((station) => ({
-                                value: station.station_name,
-                                label: "Station " + station.station_name,
-                              }))
-                              .find((opt) => opt.value === selectedStation) ||
-                            null
+                    {system?.location != "In L10" && (
+                      <div className="w-full lg:w-2/5">
+                        <label
+                          htmlFor="extra-options"
+                          className="block text-sm font-medium text-gray-700 mb-1"
+                        >
+                          Select a Station
+                        </label>
+                        <div
+                          className={
+                            system?.location === "In L10"
+                              ? "opacity-50 pointer-events-none"
+                              : ""
                           }
-                          onChange={(option) =>
-                            setSelectedStation(option ? option.value : "")
-                          }
-                          options={stations.map((station) => ({
-                            value: station.station_name,
-                            label: "Station " + station.station_name,
-                          }))}
-                        />
+                        >
+                          <Select
+                            instanceId="extra-options"
+                            className="react-select-container"
+                            classNamePrefix="react-select"
+                            isClearable
+                            isSearchable
+                            placeholder="Select a station"
+                            value={
+                              stations
+                                .map((station) => ({
+                                  value: station.station_name,
+                                  label: "Station " + station.station_name,
+                                }))
+                                .find((opt) => opt.value === selectedStation) ||
+                              null
+                            }
+                            onChange={(option) =>
+                              setSelectedStation(option ? option.value : "")
+                            }
+                            options={stations.map((station) => ({
+                              value: station.station_name,
+                              label: "Station " + station.station_name,
+                            }))}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
