@@ -325,11 +325,12 @@ function SystemPage() {
   const isInPendingParts = system?.location === "Pending Parts";
   const toLocationName =
     locations.find((l) => l.id === toLocationId)?.name || "";
+  const isInL10 = system?.location === "In L10";
   const toIsDebugOrL10 =
     toLocationName === "In Debug - Wistron" || toLocationName === "In L10";
   const canAddGoodParts =
-    (isInDebugWistron && toLocationId !== 4 && !isInPendingParts) || // current location is Debug, but not sending to Pending
-    (toIsDebugOrL10 && toLocationId !== 4 && !isInPendingParts); // explicitly moving to Debug/L10, not Pending
+    (isInDebugWistron && toLocationId !== 4 && !isInPendingParts && !isInL10) || // current location is Debug, but not sending to Pending
+    (toIsDebugOrL10 && toLocationId !== 4 && !isInPendingParts && !isInL10); // explicitly moving to Debug/L10, not Pending
 
   const toggleRemovePPID = (ppid) => {
     setToRemovePPIDs((prev) => {
@@ -908,7 +909,7 @@ function SystemPage() {
         if ((invGood || []).length > 0) {
           const partName = partNameById.get(b.part_id) || `#${b.part_id}`;
           setFormError(
-            `This unit cannot be placed in pending parts for a ${partName} when there is some in inventory`
+            `This unit cannot be placed in pending parts for a ${partName} when there are ${partName}s in inventory`
           );
           return;
         }
@@ -1575,8 +1576,10 @@ function SystemPage() {
 
                 <div className="mt-5 flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    {(toLocationId === 4 ||
-                      system?.location === "Pending Parts") && (
+                    {(isInPendingParts &&
+                      toLocationId === 4 &&
+                      system?.location === "Pending Parts") ||
+                    (!isInPendingParts && toLocationId === 4) ? (
                       <button
                         type="button"
                         onClick={addBadPartBlock}
@@ -1584,7 +1587,7 @@ function SystemPage() {
                       >
                         + Add Bad Part
                       </button>
-                    )}
+                    ) : null}
                     {canAddGoodParts && (
                       <button
                         type="button"
@@ -1757,8 +1760,10 @@ function SystemPage() {
                       </div>
                     ))}
 
-                  {(toLocationId === 4 ||
-                    system?.location === "Pending Parts") && (
+                  {(isInPendingParts &&
+                    toLocationId === 4 &&
+                    system?.location === "Pending Parts") ||
+                  (!isInPendingParts && toLocationId === 4) ? (
                     <>
                       {/* New blocks to add */}
                       {pendingBlocks.length === 0 ? (
@@ -1885,7 +1890,7 @@ function SystemPage() {
                         </div>
                       )}
                     </>
-                  )}
+                  ) : null}
                   {/* Parts tracked inside unit */}
                   <div className="space-y-2">
                     {unitParts.length > 0 && (
@@ -1996,37 +2001,38 @@ function SystemPage() {
                                   />
                                 </div>
                               )}
-                              <div className="md:w-auto">
-                                {(() => {
-                                  // Is there a chosen replacement PPID that exists in the GOOD inventory cache?
-                                  const chosen =
-                                    replacementByOldPPID[item.ppid];
-                                  const validReplacement =
-                                    !!chosen &&
-                                    (
-                                      goodOptionsCache.get(item.part_id) || []
-                                    ).some((opt) => opt.value === chosen);
+                              {!isInPendingParts && (
+                                <div className="md:w-auto">
+                                  {(() => {
+                                    // Is there a chosen replacement PPID that exists in the GOOD inventory cache?
+                                    const chosen =
+                                      replacementByOldPPID[item.ppid];
+                                    const validReplacement =
+                                      !!chosen &&
+                                      (
+                                        goodOptionsCache.get(item.part_id) || []
+                                      ).some((opt) => opt.value === chosen);
 
-                                  const disableMark =
-                                    submitting || validReplacement;
+                                    const disableMark =
+                                      submitting || validReplacement;
 
-                                  return (
-                                    <button
-                                      disabled={disableMark}
-                                      type="button"
-                                      onClick={() => {
-                                        // Toggle mark-as-working, and if marking -> clear any replacement chosen
-                                        toggleRemovePPID(item.ppid);
-                                        setReplacementByOldPPID((s) => {
-                                          const next = { ...s };
-                                          // If we just queued Mark as Working, nuke the replacement
-                                          if (!toRemovePPIDs.has(item.ppid)) {
-                                            next[item.ppid] = "";
-                                          }
-                                          return next;
-                                        });
-                                      }}
-                                      className={`relative px-3 py-2 rounded-md text-white whitespace-nowrap mt-5 
+                                    return (
+                                      <button
+                                        disabled={disableMark}
+                                        type="button"
+                                        onClick={() => {
+                                          // Toggle mark-as-working, and if marking -> clear any replacement chosen
+                                          toggleRemovePPID(item.ppid);
+                                          setReplacementByOldPPID((s) => {
+                                            const next = { ...s };
+                                            // If we just queued Mark as Working, nuke the replacement
+                                            if (!toRemovePPIDs.has(item.ppid)) {
+                                              next[item.ppid] = "";
+                                            }
+                                            return next;
+                                          });
+                                        }}
+                                        className={`relative px-3 py-2 rounded-md text-white whitespace-nowrap mt-5 
                                       ${
                                         queued
                                           ? "bg-gray-500 hover:bg-gray-600"
@@ -2034,22 +2040,23 @@ function SystemPage() {
                                           ? "bg-gray-400 cursor-not-allowed"
                                           : "bg-green-600 hover:bg-gren-700"
                                       }`}
-                                      title={
-                                        validReplacement
-                                          ? "Disable or clear the replacement to mark as working"
-                                          : undefined
-                                      }
-                                    >
-                                      <span className="invisible block">
-                                        Mark as Working
-                                      </span>
-                                      <span className="absolute inset-0 flex items-center justify-center">
-                                        {queued ? "Undo" : "Mark as Working"}
-                                      </span>
-                                    </button>
-                                  );
-                                })()}
-                              </div>
+                                        title={
+                                          validReplacement
+                                            ? "Disable or clear the replacement to mark as working"
+                                            : undefined
+                                        }
+                                      >
+                                        <span className="invisible block">
+                                          Mark as Working
+                                        </span>
+                                        <span className="absolute inset-0 flex items-center justify-center">
+                                          {queued ? "Undo" : "Mark as Working"}
+                                        </span>
+                                      </button>
+                                    );
+                                  })()}
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -2113,53 +2120,57 @@ function SystemPage() {
                                   />
                                 </div>
                               )}
-                              {/* Two mutually-exclusive buttons */}
-                              <div className="flex gap-2 mt-5">
-                                {["not_needed", "defective"].map((kind) => {
-                                  const selected =
-                                    goodActionByPPID[item.ppid]?.action ===
-                                    kind;
-                                  const label =
-                                    kind === "not_needed"
-                                      ? "Not Needed"
-                                      : "Defective";
-                                  return (
-                                    <button
-                                      key={kind}
-                                      type="button"
-                                      onClick={() => {
-                                        setGoodActionByPPID((prev) => {
-                                          const curr = prev[item.ppid]?.action;
-                                          // toggle: if user clicks same action, clear it; otherwise set/replace
-                                          if (curr === kind) {
-                                            const { [item.ppid]: _, ...rest } =
-                                              prev;
-                                            return rest;
-                                          }
-                                          return {
-                                            ...prev,
-                                            [item.ppid]: {
-                                              action: kind,
-                                              original_bad_ppid:
-                                                prev[item.ppid]
-                                                  ?.original_bad_ppid || "",
-                                            },
-                                          };
-                                        });
-                                      }}
-                                      className={`px-3 py-2 rounded-md text-white ${
-                                        selected
-                                          ? kind === "not_needed"
-                                            ? "bg-blue-600"
-                                            : "bg-amber-600"
-                                          : "bg-gray-500 hover:bg-gray-600"
-                                      }`}
-                                    >
-                                      {label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                              {!isInPendingParts /* Two mutually-exclusive buttons */ && (
+                                <div className="flex gap-2 mt-5">
+                                  {["not_needed", "defective"].map((kind) => {
+                                    const selected =
+                                      goodActionByPPID[item.ppid]?.action ===
+                                      kind;
+                                    const label =
+                                      kind === "not_needed"
+                                        ? "Not Needed"
+                                        : "Defective";
+                                    return (
+                                      <button
+                                        key={kind}
+                                        type="button"
+                                        onClick={() => {
+                                          setGoodActionByPPID((prev) => {
+                                            const curr =
+                                              prev[item.ppid]?.action;
+                                            // toggle: if user clicks same action, clear it; otherwise set/replace
+                                            if (curr === kind) {
+                                              const {
+                                                [item.ppid]: _,
+                                                ...rest
+                                              } = prev;
+                                              return rest;
+                                            }
+                                            return {
+                                              ...prev,
+                                              [item.ppid]: {
+                                                action: kind,
+                                                original_bad_ppid:
+                                                  prev[item.ppid]
+                                                    ?.original_bad_ppid || "",
+                                              },
+                                            };
+                                          });
+                                        }}
+                                        className={`px-3 py-2 rounded-md text-white ${
+                                          selected
+                                            ? kind === "not_needed"
+                                              ? "bg-blue-600"
+                                              : "bg-amber-600"
+                                            : "bg-gray-500 hover:bg-gray-600"
+                                        }`}
+                                      >
+                                        {label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
