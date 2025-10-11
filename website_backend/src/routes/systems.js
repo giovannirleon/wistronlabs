@@ -805,6 +805,8 @@ router.get("/", async (req, res) => {
             rev: "s.rev",
             factory: "f.code",
             ppid: "s.ppid",
+            root_cause: "rc.name",
+            root_cause_sub_category: "rcs.name",
           })}`
         : "";
   }
@@ -823,6 +825,8 @@ router.get("/", async (req, res) => {
     date_created: "first_history.changed_at",
     date_modified: "last_history.changed_at",
     added_by: "first_user.username",
+    root_cause: "rc.name",
+    root_cause_sub_category: "rcs.name",
   };
 
   const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";
@@ -857,6 +861,8 @@ router.get("/", async (req, res) => {
           l.name AS location,
           f.code AS factory_code,
           f.name AS factory_name,
+          rc.name  AS root_cause,
+          rcs.name AS root_cause_sub_category,
           first_history.changed_at AS date_created,
           first_user.username AS added_by,
           last_history.changed_at AS date_modified
@@ -864,6 +870,8 @@ router.get("/", async (req, res) => {
         JOIN location l ON s.location_id = l.id
         LEFT JOIN factory f ON s.factory_id = f.id
         LEFT JOIN dpn d ON s.dpn_id = d.id
+        LEFT JOIN root_cause rc                 ON rc.id  = s.root_cause_id
+        LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
 
         -- first history entry per system
         LEFT JOIN LATERAL (
@@ -1797,6 +1805,8 @@ router.get("/:service_tag", async (req, res) => {
         l.name AS location,
         f.code AS factory_code,
         f.name AS factory_name,
+        rc.name  AS root_cause,
+        rcs.name AS root_cause_sub_category,
         -- first history entry
         first_history.changed_at AS date_created,
         first_user.username AS added_by,
@@ -1806,6 +1816,8 @@ router.get("/:service_tag", async (req, res) => {
       JOIN location l ON s.location_id = l.id
       LEFT JOIN factory f ON s.factory_id = f.id
       LEFT JOIN dpn d ON s.dpn_id = d.id
+      LEFT JOIN root_cause rc                 ON rc.id  = s.root_cause_id
+      LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
 
       -- first history entry per system
       LEFT JOIN LATERAL (
@@ -1841,6 +1853,104 @@ router.get("/:service_tag", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch system" });
   }
 });
+
+// PATCH /api/v1/systems/:service_tag/root-cause
+router.patch(
+  "/:service_tag/root-cause",
+  authenticateToken,
+  async (req, res) => {
+    const { service_tag } = req.params;
+    let { root_cause_id, root_cause_sub_category_id } = req.body || {};
+
+    const providedRoot = typeof root_cause_id !== "undefined";
+    const providedSub = typeof root_cause_sub_category_id !== "undefined";
+
+    if (!providedRoot && !providedSub) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+    if (providedRoot !== providedSub) {
+      return res.status(400).json({
+        error:
+          "root_cause_id and root_cause_sub_category_id must be provided together (both null or both set).",
+      });
+    }
+
+    // At this point, both are provided. Enforce pair rule:
+    const bothNull =
+      root_cause_id === null && root_cause_sub_category_id === null;
+    const bothSet =
+      root_cause_id !== null && root_cause_sub_category_id !== null;
+
+    if (!bothNull && !bothSet) {
+      return res.status(400).json({
+        error: "Invalid pair: both must be null or both must be non-null.",
+      });
+    }
+
+    try {
+      // Validate when set (existence in lookup tables)
+      if (bothSet) {
+        const [rc, rcs] = await Promise.all([
+          db.query(`SELECT 1 FROM root_cause WHERE id = $1`, [root_cause_id]),
+          db.query(`SELECT 1 FROM root_cause_sub_categories WHERE id = $1`, [
+            root_cause_sub_category_id,
+          ]),
+        ]);
+        if (!rc.rowCount)
+          return res
+            .status(400)
+            .json({ error: `root_cause id ${root_cause_id} not found` });
+        if (!rcs.rowCount)
+          return res
+            .status(400)
+            .json({
+              error: `root_cause_sub_category id ${root_cause_sub_category_id} not found`,
+            });
+      }
+
+      // Update both columns in one statement
+      const upd = await db.query(
+        `
+      UPDATE system
+         SET root_cause_id = $2,
+             root_cause_sub_category_id = $3
+       WHERE service_tag = $1
+       RETURNING id
+      `,
+        [service_tag, root_cause_id, root_cause_sub_category_id]
+      );
+
+      if (!upd.rowCount) {
+        return res.status(404).json({ error: "System not found" });
+      }
+
+      // Return names (not ids)
+      const { rows } = await db.query(
+        `
+      SELECT rc.name  AS root_cause,
+             rcs.name AS root_cause_sub_category
+      FROM system s
+      LEFT JOIN root_cause rc                 ON rc.id  = s.root_cause_id
+      LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
+      WHERE s.service_tag = $1
+      `,
+        [service_tag]
+      );
+
+      return res.json({
+        message: "Root cause fields updated",
+        root_cause: rows[0].root_cause || null,
+        root_cause_sub_category: rows[0].root_cause_sub_category || null,
+      });
+    } catch (err) {
+      console.error(err);
+      // Will also catch CHECK constraint violations if someone tries to bypass the API
+      return res
+        .status(500)
+        .json({ error: "Failed to update root cause fields" });
+    }
+  }
+);
 
 // PATCH /api/v1/systems/:service_tag/location
 router.patch("/:service_tag/location", authenticateToken, async (req, res) => {

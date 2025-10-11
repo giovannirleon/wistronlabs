@@ -867,6 +867,80 @@ function SystemPage() {
     fetchData();
   }, [serviceTag]);
 
+  // Will the unit still contain any GOOD parts after this submit?
+  const willHaveGoodAfterSubmit = useMemo(() => {
+    // 1) GOOD parts currently in unit
+    const goodInUnitNow = new Set(
+      (unitParts || [])
+        .filter((i) => i.is_functional === true)
+        .map((i) => normPPID(i.ppid))
+    );
+
+    // 2) GOOD parts we are explicitly removing this submit
+    //    (only entries with an action AND an original_bad_ppid actually execute)
+    const gaEntries = Object.entries(goodActionByPPID).filter(
+      ([g, cfg]) => !!cfg?.action && !!cfg?.original_bad_ppid
+    );
+    for (const [g] of gaEntries) goodInUnitNow.delete(normPPID(g));
+
+    // 3) GOOD parts that will be added this submit
+    const addFromGoodBlocks = goodBlocks.filter(
+      (b) =>
+        b.part_id && (b.ppid || "").trim() && (b.current_bad_ppid || "").trim()
+    ).length;
+
+    const addFromReplacements =
+      Object.values(replacementByOldPPID).filter(Boolean).length;
+
+    // If any good remains or any good is being added, we will end up with a good part in unit
+    return (
+      goodInUnitNow.size > 0 || addFromGoodBlocks > 0 || addFromReplacements > 0
+    );
+  }, [unitParts, goodActionByPPID, goodBlocks, replacementByOldPPID]);
+
+  const L10_LOCATION_ID = useMemo(
+    () => locations.find((l) => l.name === "In L10")?.id,
+    [locations]
+  );
+
+  // Will the unit still contain any BAD parts after this submit?
+  const willHaveBadAfterSubmit = useMemo(() => {
+    // start with current BAD parts in the unit
+    const bad = new Set(
+      (unitParts || [])
+        .filter((i) => i.is_functional === false)
+        .map((i) => normPPID(i.ppid))
+    );
+
+    // remove BAD parts the user will mark as working
+    for (const p of toRemovePPIDs) bad.delete(normPPID(p));
+
+    // remove BAD parts that will be replaced by a GOOD PPID
+    for (const oldBad of Object.keys(replacementByOldPPID || {})) {
+      if (replacementByOldPPID[oldBad]) bad.delete(normPPID(oldBad));
+    }
+
+    // add BAD parts that will be newly flagged in this submit (Pending blocks)
+    for (const b of pendingBlocks) {
+      if (b.part_id && (b.ppid || "").trim()) bad.add(normPPID(b.ppid));
+    }
+
+    // add BAD parts that will be brought back into the unit via Good-part actions
+    for (const cfg of Object.values(goodActionByPPID || {})) {
+      if (cfg?.action && (cfg.original_bad_ppid || "").trim()) {
+        bad.add(normPPID(cfg.original_bad_ppid));
+      }
+    }
+
+    return bad.size > 0;
+  }, [
+    unitParts,
+    toRemovePPIDs,
+    replacementByOldPPID,
+    pendingBlocks,
+    goodActionByPPID,
+  ]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -887,11 +961,29 @@ function SystemPage() {
       (b) => b.part_id && (b.ppid || "").trim()
     ).length;
 
-    if (movingToPending && newBadCount === 0) {
-      setFormError(
-        "Mark at least one part as defective before moving to Pending Parts"
-      );
-      return;
+    // any currently-tracked BAD parts in the unit?
+    const hasBadTrackedNow = (unitParts || []).some(
+      (i) => i.is_functional === false
+    );
+
+    if (movingToPending) {
+      if (isInPendingParts) {
+        // keep existing behavior while already IN Pending Parts
+        if (newBadCount === 0) {
+          setFormError(
+            "Mark at least one additional part as defective before moving to Pending Parts again."
+          );
+          return;
+        }
+      } else {
+        // only error if there are NO current bad parts AND no new pending parts added
+        if (!hasBadTrackedNow && newBadCount === 0) {
+          setFormError(
+            "At least one part must be marked as defective before moving to Pending Parts"
+          );
+          return;
+        }
+      }
     }
 
     const movingToL10 =
@@ -914,6 +1006,14 @@ function SystemPage() {
           return;
         }
       }
+    }
+
+    const movingToRMA = RMA_LOCATION_IDS.includes(toId);
+    if (movingToRMA && willHaveGoodAfterSubmit) {
+      setFormError(
+        "Remove or return all good parts before moving this unit to an RMA location."
+      );
+      return;
     }
 
     const badInUnit = (unitParts || []).filter(
@@ -1536,24 +1636,44 @@ function SystemPage() {
 
                 <div className="flex flex-wrap gap-3">
                   {allowedNextLocations(currentLocation, locations).map(
-                    (loc) => (
-                      <button
-                        type="button"
-                        key={loc.id}
-                        disabled={isResolved}
-                        onClick={() => setToLocationId(loc.id)}
-                        className={`px-4 py-2 rounded-lg shadow text-sm font-medium border
-                  ${
-                    toLocationId === loc.id
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
-                  }
-          ${isResolved ? "opacity-50 cursor-not-allowed" : ""}`}
-                      >
-                        {loc.name}
-                      </button>
-                    )
+                    (loc) => {
+                      const isRMA = RMA_LOCATION_IDS.includes(loc.id);
+                      const isL10 = L10_LOCATION_ID
+                        ? loc.id === L10_LOCATION_ID
+                        : loc.name === "In L10";
+
+                      const rmaBlocked = isRMA && willHaveGoodAfterSubmit;
+                      const l10Blocked = isL10 && willHaveBadAfterSubmit;
+
+                      const disabled = isResolved || rmaBlocked || l10Blocked;
+
+                      const title = rmaBlocked
+                        ? "Remove/return all good parts before moving to an RMA location."
+                        : l10Blocked
+                        ? "Resolve or remove all defective parts before moving to In L10."
+                        : isResolved
+                        ? "Resolved units can’t be moved."
+                        : undefined;
+
+                      return (
+                        <button
+                          type="button"
+                          key={loc.id}
+                          disabled={disabled}
+                          title={title}
+                          onClick={() => setToLocationId(loc.id)}
+                          className={`px-4 py-2 rounded-lg shadow text-sm font-medium border ${
+                            toLocationId === loc.id
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+                          } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                        >
+                          {loc.name}
+                        </button>
+                      );
+                    }
                   )}
+
                   {isResolved && (
                     <button
                       type="button"
@@ -1747,10 +1867,10 @@ function SystemPage() {
                                   className="relative px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white mt-5 whitespace-nowrap"
                                 >
                                   <span className="invisible block">
-                                    Remove
+                                    Cancel
                                   </span>
                                   <span className="absolute inset-0 flex items-center justify-center">
-                                    Remove
+                                    Cancel
                                   </span>
                                 </button>
                               </div>
@@ -1940,7 +2060,7 @@ function SystemPage() {
                             />
                           </div>
                           {/* Actions for BAD parts */}
-                          {isBad && (
+                          {isBad && toLocationId != 4 && (
                             <div className="flex flex-col md:flex-row md:items-center gap-3">
                               {/* Replacement PPID (only when allowed) */}
                               {canAddGoodParts && (
@@ -2061,7 +2181,7 @@ function SystemPage() {
                           )}
 
                           {/* Actions for GOOD parts */}
-                          {!isBad && (
+                          {!isBad && toLocationId != 4 && (
                             <div className="flex flex-col md:flex-row md:items-center gap-3">
                               {/* "Original PPID" BAD inventory selector, shown only when an action is selected */}
                               {goodActionByPPID[item.ppid]?.action && (
