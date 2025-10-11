@@ -486,10 +486,67 @@ function useApi() {
   const lockPallet = (pallet_number) => setPalletLock(pallet_number, true);
   const unlockPallet = (pallet_number) => setPalletLock(pallet_number, false);
 
-  // List (filters optional: { place, part_id, unit_id, q })
+  // List physical part items (inventory + in-unit)
+  // Supported filters:
+  // {
+  //   q,                                 // text search (part_name or PPID)
+  //   place,                             // 'inventory' | 'unit' | string[] for multi
+  //   is_functional,                     // boolean | 'true' | 'false'
+  //   part_id,                           // number | string
+  //   part_name,                         // string
+  //   part_category_id,                  // number | string
+  //   part_category_name,                // string
+  //   unit_id,                           // number | string
+  //   unit_service_tag                   // string
+  // }
   const getPartItems = async (params = {}) => {
-    const qs = new URLSearchParams(params).toString();
-    return fetchJSON(`/parts/${qs ? `?${qs}` : ""}`);
+    const qs = new URLSearchParams();
+
+    const add = (k, v) => {
+      if (v === undefined || v === null || v === "") return;
+      if (Array.isArray(v)) {
+        v.forEach((item) => add(k, item));
+      } else {
+        qs.append(k, String(v));
+      }
+    };
+
+    // Normalize booleans explicitly
+    const normalizeBool = (v) => {
+      if (typeof v === "boolean") return v ? "true" : "false";
+      if (v === "true" || v === "false") return v;
+      return undefined;
+    };
+
+    const {
+      q,
+      place,
+      is_functional,
+      part_id,
+      part_name,
+      part_category_id,
+      part_category_name,
+      unit_id,
+      unit_service_tag,
+    } = params;
+
+    add("q", q);
+    add("part_id", part_id);
+    add("part_name", part_name);
+    add("part_category_id", part_category_id);
+    add("part_category_name", part_category_name);
+    add("unit_id", unit_id);
+    add("unit_service_tag", unit_service_tag);
+
+    // allow single or array for place
+    add("place", place);
+
+    // normalize boolean to "true"/"false"
+    const isFuncStr = normalizeBool(is_functional);
+    if (isFuncStr !== undefined) add("is_functional", isFuncStr);
+
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return fetchJSON(`/parts/${suffix}`);
   };
 
   // Read one by PPID

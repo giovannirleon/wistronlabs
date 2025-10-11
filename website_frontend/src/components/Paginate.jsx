@@ -11,14 +11,33 @@ function Items({
   rootHref,
   onDirChange,
   truncate,
+  twoLineClamp,
   onAction,
   actionButtonClass,
   actionButtonVisibleIf,
   hasActionColumn,
+  alignByField = {},
 }) {
   const filteredDisplayOrder = visibleFields
     ? displayOrder.filter((field) => visibleFields.includes(field))
     : displayOrder;
+
+  const alignMapToClass = {
+    left: "text-left",
+    center: "text-center",
+    right: "text-right",
+  };
+
+  function getAlignmentClass(field, fieldIndex, total, alignByField) {
+    // explicit override first
+    const explicit = alignByField?.[field];
+    if (explicit && alignMapToClass[explicit]) return alignMapToClass[explicit];
+
+    // fallback to your current behavior
+    if (fieldIndex === 0) return "text-left";
+    if (fieldIndex === total - 1) return "text-right";
+    return "text-left";
+  }
 
   return (
     <>
@@ -38,12 +57,12 @@ function Items({
               className={commonClasses + " invisible w-full min-w-0"}
             >
               {filteredDisplayOrder.map((field, fieldIndex) => {
-                const alignment =
-                  fieldIndex === 0
-                    ? "text-left"
-                    : fieldIndex === displayOrder.length - 1
-                    ? "text-right"
-                    : "text-left";
+                const alignment = getAlignmentClass(
+                  field,
+                  fieldIndex,
+                  displayOrder.length,
+                  alignByField
+                );
 
                 const truncateClasses = truncate
                   ? "truncate overflow-hidden text-ellipsis whitespace-nowrap"
@@ -78,12 +97,12 @@ function Items({
         }
 
         const RowContent = filteredDisplayOrder.map((field, fieldIndex) => {
-          const alignment =
-            fieldIndex === 0
-              ? "text-left"
-              : fieldIndex === displayOrder.length - 1
-              ? "text-right"
-              : "text-left";
+          const alignment = getAlignmentClass(
+            field,
+            fieldIndex,
+            displayOrder.length,
+            alignByField
+          );
 
           const value = item[field];
           let content = value ?? "";
@@ -109,9 +128,24 @@ function Items({
             classes = fieldStyles[field];
           }
 
-          const truncateClasses = truncate
-            ? "truncate overflow-hidden text-ellipsis whitespace-nowrap"
-            : "";
+          // Default single-line truncate (if not using twoLineClamp)
+          const truncateClasses =
+            truncate && !twoLineClamp
+              ? "truncate overflow-hidden text-ellipsis whitespace-nowrap"
+              : "";
+          // When twoLineClamp is enabled, render a 2-line head/tail ellipsis:
+          // Line 1: normal LTR with end-ellipsis (shows the beginning)
+          // Line 2: RTL + truncate to get a start-ellipsis effect (shows the end)
+          const twoLine = twoLineClamp ? (
+            <span className="block overflow-hidden leading-snug">
+              <span className="block truncate">{String(content)}</span>
+              <span className="block truncate [direction:rtl] [unicode-bidi:plaintext]">
+                {String(content)}
+              </span>
+            </span>
+          ) : (
+            content
+          );
 
           return (
             <span
@@ -122,8 +156,10 @@ function Items({
                   ? "pr-3 sm:pr-4"
                   : ""
               }`}
+              // Keep the cell from growing the row; show at most two lines
+              style={twoLineClamp ? { maxHeight: "2.6em" } : undefined}
             >
-              {content}
+              {twoLine}
             </span>
           );
         });
@@ -248,6 +284,8 @@ export default function PaginatedItems({
   onDirChange,
   defaultPage = "first",
   truncate = false, // ⬅️ new optional prop
+  alignByField = {}, // default empty map
+  twoLineClamp = false,
   onAction = null, // ⬅️ new optional prop
   actionButtonClass = "",
   actionButtonVisibleIf = null, // ⬅️ new optional prop
@@ -293,6 +331,7 @@ export default function PaginatedItems({
   return (
     <>
       <Items
+        twoLineClamp={twoLineClamp}
         currentItems={paddedItems}
         displayOrder={displayOrder}
         visibleFields={visibleFields} // ⬅️ pass down
@@ -305,6 +344,7 @@ export default function PaginatedItems({
         actionButtonClass={actionButtonClass}
         actionButtonVisibleIf={actionButtonVisibleIf}
         hasActionColumn={hasActionColumn}
+        alignByField={alignByField}
       />
       <ReactPaginate
         breakLabel="…"

@@ -14,6 +14,8 @@ function SearchContainer({
   allowSearch = true, // added: allows disabling search
   defaultPage = "first", // added: accepts 'first' or 'last'
   truncate,
+  alignByField, // { note: 'left' | 'center' | 'right', moved_by: 'center', ... }
+  twoLineClamp = false,
   // directory navigation (optional)
   rootHref,
   currentDir = "",
@@ -22,6 +24,22 @@ function SearchContainer({
   actionButtonClass,
   actionButtonVisibleIf,
 }) {
+  const alignMapToClass = {
+    left: "text-left",
+    center: "text-center",
+    right: "text-right",
+  };
+
+  function getAlignmentClass(field, fieldIndex, total, alignByField) {
+    // explicit override first
+    const explicit = alignByField?.[field];
+    if (explicit && alignMapToClass[explicit]) return alignMapToClass[explicit];
+
+    // fallback to your current behavior
+    if (fieldIndex === 0) return "text-left";
+    if (fieldIndex === total - 1) return "text-right";
+    return "text-left";
+  }
   const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
   const [sortAsc, setSortAsc] = useState(defaultSortAsc ?? false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -126,15 +144,14 @@ function SearchContainer({
             {/* Table header */}
             <div className="flex items-center gap-x-4 bg-white border border-gray-300 rounded px-4 py-2 mb-2 min-w-0 overflow-hidden">
               {filteredDisplayOrder.map((field, fieldIndex) => {
-                const isFirst = fieldIndex === 0;
                 const isLastDataCol =
                   fieldIndex === filteredDisplayOrder.length - 1;
-
-                const alignment = isFirst
-                  ? "text-left"
-                  : isLastDataCol
-                  ? "text-right"
-                  : "text-left";
+                const alignment = getAlignmentClass(
+                  field,
+                  fieldIndex,
+                  filteredDisplayOrder.length,
+                  alignByField
+                );
                 const headerLabel = getHeaderLabel(data, field);
 
                 return (
@@ -181,6 +198,8 @@ function SearchContainer({
               actionButtonClass={actionButtonClass}
               actionButtonVisibleIf={actionButtonVisibleIf}
               rootHref={rootHref}
+              alignByField={alignByField}
+              twoLineClamp={twoLineClamp}
               onDirChange={onDirChange}
             />
           </div>
