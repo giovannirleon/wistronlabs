@@ -1224,7 +1224,7 @@ router.get("/snapshot", async (req, res) => {
       LEFT JOIN factory f  ON s.factory_id = f.id
       LEFT JOIN dpn d      ON s.dpn_id     = d.id
       LEFT JOIN root_cause rc ON rc.id = s.root_cause_id
-      LEFT JOIN root_cause_sub_category rcs ON rcs.id = s.root_cause_sub_category_id
+      LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
       ${lateralJoinNotesAggregate}
       ${lateralJoinUnitParts}
       LEFT JOIN LATERAL (
