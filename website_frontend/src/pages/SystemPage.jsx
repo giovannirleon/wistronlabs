@@ -1,8 +1,7 @@
 import { useEffect, useState, useContext, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Select, { components } from "react-select";
-import { Link, useLocation } from "react-router-dom";
-import CreatableSelect from "react-select/creatable";
+import { Link } from "react-router-dom";
 
 import { DateTime } from "luxon";
 
@@ -204,7 +203,6 @@ function SystemPage() {
 
   // --- Pending Parts state ---
   const [pendingBlocks, setPendingBlocks] = useState([]); // [{id, part_id, ppid}]
-  const [pendingBusy, setPendingBusy] = useState(false);
   const [partOptions, setPartOptions] = useState([]); // [{value,label}]
   // when partOptions are grouped, this flattens all options for value lookup
   const flatPartOptions = useMemo(
@@ -339,9 +337,15 @@ function SystemPage() {
   const isInL10 = system?.location === "In L10";
   const toIsDebugOrL10 =
     toLocationName === "In Debug - Wistron" || toLocationName === "In L10";
+  const isInReceived = system?.location === "Received";
+
   const canAddGoodParts =
     (isInDebugWistron && toLocationId !== 4 && !isInPendingParts && !isInL10) || // current location is Debug, but not sending to Pending
-    (toIsDebugOrL10 && toLocationId !== 4 && !isInPendingParts && !isInL10); // explicitly moving to Debug/L10, not Pending
+    (toIsDebugOrL10 &&
+      toLocationId !== 4 &&
+      !isInPendingParts &&
+      !isInL10 &&
+      !isInReceived); // explicitly moving to Debug/L10, not Pending
 
   const toggleRemovePPID = (ppid) => {
     setToRemovePPIDs((prev) => {
@@ -353,10 +357,11 @@ function SystemPage() {
   };
 
   const ROOT_CAUSE_LOCATIONS = ["RMA VID", "RMA CID", "RMA PID", "Sent to L11"];
-  const showRootCauseControls = useMemo(
-    () => ROOT_CAUSE_LOCATIONS.includes(toLocationName),
-    [toLocationName]
-  );
+  const showRootCauseControls = useMemo(() => {
+    const movingToResolved = ROOT_CAUSE_LOCATIONS.includes(toLocationName);
+    const inResolvedNow = ROOT_CAUSE_LOCATIONS.includes(currentLocation);
+    return movingToResolved || inResolvedNow;
+  }, [toLocationName, currentLocation]);
 
   useEffect(() => {
     if (!showRootCauseControls) {
@@ -376,11 +381,15 @@ function SystemPage() {
 
         if (!alive) return;
 
+        // when options are fetched
         const catOpts = (cats || []).map((c) => ({
-          value: c.id,
+          value: String(c.id),
           label: c.name,
         }));
-        let subOpts = (subs || []).map((s) => ({ value: s.id, label: s.name }));
+        let subOpts = (subs || []).map((s) => ({
+          value: String(s.id),
+          label: s.name,
+        }));
 
         // Hide "Unable to Repair" when sending to L11
         if (toLocationName === "Sent to L11") {
@@ -398,21 +407,6 @@ function SystemPage() {
       alive = false;
     };
   }, [showRootCauseControls, toLocationName]); // ← don't depend on hook fn identities
-
-  const markExistingWorking = async (ppid) => {
-    try {
-      await updatePartItem(ppid, {
-        is_functional: true,
-        place: "inventory",
-        unit_id: null,
-      });
-      await refreshUnitParts();
-      showToast("Marked as working", "success", 2000, "bottom-right");
-    } catch (e) {
-      const msg = e?.body?.error || e.message || "Failed to update part";
-      showToast(msg, "error", 3200, "bottom-right");
-    }
-  };
 
   // Add a new empty block
   const addBadPartBlock = () => {
@@ -455,40 +449,11 @@ function SystemPage() {
   const removeBlock = (id) =>
     setPendingBlocks((list) => list.filter((b) => b.id !== id));
 
-  // Cancel all
-  const cancelPending = () => setPendingBlocks([]);
-
   // Ready to submit?
   const canSubmitPending =
     pendingBlocks.length > 0 &&
     pendingBlocks.every((b) => !!b.part_id && !!(b.ppid || "").trim());
 
-  // Create part_list rows (in unit, non-working)
-  const submitPendingParts = async () => {
-    if (!system?.id || !canSubmitPending) return;
-    setPendingBusy(true);
-    try {
-      await Promise.all(
-        pendingBlocks.map(async (b) => {
-          const ppid = String(b.ppid).toUpperCase().trim(); // save uppercase
-          await createPartItem(ppid, {
-            part_id: b.part_id,
-            place: "unit",
-            unit_id: system.id,
-            is_functional: false,
-          });
-        })
-      );
-      showToast("Added bad parts to unit", "success", 2400, "bottom-right");
-      setPendingBlocks([]);
-      await fetchData(); // refresh
-    } catch (e) {
-      const msg = e?.body?.error || e.message || "Failed to add bad parts";
-      showToast(msg, "error", 3500, "bottom-right");
-    } finally {
-      setPendingBusy(false);
-    }
-  };
   // Preload parts + GOOD PPIDs when already in Debug (no need to choose To Location)
   useEffect(() => {
     if (!isInDebugWistron) return;
@@ -574,6 +539,24 @@ function SystemPage() {
     };
   }, [canAddGoodParts]);
 
+  // seed from backend AFTER showRootCauseControls is true
+  useEffect(() => {
+    if (!showRootCauseControls) return;
+    if (selectedRootCauseId == null && system?.root_cause_id != null) {
+      setSelectedRootCauseId(String(system.root_cause_id));
+    }
+    if (
+      selectedRootCauseSubId == null &&
+      system?.root_cause_sub_category_id != null
+    ) {
+      setSelectedRootCauseSubId(String(system.root_cause_sub_category_id));
+    }
+  }, [
+    showRootCauseControls,
+    system?.root_cause_id,
+    system?.root_cause_sub_category_id,
+  ]);
+
   useEffect(() => {
     // Do NOT reset "Good Parts in unit" actions while the unit is currently in Pending Parts.
     if (isInPendingParts) return;
@@ -633,10 +616,17 @@ function SystemPage() {
     );
   }
 
-  const { openDetails, closeDetails, modal } = useDetailsModal(
-    showToast,
-    fetchData
+  const { openDetails, modal } = useDetailsModal(showToast, fetchData);
+
+  // at top with other memos
+  const hasAnyBadReplacementChosen = useMemo(
+    () =>
+      Object.values(replacementByOldPPID || {}).some(
+        (v) => (v || "").trim() !== ""
+      ),
+    [replacementByOldPPID]
   );
+
   const select40Styles = useMemo(
     () => ({
       control: (base, state) => ({
@@ -1186,9 +1176,9 @@ function SystemPage() {
       ? `${note.trim()}${note.trim() ? "\n" : ""}${noteLines.join(" ")}`
       : note;
 
-    if (movingToL10 && remainingBad > 0) {
+    if (movingToL10 && remainingBad > 0 && !hasAnyBadReplacementChosen) {
       setFormError(
-        "Resolve or remove all defective parts before moving to In L10."
+        "Add a Replacement PPID for at least one defective part (or resolve/remove all) before moving to In L10."
       );
       return;
     }
@@ -1587,20 +1577,6 @@ function SystemPage() {
     window.open(url);
   };
 
-  const handleDetails = () => {
-    if (system) {
-      openDetails({
-        service_tag: system.service_tag,
-        dpn: system.dpn,
-        manufactured_date: system.manufactured_date,
-        serial: system.serial,
-        rev: system.rev,
-        factory_code: system.factory_code,
-        factory_name: system.factory_name,
-      });
-    }
-  };
-
   // Fetch stations every second
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -1626,13 +1602,22 @@ function SystemPage() {
   }, [isResolved]);
 
   const target = serviceTag.trim().toUpperCase();
-  console.log("TEST");
   const isInPalletNumber =
     releasedPallets.find((p) =>
       p.active_systems?.some(
         (s) => (s.service_tag || "").toUpperCase() === target
       )
     )?.pallet_number ?? null;
+
+  // Effective IDs for selects: prefer local pick, else backend value (stringified)
+  const rcEffectiveId =
+    selectedRootCauseId ??
+    (system?.root_cause_id != null ? String(system.root_cause_id) : null);
+  const rcSubEffectiveId =
+    selectedRootCauseSubId ??
+    (system?.root_cause_sub_category_id != null
+      ? String(system.root_cause_sub_category_id)
+      : null);
 
   return (
     <>
@@ -1736,72 +1721,66 @@ function SystemPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    New Location:
-                  </label>
+                  {!isResolved && (
+                    <>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">
+                        New Location:
+                      </label>
 
-                  <div className="flex flex-wrap gap-3">
-                    {allowedNextLocations(currentLocation, locations).map(
-                      (loc) => {
-                        const isRMA = RMA_LOCATION_IDS.includes(loc.id);
-                        const isL10 = L10_LOCATION_ID
-                          ? loc.id === L10_LOCATION_ID
-                          : loc.name === "In L10";
+                      <div className="flex flex-wrap gap-3">
+                        {allowedNextLocations(currentLocation, locations).map(
+                          (loc) => {
+                            const isRMA = RMA_LOCATION_IDS.includes(loc.id);
+                            const isL10 = L10_LOCATION_ID
+                              ? loc.id === L10_LOCATION_ID
+                              : loc.name === "In L10";
 
-                        const rmaBlocked = isRMA && willHaveGoodAfterSubmit;
-                        const l10Blocked = isL10 && willHaveBadAfterSubmit;
+                            const rmaBlocked = isRMA && willHaveGoodAfterSubmit;
+                            // Allow In L10 when at least one bad has a Replacement PPID chosen
+                            const l10Blocked =
+                              isL10 &&
+                              willHaveBadAfterSubmit &&
+                              !hasAnyBadReplacementChosen;
+                            const disabled =
+                              isResolved || rmaBlocked || l10Blocked;
 
-                        const disabled = isResolved || rmaBlocked || l10Blocked;
+                            const title = rmaBlocked
+                              ? "Remove/return all good parts before moving to an RMA location."
+                              : l10Blocked
+                              ? "Add a Replacement PPID for at least one defective part to move to In L10."
+                              : isResolved
+                              ? "Resolved units can’t be moved."
+                              : undefined;
 
-                        const title = rmaBlocked
-                          ? "Remove/return all good parts before moving to an RMA location."
-                          : l10Blocked
-                          ? "Resolve or remove all defective parts before moving to In L10."
-                          : isResolved
-                          ? "Resolved units can’t be moved."
-                          : undefined;
+                            return (
+                              <button
+                                type="button"
+                                key={loc.id}
+                                disabled={disabled}
+                                title={title}
+                                onClick={() => setToLocationId(loc.id)}
+                                className={`px-4 py-2 rounded-lg shadow text-sm font-medium border ${
+                                  toLocationId === loc.id
+                                    ? "bg-blue-600 text-white border-blue-600"
+                                    : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+                                } ${
+                                  disabled
+                                    ? "opacity-50 cursor-not-allowed"
+                                    : ""
+                                }`}
+                              >
+                                {loc.name}
+                              </button>
+                            );
+                          }
+                        )}
+                      </div>
 
-                        return (
-                          <button
-                            type="button"
-                            key={loc.id}
-                            disabled={disabled}
-                            title={title}
-                            onClick={() => setToLocationId(loc.id)}
-                            className={`px-4 py-2 rounded-lg shadow text-sm font-medium border ${
-                              toLocationId === loc.id
-                                ? "bg-blue-600 text-white border-blue-600"
-                                : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
-                            } ${
-                              disabled ? "opacity-50 cursor-not-allowed" : ""
-                            }`}
-                          >
-                            {loc.name}
-                          </button>
-                        );
-                      }
-                    )}
-
-                    {isResolved && (
-                      <button
-                        type="button"
-                        className="px-4 py-2 rounded-lg shadow text-sm font-medium bg-gray-200 text-gray-700 border-gray-300"
-                      >
-                        None Available
-                      </button>
-                    )}
-                  </div>
-
-                  {toLocationId === "" ? (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Please select a location above.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Please select a location above.
-                    </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Please select a location above.
+                      </p>
+                    </>
                   )}
-
                   <div className="mt-5 flex flex-col gap-4">
                     <div className="flex items-center justify-between">
                       {(isInPendingParts &&
@@ -2363,57 +2342,61 @@ function SystemPage() {
                                     />
                                   </div>
                                 )}
-                                {!isInPendingParts /* Two mutually-exclusive buttons */ && (
-                                  <div className="flex gap-2 mt-5">
-                                    {["not_needed", "defective"].map((kind) => {
-                                      const selected =
-                                        goodActionByPPID[item.ppid]?.action ===
-                                        kind;
-                                      const label =
-                                        kind === "not_needed"
-                                          ? "Not Needed"
-                                          : "Defective";
-                                      return (
-                                        <button
-                                          key={kind}
-                                          type="button"
-                                          onClick={() => {
-                                            setGoodActionByPPID((prev) => {
-                                              const curr =
-                                                prev[item.ppid]?.action;
-                                              // toggle: if user clicks same action, clear it; otherwise set/replace
-                                              if (curr === kind) {
-                                                const {
-                                                  [item.ppid]: _,
-                                                  ...rest
-                                                } = prev;
-                                                return rest;
-                                              }
-                                              return {
-                                                ...prev,
-                                                [item.ppid]: {
-                                                  action: kind,
-                                                  original_bad_ppid:
-                                                    prev[item.ppid]
-                                                      ?.original_bad_ppid || "",
-                                                },
-                                              };
-                                            });
-                                          }}
-                                          className={`px-3 py-2 rounded-md text-white ${
-                                            selected
-                                              ? kind === "not_needed"
-                                                ? "bg-blue-600"
-                                                : "bg-amber-600"
-                                              : "bg-gray-500 hover:bg-gray-600"
-                                          }`}
-                                        >
-                                          {label}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
+                                {isInDebugWistron &&
+                                  !isResolved /* Two mutually-exclusive buttons */ && (
+                                    <div className="flex gap-2 mt-5">
+                                      {["not_needed", "defective"].map(
+                                        (kind) => {
+                                          const selected =
+                                            goodActionByPPID[item.ppid]
+                                              ?.action === kind;
+                                          const label =
+                                            kind === "not_needed"
+                                              ? "Not Needed"
+                                              : "Defective";
+                                          return (
+                                            <button
+                                              key={kind}
+                                              type="button"
+                                              onClick={() => {
+                                                setGoodActionByPPID((prev) => {
+                                                  const curr =
+                                                    prev[item.ppid]?.action;
+                                                  // toggle: if user clicks same action, clear it; otherwise set/replace
+                                                  if (curr === kind) {
+                                                    const {
+                                                      [item.ppid]: _,
+                                                      ...rest
+                                                    } = prev;
+                                                    return rest;
+                                                  }
+                                                  return {
+                                                    ...prev,
+                                                    [item.ppid]: {
+                                                      action: kind,
+                                                      original_bad_ppid:
+                                                        prev[item.ppid]
+                                                          ?.original_bad_ppid ||
+                                                        "",
+                                                    },
+                                                  };
+                                                });
+                                              }}
+                                              className={`px-3 py-2 rounded-md text-white ${
+                                                selected
+                                                  ? kind === "not_needed"
+                                                    ? "bg-blue-600"
+                                                    : "bg-amber-600"
+                                                  : "bg-gray-500 hover:bg-gray-600"
+                                              }`}
+                                            >
+                                              {label}
+                                            </button>
+                                          );
+                                        }
+                                      )}
+                                    </div>
+                                  )}
                               </div>
                             )}
                           </div>
@@ -2427,70 +2410,108 @@ function SystemPage() {
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Root Cause
                       </label>
-                      <div className="flex flex-col md:flex-row gap-3">
-                        {/* Root Cause */}
-                        <div className="flex-1 min-w-0">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Category
-                          </label>
-                          <Select
-                            isDisabled={formDisabled}
-                            instanceId="root-cause"
-                            classNamePrefix="react-select"
-                            styles={select40Styles}
-                            isClearable
-                            isSearchable
-                            placeholder="Select category"
-                            value={
-                              rootCauseOptions.find(
-                                (o) => o.value === selectedRootCauseId
-                              ) || null
-                            }
-                            onChange={(opt) =>
-                              setSelectedRootCauseId(opt ? opt.value : null)
-                            }
-                            options={rootCauseOptions}
-                          />
-                        </div>
 
-                        {/* Sub-Category */}
-                        <div className="flex-1 min-w-0">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Sub Category
-                          </label>
-                          <Select
-                            isDisabled={formDisabled}
-                            instanceId="root-cause-sub"
-                            classNamePrefix="react-select"
-                            styles={select40Styles}
-                            isClearable
-                            isSearchable
-                            placeholder={
-                              toLocationName === "Sent to L11"
-                                ? "Select sub-category (no 'Unable to Repair')"
-                                : "Select sub-category"
-                            }
-                            value={
-                              rootCauseSubOptions.find(
-                                (o) => o.value === selectedRootCauseSubId
-                              ) || null
-                            }
-                            onChange={(opt) =>
-                              setSelectedRootCauseSubId(opt ? opt.value : null)
-                            }
-                            options={rootCauseSubOptions}
-                          />
-                        </div>
-                      </div>
+                      {(() => {
+                        const optsReady =
+                          rootCauseOptions.length > 0 &&
+                          rootCauseSubOptions.length > 0;
 
-                      {toLocationName === "Sent to L11" && (
-                        <p className="text-xs text-gray-500 mt-2">
-                          “Unable to Repair” isn’t available when sending to
-                          L11.
-                        </p>
-                      )}
+                        // Always render Selects. When resolved, they are disabled but still show backend values.
+                        return (
+                          <div className="flex flex-col md:flex-row gap-3">
+                            {!isResolved ? (
+                              <>
+                                <div className="flex-1 min-w-0">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Category
+                                  </label>
+
+                                  <Select
+                                    isDisabled={formDisabled || !optsReady}
+                                    instanceId="root-cause"
+                                    classNamePrefix="react-select"
+                                    styles={select40Styles}
+                                    isClearable
+                                    isSearchable
+                                    placeholder={
+                                      optsReady ? "Select category" : "Loading…"
+                                    }
+                                    value={
+                                      rootCauseOptions.find(
+                                        (o) =>
+                                          String(o.value) ===
+                                          String(rcEffectiveId)
+                                      ) || null
+                                    }
+                                    onChange={(opt) =>
+                                      setSelectedRootCauseId(
+                                        opt ? String(opt.value) : null
+                                      )
+                                    }
+                                    options={rootCauseOptions}
+                                  />
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Sub Category
+                                  </label>
+                                  <Select
+                                    isDisabled={formDisabled || !optsReady}
+                                    instanceId="root-cause-sub"
+                                    classNamePrefix="react-select"
+                                    styles={select40Styles}
+                                    isClearable
+                                    isSearchable
+                                    placeholder={
+                                      !optsReady
+                                        ? "Loading…"
+                                        : "Select sub-category"
+                                    }
+                                    value={
+                                      rootCauseSubOptions.find(
+                                        (o) =>
+                                          String(o.value) ===
+                                          String(rcSubEffectiveId)
+                                      ) || null
+                                    }
+                                    onChange={(opt) =>
+                                      setSelectedRootCauseSubId(
+                                        opt ? String(opt.value) : null
+                                      )
+                                    }
+                                    options={rootCauseSubOptions}
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                                    Category
+                                  </div>
+                                  <h1 className="mt-1 text-xl sm:text-2xl font-semibold tracking-tight text-gray-900">
+                                    {system?.root_cause || (
+                                      <span className="text-gray-400">
+                                        Not set
+                                      </span>
+                                    )}
+                                    <span> - </span>
+                                    {system?.root_cause_sub_category || (
+                                      <span className="text-gray-400">
+                                        Not set
+                                      </span>
+                                    )}
+                                  </h1>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
+
                   {(toLocationId === 5 ||
                     (system?.location === "In L10" &&
                       toLocationId != 9 &&
@@ -2580,7 +2601,7 @@ function SystemPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                  <label className="block text-sm font-medium text-gray-600 mb-1 mt-2">
                     Note:
                   </label>
                   <textarea
