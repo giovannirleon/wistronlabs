@@ -732,6 +732,88 @@ router.delete("/dpn/:id", authenticateToken, ensureAdmin, async (req, res) => {
   }
 });
 
+// ---------- ROOT CAUSE (LIST/GET) ----------
+router.get("/root-cause", async (req, res) => {
+  const { q } = req.query;
+  try {
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      const { rows } = await db.query(
+        `SELECT id, name
+           FROM root_cause
+          WHERE name ILIKE $1
+          ORDER BY name ASC`,
+        [like]
+      );
+      return res.json(rows);
+    }
+    const { rows } = await db.query(
+      `SELECT id, name FROM root_cause ORDER BY name ASC`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to list root causes" });
+  }
+});
+
+router.get("/root-cause/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name FROM root_cause WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to fetch root cause" });
+  }
+});
+
+// ---------- ROOT CAUSE SUB-CATEGORIES (LIST/GET) ----------
+router.get("/root-cause-sub-categories", async (req, res) => {
+  const { q } = req.query;
+  try {
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      const { rows } = await db.query(
+        `SELECT id, name
+           FROM root_cause_sub_categories
+          WHERE name ILIKE $1
+          ORDER BY name ASC`,
+        [like]
+      );
+      return res.json(rows);
+    }
+    const { rows } = await db.query(
+      `SELECT id, name FROM root_cause_sub_categories ORDER BY name ASC`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res
+      .status(500)
+      .json({ error: "Failed to list root cause sub-categories" });
+  }
+});
+
+router.get("/root-cause-sub-categories/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name FROM root_cause_sub_categories WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return res
+      .status(500)
+      .json({ error: "Failed to fetch root cause sub-category" });
+  }
+});
+
 /**
  * GET /api/v1/systems
  *
@@ -1901,11 +1983,9 @@ router.patch(
             .status(400)
             .json({ error: `root_cause id ${root_cause_id} not found` });
         if (!rcs.rowCount)
-          return res
-            .status(400)
-            .json({
-              error: `root_cause_sub_category id ${root_cause_sub_category_id} not found`,
-            });
+          return res.status(400).json({
+            error: `root_cause_sub_category id ${root_cause_sub_category_id} not found`,
+          });
       }
 
       // Update both columns in one statement

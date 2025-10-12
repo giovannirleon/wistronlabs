@@ -181,6 +181,34 @@ function useApi() {
       body: JSON.stringify(payload),
     });
 
+  // inside your useApi() module, alongside updateSystemLocation, etc.
+
+  const updateSystemRootCause = (serviceTag, payload) => {
+    const { root_cause_id, root_cause_sub_category_id } = payload ?? {};
+
+    const bothProvided =
+      root_cause_id != null && root_cause_sub_category_id != null;
+    const bothNull =
+      root_cause_id === null && root_cause_sub_category_id === null;
+
+    if (!(bothProvided || bothNull)) {
+      return Promise.reject(
+        new Error(
+          "Provide both root_cause_id and root_cause_sub_category_id, or set both to null."
+        )
+      );
+    }
+
+    return fetchJSON(`/systems/${encodeURIComponent(serviceTag)}/root-cause`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        root_cause_id,
+        root_cause_sub_category_id,
+      }),
+    });
+  };
+
   const deleteLastHistoryEntry = (tag) =>
     fetchJSON(`/systems/${tag}/history/last`, { method: "DELETE" });
 
@@ -585,6 +613,7 @@ function useApi() {
     createSystem,
     deleteSystem,
     updateSystemLocation,
+    updateSystemRootCause,
     deleteLastHistoryEntry,
     getLocations,
     updateLocation,
