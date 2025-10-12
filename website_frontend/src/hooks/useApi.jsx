@@ -268,7 +268,13 @@ function useApi() {
       }),
     });
 
-    // Second fetch: update location in systems
+    // Second fetch: clear root cause + sub-category (must set both to null)
+    await updateSystemRootCause(service_tag, {
+      root_cause_id: null,
+      root_cause_sub_category_id: null,
+    });
+
+    // Third fetch: update issue
     const updateIssue = await fetchJSON(`/systems/${service_tag}/issue`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
