@@ -132,6 +132,8 @@ function SystemPage() {
     .map((loc) => loc.name);
 
   const isResolved = resolvedNames?.includes(currentLocation);
+  // Disable the entire form when the current location is resolved
+  const formDisabled = isResolved; // Sent to L11, RMA VID/PID/CID
 
   const rmaIDs = [6, 7, 8];
 
@@ -1002,6 +1004,7 @@ function SystemPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formDisabled) return; // extra safety: resolved forms can't submit
 
     const toId = Number.parseInt(toLocationId, 10);
 
@@ -1718,287 +1721,131 @@ function SystemPage() {
                 !token ? "opacity-70 pointer-events-none" : ""
               }`}
             >
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Current Location:
-                </label>
-                <p className="text-gray-800 font-semibold">
-                  {currentLocation || "Unknown"}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  New Location:
-                </label>
-
-                <div className="flex flex-wrap gap-3">
-                  {allowedNextLocations(currentLocation, locations).map(
-                    (loc) => {
-                      const isRMA = RMA_LOCATION_IDS.includes(loc.id);
-                      const isL10 = L10_LOCATION_ID
-                        ? loc.id === L10_LOCATION_ID
-                        : loc.name === "In L10";
-
-                      const rmaBlocked = isRMA && willHaveGoodAfterSubmit;
-                      const l10Blocked = isL10 && willHaveBadAfterSubmit;
-
-                      const disabled = isResolved || rmaBlocked || l10Blocked;
-
-                      const title = rmaBlocked
-                        ? "Remove/return all good parts before moving to an RMA location."
-                        : l10Blocked
-                        ? "Resolve or remove all defective parts before moving to In L10."
-                        : isResolved
-                        ? "Resolved units can’t be moved."
-                        : undefined;
-
-                      return (
-                        <button
-                          type="button"
-                          key={loc.id}
-                          disabled={disabled}
-                          title={title}
-                          onClick={() => setToLocationId(loc.id)}
-                          className={`px-4 py-2 rounded-lg shadow text-sm font-medium border ${
-                            toLocationId === loc.id
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
-                          } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                        >
-                          {loc.name}
-                        </button>
-                      );
-                    }
-                  )}
-
-                  {isResolved && (
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded-lg shadow text-sm font-medium bg-gray-200 text-gray-700 border-gray-300"
-                    >
-                      None Available
-                    </button>
-                  )}
+              <fieldset
+                disabled={formDisabled}
+                aria-disabled={formDisabled}
+                className={formDisabled ? "opacity-60" : ""}
+              >
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    Current Location:
+                  </label>
+                  <p className="text-gray-800 font-semibold">
+                    {currentLocation || "Unknown"}
+                  </p>
                 </div>
 
-                {toLocationId === "" ? (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Please select a location above.
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Please select a location above.
-                  </p>
-                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    New Location:
+                  </label>
 
-                <div className="mt-5 flex flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    {(isInPendingParts &&
-                      toLocationId === 4 &&
-                      system?.location === "Pending Parts") ||
-                    (!isInPendingParts && toLocationId === 4) ? (
+                  <div className="flex flex-wrap gap-3">
+                    {allowedNextLocations(currentLocation, locations).map(
+                      (loc) => {
+                        const isRMA = RMA_LOCATION_IDS.includes(loc.id);
+                        const isL10 = L10_LOCATION_ID
+                          ? loc.id === L10_LOCATION_ID
+                          : loc.name === "In L10";
+
+                        const rmaBlocked = isRMA && willHaveGoodAfterSubmit;
+                        const l10Blocked = isL10 && willHaveBadAfterSubmit;
+
+                        const disabled = isResolved || rmaBlocked || l10Blocked;
+
+                        const title = rmaBlocked
+                          ? "Remove/return all good parts before moving to an RMA location."
+                          : l10Blocked
+                          ? "Resolve or remove all defective parts before moving to In L10."
+                          : isResolved
+                          ? "Resolved units can’t be moved."
+                          : undefined;
+
+                        return (
+                          <button
+                            type="button"
+                            key={loc.id}
+                            disabled={disabled}
+                            title={title}
+                            onClick={() => setToLocationId(loc.id)}
+                            className={`px-4 py-2 rounded-lg shadow text-sm font-medium border ${
+                              toLocationId === loc.id
+                                ? "bg-blue-600 text-white border-blue-600"
+                                : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+                            } ${
+                              disabled ? "opacity-50 cursor-not-allowed" : ""
+                            }`}
+                          >
+                            {loc.name}
+                          </button>
+                        );
+                      }
+                    )}
+
+                    {isResolved && (
                       <button
                         type="button"
-                        onClick={addBadPartBlock}
-                        className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                        className="px-4 py-2 rounded-lg shadow text-sm font-medium bg-gray-200 text-gray-700 border-gray-300"
                       >
-                        + Add Bad Part
-                      </button>
-                    ) : null}
-                    {canAddGoodParts && (
-                      <button
-                        type="button"
-                        onClick={addGoodPartBlock}
-                        className="px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700"
-                      >
-                        + Add Good Part
+                        None Available
                       </button>
                     )}
                   </div>
 
-                  {/* Good part blocks */}
-                  {canAddGoodParts &&
-                    (goodBlocks.length === 0 ? (
-                      <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
-                        No good parts to be added. Click “Add Good Part” to
-                        begin.
-                      </div>
-                    ) : (
-                      <div className="space-y-3 mt-2">
-                        <label className="block text-sm font-medium text-gray-600">
-                          Good Parts to be install into the unit
-                        </label>
+                  {toLocationId === "" ? (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Please select a location above.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Please select a location above.
+                    </p>
+                  )}
 
-                        {goodBlocks.map((block) => {
-                          const partValue =
-                            flatPartOptions.find(
-                              (o) => o.value === block.part_id
-                            ) || null;
+                  <div className="mt-5 flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      {(isInPendingParts &&
+                        toLocationId === 4 &&
+                        system?.location === "Pending Parts") ||
+                      (!isInPendingParts && toLocationId === 4) ? (
+                        <button
+                          type="button"
+                          onClick={addBadPartBlock}
+                          className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                        >
+                          + Add Bad Part
+                        </button>
+                      ) : null}
+                      {canAddGoodParts && (
+                        <button
+                          type="button"
+                          onClick={addGoodPartBlock}
+                          className="px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700"
+                        >
+                          + Add Good Part
+                        </button>
+                      )}
+                    </div>
 
-                          return (
-                            <div
-                              key={block.id}
-                              className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5"
-                            >
-                              {/* Part Select */}
-                              <div className="flex-1 min-w-0">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Part
-                                </label>
-                                <Select
-                                  instanceId={`good-part-${block.id}`}
-                                  classNamePrefix="react-select"
-                                  styles={select40Styles}
-                                  isClearable
-                                  isSearchable
-                                  placeholder="Select part"
-                                  value={partValue}
-                                  onChange={async (opt) => {
-                                    updateGoodBlock(
-                                      block.id,
-                                      "part_id",
-                                      opt ? opt.value : null
-                                    );
-                                    if (opt?.value)
-                                      await loadGoodOptions(opt.value);
-                                  }}
-                                  options={partOptions}
-                                  filterOption={filterPartOption}
-                                  components={{ Option: PartOption }}
-                                  formatGroupLabel={PartGroupLabel}
-                                />
-                              </div>
-
-                              {/* PPID Select (GOOD in inventory) */}
-                              <div className="flex-1 min-w-0">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Replacement PPID
-                                </label>
-                                <Select
-                                  instanceId={`good-ppid-${block.id}`}
-                                  classNamePrefix="react-select"
-                                  styles={select40Styles}
-                                  placeholder={
-                                    block.part_id
-                                      ? "Select PPID"
-                                      : "Pick a part first"
-                                  }
-                                  isDisabled={!block.part_id}
-                                  value={
-                                    block.ppid
-                                      ? { value: block.ppid, label: block.ppid }
-                                      : null
-                                  }
-                                  onMenuOpen={async () => {
-                                    if (block.part_id)
-                                      await loadGoodOptions(block.part_id);
-                                  }}
-                                  onChange={(opt) => {
-                                    const next = opt ? opt.value : "";
-                                    // Clear the same PPID if it was chosen as a Replacement for any BAD part
-                                    if (next) {
-                                      setReplacementByOldPPID((prev) => {
-                                        const copy = { ...prev };
-                                        for (const k of Object.keys(copy)) {
-                                          if (
-                                            normPPID(copy[k]) === normPPID(next)
-                                          )
-                                            copy[k] = "";
-                                        }
-                                        return copy;
-                                      });
-                                    }
-                                    updateGoodBlock(block.id, "ppid", next);
-                                  }}
-                                  options={
-                                    (block.part_id &&
-                                      getFilteredGoodOptions(
-                                        block.part_id,
-                                        block.ppid
-                                      )) ||
-                                    []
-                                  }
-                                />
-                              </div>
-
-                              {/* NEW: Current Defective PPID (create as BAD in inventory) */}
-                              <div className="flex-1 min-w-0">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Current Defective PPID
-                                </label>
-                                <input
-                                  type="text"
-                                  inputMode="text"
-                                  autoCapitalize="characters"
-                                  autoCorrect="off"
-                                  spellCheck="false"
-                                  placeholder="Scan or type PPID"
-                                  value={block.current_bad_ppid}
-                                  onChange={(e) =>
-                                    updateGoodBlock(
-                                      block.id,
-                                      "current_bad_ppid",
-                                      e.target.value
-                                    )
-                                  }
-                                  onBlur={(e) =>
-                                    updateGoodBlock(
-                                      block.id,
-                                      "current_bad_ppid",
-                                      e.target.value.toUpperCase().trim()
-                                    )
-                                  }
-                                  className={`w-full h-10 rounded-md border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    !block.current_bad_ppid || !block.part_id
-                                      ? "border-amber-300"
-                                      : "border-gray-300"
-                                  }`}
-                                />
-                              </div>
-
-                              {/* Remove */}
-                              <div className="md:w-auto">
-                                <button
-                                  type="button"
-                                  onClick={() => removeGoodBlock(block.id)}
-                                  className="relative px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white mt-5 whitespace-nowrap"
-                                >
-                                  <span className="invisible block">
-                                    Cancel
-                                  </span>
-                                  <span className="absolute inset-0 flex items-center justify-center">
-                                    Cancel
-                                  </span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-
-                  {(isInPendingParts &&
-                    toLocationId === 4 &&
-                    system?.location === "Pending Parts") ||
-                  (!isInPendingParts && toLocationId === 4) ? (
-                    <>
-                      {/* New blocks to add */}
-                      {pendingBlocks.length === 0 ? (
+                    {/* Good part blocks */}
+                    {canAddGoodParts &&
+                      (goodBlocks.length === 0 ? (
                         <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
-                          No pending parts to be added. Click “Add Bad Part” to
+                          No good parts to be added. Click “Add Good Part” to
                           begin.
                         </div>
                       ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-3 mt-2">
                           <label className="block text-sm font-medium text-gray-600">
-                            Pending Parts the unit will need
+                            Good Parts to be install into the unit
                           </label>
-                          {pendingBlocks.map((block) => {
+
+                          {goodBlocks.map((block) => {
                             const partValue =
                               flatPartOptions.find(
                                 (o) => o.value === block.part_id
                               ) || null;
+
                             return (
                               <div
                                 key={block.id}
@@ -2010,31 +1857,90 @@ function SystemPage() {
                                     Part
                                   </label>
                                   <Select
-                                    instanceId={`part-${block.id}`}
+                                    isDisabled={formDisabled}
+                                    instanceId={`good-part-${block.id}`}
                                     classNamePrefix="react-select"
                                     styles={select40Styles}
                                     isClearable
                                     isSearchable
                                     placeholder="Select part"
                                     value={partValue}
-                                    onChange={(opt) =>
-                                      updateBlock(
+                                    onChange={async (opt) => {
+                                      updateGoodBlock(
                                         block.id,
                                         "part_id",
                                         opt ? opt.value : null
-                                      )
-                                    }
-                                    options={partOptions} // grouped: [{ label, options: [...] }, ...]
-                                    filterOption={filterPartOption} // search by part OR category
-                                    components={{ Option: PartOption }} // show category chip on each option
-                                    formatGroupLabel={PartGroupLabel} // non-selectable group headers
+                                      );
+                                      if (opt?.value)
+                                        await loadGoodOptions(opt.value);
+                                    }}
+                                    options={partOptions}
+                                    filterOption={filterPartOption}
+                                    components={{ Option: PartOption }}
+                                    formatGroupLabel={PartGroupLabel}
                                   />
                                 </div>
 
-                                {/* PPID Input */}
-                                <div className="flex-1">
+                                {/* PPID Select (GOOD in inventory) */}
+                                <div className="flex-1 min-w-0">
                                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    PPID
+                                    Replacement PPID
+                                  </label>
+                                  <Select
+                                    instanceId={`good-ppid-${block.id}`}
+                                    classNamePrefix="react-select"
+                                    styles={select40Styles}
+                                    placeholder={
+                                      block.part_id
+                                        ? "Select PPID"
+                                        : "Pick a part first"
+                                    }
+                                    isDisabled={!block.part_id || formDisabled}
+                                    value={
+                                      block.ppid
+                                        ? {
+                                            value: block.ppid,
+                                            label: block.ppid,
+                                          }
+                                        : null
+                                    }
+                                    onMenuOpen={async () => {
+                                      if (block.part_id)
+                                        await loadGoodOptions(block.part_id);
+                                    }}
+                                    onChange={(opt) => {
+                                      const next = opt ? opt.value : "";
+                                      // Clear the same PPID if it was chosen as a Replacement for any BAD part
+                                      if (next) {
+                                        setReplacementByOldPPID((prev) => {
+                                          const copy = { ...prev };
+                                          for (const k of Object.keys(copy)) {
+                                            if (
+                                              normPPID(copy[k]) ===
+                                              normPPID(next)
+                                            )
+                                              copy[k] = "";
+                                          }
+                                          return copy;
+                                        });
+                                      }
+                                      updateGoodBlock(block.id, "ppid", next);
+                                    }}
+                                    options={
+                                      (block.part_id &&
+                                        getFilteredGoodOptions(
+                                          block.part_id,
+                                          block.ppid
+                                        )) ||
+                                      []
+                                    }
+                                  />
+                                </div>
+
+                                {/* NEW: Current Defective PPID (create as BAD in inventory) */}
+                                <div className="flex-1 min-w-0">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Current Defective PPID
                                   </label>
                                   <input
                                     type="text"
@@ -2043,60 +1949,39 @@ function SystemPage() {
                                     autoCorrect="off"
                                     spellCheck="false"
                                     placeholder="Scan or type PPID"
-                                    value={block.ppid}
+                                    value={block.current_bad_ppid}
                                     onChange={(e) =>
-                                      updateBlock(
+                                      updateGoodBlock(
                                         block.id,
-                                        "ppid",
+                                        "current_bad_ppid",
                                         e.target.value
                                       )
                                     }
-                                    onBlur={(e) => {
-                                      const v = e.target.value
-                                        .toUpperCase()
-                                        .trim();
-                                      updateBlock(block.id, "ppid", v);
-
-                                      if (v) {
-                                        // If this BAD PPID was selected as an "Original PPID" anywhere, clear it
-                                        setGoodActionByPPID((prev) => {
-                                          const next = { ...prev };
-                                          for (const g of Object.keys(next)) {
-                                            if (
-                                              normPPID(
-                                                next[g]?.original_bad_ppid
-                                              ) === normPPID(v)
-                                            ) {
-                                              next[g] = {
-                                                ...next[g],
-                                                original_bad_ppid: "",
-                                              };
-                                            }
-                                          }
-                                          return next;
-                                        });
-                                      }
-                                    }}
+                                    onBlur={(e) =>
+                                      updateGoodBlock(
+                                        block.id,
+                                        "current_bad_ppid",
+                                        e.target.value.toUpperCase().trim()
+                                      )
+                                    }
                                     className={`w-full h-10 rounded-md border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                      !block.ppid || !block.part_id
+                                      !block.current_bad_ppid || !block.part_id
                                         ? "border-amber-300"
                                         : "border-gray-300"
                                     }`}
                                   />
                                 </div>
 
+                                {/* Remove */}
                                 <div className="md:w-auto">
                                   <button
                                     type="button"
-                                    onClick={() => removeBlock(block.id)}
+                                    onClick={() => removeGoodBlock(block.id)}
                                     className="relative px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white mt-5 whitespace-nowrap"
                                   >
-                                    {/* Ghost sets the width to the longest label */}
                                     <span className="invisible block">
-                                      Mark as Working
+                                      Cancel
                                     </span>
-
-                                    {/* Real label centered on top */}
                                     <span className="absolute inset-0 flex items-center justify-center">
                                       Cancel
                                     </span>
@@ -2106,151 +1991,287 @@ function SystemPage() {
                             );
                           })}
                         </div>
-                      )}
-                    </>
-                  ) : null}
-                  {/* Parts tracked inside unit */}
-                  <div className="space-y-2">
-                    {unitParts.length > 0 && (
-                      <label className="block text-sm font-medium text-gray-600 mb-1">
-                        {`Parts Tracked in unit`}
-                      </label>
-                    )}
-                    {unitParts.map((item) => {
-                      const isBad = item.is_functional === false;
-                      const queued = toRemovePPIDs.has(item.ppid);
-                      return (
-                        <div
-                          key={item.ppid}
-                          className={`border border-gray-300 rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5 ${
-                            queued ? "border-red-300 bg-red-50 " : ""
-                          }`}
-                        >
-                          <div className="flex-1">
-                            <div className="block text-sm font-medium text-gray-700 mb-2">
-                              <span
-                                className={`px-2 py-1 text-xs rounded-full ${
-                                  isBad
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-green-100 text-green-700"
-                                }`}
-                              >
-                                {isBad ? "Bad " : "Good "}
-                                Part
-                              </span>
-                            </div>
-                            <input
-                              className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
-                              value={item.part_name || `#${item.part_id}`}
-                              disabled
-                              readOnly
-                            />
+                      ))}
+
+                    {(isInPendingParts &&
+                      toLocationId === 4 &&
+                      system?.location === "Pending Parts") ||
+                    (!isInPendingParts && toLocationId === 4) ? (
+                      <>
+                        {/* New blocks to add */}
+                        {pendingBlocks.length === 0 ? (
+                          <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">
+                            No pending parts to be added. Click “Add Bad Part”
+                            to begin.
                           </div>
-                          <div className="flex-1">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              PPID
+                        ) : (
+                          <div className="space-y-3">
+                            <label className="block text-sm font-medium text-gray-600">
+                              Pending Parts the unit will need
                             </label>
-                            <input
-                              className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
-                              value={item.ppid || ""}
-                              disabled
-                              readOnly
-                            />
-                          </div>
-                          {/* Actions for BAD parts */}
-                          {isBad && toLocationId != 4 && (
-                            <div className="flex flex-col md:flex-row md:items-center gap-3">
-                              {/* Replacement PPID (only when allowed) */}
-                              {canAddGoodParts && (
-                                <div className="shrink-0 basis-[280px] w-[280px] ">
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Replacement PPID
-                                  </label>
-                                  <Select
-                                    instanceId={`repl-${item.ppid}`}
-                                    classNamePrefix="react-select"
-                                    styles={select40Styles}
-                                    placeholder="Select replacement PPID"
-                                    isClearable
-                                    isDisabled={queued} // grey out if Mark as Working is active
-                                    value={
-                                      replacementByOldPPID[item.ppid]
-                                        ? {
-                                            value:
-                                              replacementByOldPPID[item.ppid],
-                                            label:
-                                              replacementByOldPPID[item.ppid],
-                                          }
-                                        : null
-                                    }
-                                    onMenuOpen={async () => {
-                                      await loadGoodOptions(item.part_id);
-                                    }}
-                                    onChange={(opt) => {
-                                      const next = opt ? opt.value : "";
-                                      setReplacementByOldPPID((s) => ({
-                                        ...s,
-                                        [item.ppid]: next,
-                                      }));
-                                      if (next) {
-                                        // Clear the same PPID if it was chosen in any Good Part block
-                                        setGoodBlocks((list) =>
-                                          list.map((b) =>
-                                            normPPID(b.ppid) === normPPID(next)
-                                              ? { ...b, ppid: "" }
-                                              : b
-                                          )
-                                        );
+                            {pendingBlocks.map((block) => {
+                              const partValue =
+                                flatPartOptions.find(
+                                  (o) => o.value === block.part_id
+                                ) || null;
+                              return (
+                                <div
+                                  key={block.id}
+                                  className="border rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5"
+                                >
+                                  {/* Part Select */}
+                                  <div className="flex-1 min-w-0">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Part
+                                    </label>
+                                    <Select
+                                      isDisabled={formDisabled}
+                                      instanceId={`part-${block.id}`}
+                                      classNamePrefix="react-select"
+                                      styles={select40Styles}
+                                      isClearable
+                                      isSearchable
+                                      placeholder="Select part"
+                                      value={partValue}
+                                      onChange={(opt) =>
+                                        updateBlock(
+                                          block.id,
+                                          "part_id",
+                                          opt ? opt.value : null
+                                        )
                                       }
-                                      // If a replacement is chosen, ensure "Mark as Working" is OFF (your existing code)
-                                      if (opt?.value) {
-                                        setToRemovePPIDs((prev) => {
-                                          if (!prev.has(item.ppid)) return prev;
-                                          const nextSet = new Set(prev);
-                                          nextSet.delete(item.ppid);
-                                          return nextSet;
-                                        });
+                                      options={partOptions} // grouped: [{ label, options: [...] }, ...]
+                                      filterOption={filterPartOption} // search by part OR category
+                                      components={{ Option: PartOption }} // show category chip on each option
+                                      formatGroupLabel={PartGroupLabel} // non-selectable group headers
+                                    />
+                                  </div>
+
+                                  {/* PPID Input */}
+                                  <div className="flex-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      PPID
+                                    </label>
+                                    <input
+                                      type="text"
+                                      inputMode="text"
+                                      autoCapitalize="characters"
+                                      autoCorrect="off"
+                                      spellCheck="false"
+                                      placeholder="Scan or type PPID"
+                                      value={block.ppid}
+                                      onChange={(e) =>
+                                        updateBlock(
+                                          block.id,
+                                          "ppid",
+                                          e.target.value
+                                        )
                                       }
-                                    }}
-                                    options={getFilteredGoodOptions(
-                                      item.part_id,
-                                      replacementByOldPPID[item.ppid]
-                                    )}
-                                  />
-                                </div>
-                              )}
-                              {!isInPendingParts && (
-                                <div className="md:w-auto">
-                                  {(() => {
-                                    // Is there a chosen replacement PPID that exists in the GOOD inventory cache?
-                                    const chosen =
-                                      replacementByOldPPID[item.ppid];
-                                    const validReplacement =
-                                      !!chosen &&
-                                      (
-                                        goodOptionsCache.get(item.part_id) || []
-                                      ).some((opt) => opt.value === chosen);
+                                      onBlur={(e) => {
+                                        const v = e.target.value
+                                          .toUpperCase()
+                                          .trim();
+                                        updateBlock(block.id, "ppid", v);
 
-                                    const disableMark =
-                                      submitting || validReplacement;
-
-                                    return (
-                                      <button
-                                        disabled={disableMark}
-                                        type="button"
-                                        onClick={() => {
-                                          // Toggle mark-as-working, and if marking -> clear any replacement chosen
-                                          toggleRemovePPID(item.ppid);
-                                          setReplacementByOldPPID((s) => {
-                                            const next = { ...s };
-                                            // If we just queued Mark as Working, nuke the replacement
-                                            if (!toRemovePPIDs.has(item.ppid)) {
-                                              next[item.ppid] = "";
+                                        if (v) {
+                                          // If this BAD PPID was selected as an "Original PPID" anywhere, clear it
+                                          setGoodActionByPPID((prev) => {
+                                            const next = { ...prev };
+                                            for (const g of Object.keys(next)) {
+                                              if (
+                                                normPPID(
+                                                  next[g]?.original_bad_ppid
+                                                ) === normPPID(v)
+                                              ) {
+                                                next[g] = {
+                                                  ...next[g],
+                                                  original_bad_ppid: "",
+                                                };
+                                              }
                                             }
                                             return next;
                                           });
-                                        }}
-                                        className={`relative px-3 py-2 rounded-md text-white whitespace-nowrap mt-5 
+                                        }
+                                      }}
+                                      className={`w-full h-10 rounded-md border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                        !block.ppid || !block.part_id
+                                          ? "border-amber-300"
+                                          : "border-gray-300"
+                                      }`}
+                                    />
+                                  </div>
+
+                                  <div className="md:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeBlock(block.id)}
+                                      className="relative px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white mt-5 whitespace-nowrap"
+                                    >
+                                      {/* Ghost sets the width to the longest label */}
+                                      <span className="invisible block">
+                                        Mark as Working
+                                      </span>
+
+                                      {/* Real label centered on top */}
+                                      <span className="absolute inset-0 flex items-center justify-center">
+                                        Cancel
+                                      </span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    ) : null}
+                    {/* Parts tracked inside unit */}
+                    <div className="space-y-2">
+                      {unitParts.length > 0 && (
+                        <label className="block text-sm font-medium text-gray-600 mb-1">
+                          {`Parts Tracked in unit`}
+                        </label>
+                      )}
+                      {unitParts.map((item) => {
+                        const isBad = item.is_functional === false;
+                        const queued = toRemovePPIDs.has(item.ppid);
+                        return (
+                          <div
+                            key={item.ppid}
+                            className={`border border-gray-300 rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5 ${
+                              queued ? "border-red-300 bg-red-50 " : ""
+                            }`}
+                          >
+                            <div className="flex-1">
+                              <div className="block text-sm font-medium text-gray-700 mb-2">
+                                <span
+                                  className={`px-2 py-1 text-xs rounded-full ${
+                                    isBad
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-green-100 text-green-700"
+                                  }`}
+                                >
+                                  {isBad ? "Bad " : "Good "}
+                                  Part
+                                </span>
+                              </div>
+                              <input
+                                className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
+                                value={item.part_name || `#${item.part_id}`}
+                                disabled
+                                readOnly
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                PPID
+                              </label>
+                              <input
+                                className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
+                                value={item.ppid || ""}
+                                disabled
+                                readOnly
+                              />
+                            </div>
+                            {/* Actions for BAD parts */}
+                            {isBad && toLocationId != 4 && (
+                              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                {/* Replacement PPID (only when allowed) */}
+                                {canAddGoodParts && (
+                                  <div className="shrink-0 basis-[280px] w-[280px] ">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Replacement PPID
+                                    </label>
+                                    <Select
+                                      instanceId={`repl-${item.ppid}`}
+                                      classNamePrefix="react-select"
+                                      styles={select40Styles}
+                                      placeholder="Select replacement PPID"
+                                      isClearable
+                                      isDisabled={queued || formDisabled} // grey out if Mark as Working is active
+                                      value={
+                                        replacementByOldPPID[item.ppid]
+                                          ? {
+                                              value:
+                                                replacementByOldPPID[item.ppid],
+                                              label:
+                                                replacementByOldPPID[item.ppid],
+                                            }
+                                          : null
+                                      }
+                                      onMenuOpen={async () => {
+                                        await loadGoodOptions(item.part_id);
+                                      }}
+                                      onChange={(opt) => {
+                                        const next = opt ? opt.value : "";
+                                        setReplacementByOldPPID((s) => ({
+                                          ...s,
+                                          [item.ppid]: next,
+                                        }));
+                                        if (next) {
+                                          // Clear the same PPID if it was chosen in any Good Part block
+                                          setGoodBlocks((list) =>
+                                            list.map((b) =>
+                                              normPPID(b.ppid) ===
+                                              normPPID(next)
+                                                ? { ...b, ppid: "" }
+                                                : b
+                                            )
+                                          );
+                                        }
+                                        // If a replacement is chosen, ensure "Mark as Working" is OFF (your existing code)
+                                        if (opt?.value) {
+                                          setToRemovePPIDs((prev) => {
+                                            if (!prev.has(item.ppid))
+                                              return prev;
+                                            const nextSet = new Set(prev);
+                                            nextSet.delete(item.ppid);
+                                            return nextSet;
+                                          });
+                                        }
+                                      }}
+                                      options={getFilteredGoodOptions(
+                                        item.part_id,
+                                        replacementByOldPPID[item.ppid]
+                                      )}
+                                    />
+                                  </div>
+                                )}
+                                {!isInPendingParts && (
+                                  <div className="md:w-auto">
+                                    {(() => {
+                                      // Is there a chosen replacement PPID that exists in the GOOD inventory cache?
+                                      const chosen =
+                                        replacementByOldPPID[item.ppid];
+                                      const validReplacement =
+                                        !!chosen &&
+                                        (
+                                          goodOptionsCache.get(item.part_id) ||
+                                          []
+                                        ).some((opt) => opt.value === chosen);
+
+                                      const disableMark =
+                                        submitting || validReplacement;
+
+                                      return (
+                                        <button
+                                          disabled={disableMark}
+                                          type="button"
+                                          onClick={() => {
+                                            // Toggle mark-as-working, and if marking -> clear any replacement chosen
+                                            toggleRemovePPID(item.ppid);
+                                            setReplacementByOldPPID((s) => {
+                                              const next = { ...s };
+                                              // If we just queued Mark as Working, nuke the replacement
+                                              if (
+                                                !toRemovePPIDs.has(item.ppid)
+                                              ) {
+                                                next[item.ppid] = "";
+                                              }
+                                              return next;
+                                            });
+                                          }}
+                                          className={`relative px-3 py-2 rounded-md text-white whitespace-nowrap mt-5 
                                       ${
                                         queued
                                           ? "bg-gray-500 hover:bg-gray-600"
@@ -2258,342 +2279,352 @@ function SystemPage() {
                                           ? "bg-gray-400 cursor-not-allowed"
                                           : "bg-green-600 hover:bg-gren-700"
                                       }`}
-                                        title={
-                                          validReplacement
-                                            ? "Disable or clear the replacement to mark as working"
-                                            : undefined
-                                        }
-                                      >
-                                        <span className="invisible block">
-                                          Mark as Working
-                                        </span>
-                                        <span className="absolute inset-0 flex items-center justify-center">
-                                          {queued ? "Undo" : "Mark as Working"}
-                                        </span>
-                                      </button>
-                                    );
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Actions for GOOD parts */}
-                          {!isBad && toLocationId != 4 && (
-                            <div className="flex flex-col md:flex-row md:items-center gap-3">
-                              {/* "Original PPID" BAD inventory selector, shown only when an action is selected */}
-                              {goodActionByPPID[item.ppid]?.action && (
-                                <div className="shrink-0 basis-[280px] w-[280px]">
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Original PPID
-                                  </label>
-                                  <Select
-                                    instanceId={`orig-${item.ppid}`}
-                                    classNamePrefix="react-select"
-                                    styles={select40Styles}
-                                    placeholder="Select BAD PPID"
-                                    isClearable
-                                    value={
-                                      goodActionByPPID[item.ppid]
-                                        ?.original_bad_ppid
-                                        ? {
-                                            value:
-                                              goodActionByPPID[item.ppid]
-                                                .original_bad_ppid,
-                                            label:
-                                              goodActionByPPID[item.ppid]
-                                                .original_bad_ppid,
+                                          title={
+                                            validReplacement
+                                              ? "Disable or clear the replacement to mark as working"
+                                              : undefined
                                           }
-                                        : null
-                                    }
-                                    onMenuOpen={async () => {
-                                      await loadBadOptions(item.part_id);
-                                    }}
-                                    onChange={(opt) => {
-                                      const next = opt ? opt.value : "";
-                                      setGoodActionByPPID((prev) => ({
-                                        ...prev,
-                                        [item.ppid]: {
-                                          action: prev[item.ppid]?.action,
-                                          original_bad_ppid: next,
-                                        },
-                                      }));
+                                        >
+                                          <span className="invisible block">
+                                            Mark as Working
+                                          </span>
+                                          <span className="absolute inset-0 flex items-center justify-center">
+                                            {queued
+                                              ? "Undo"
+                                              : "Mark as Working"}
+                                          </span>
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
-                                      if (next) {
-                                        // Clear the same PPID if it was typed in any Pending block
-                                        setPendingBlocks((list) =>
-                                          list.map((b) =>
-                                            normPPID(b.ppid) === normPPID(next)
-                                              ? { ...b, ppid: "" }
-                                              : b
-                                          )
-                                        );
-                                      }
-                                    }}
-                                    options={getFilteredBadOptions(
-                                      item.part_id,
-                                      goodActionByPPID[item.ppid]
-                                        ?.original_bad_ppid
-                                    )}
-                                  />
-                                </div>
-                              )}
-                              {!isInPendingParts /* Two mutually-exclusive buttons */ && (
-                                <div className="flex gap-2 mt-5">
-                                  {["not_needed", "defective"].map((kind) => {
-                                    const selected =
-                                      goodActionByPPID[item.ppid]?.action ===
-                                      kind;
-                                    const label =
-                                      kind === "not_needed"
-                                        ? "Not Needed"
-                                        : "Defective";
-                                    return (
-                                      <button
-                                        key={kind}
-                                        type="button"
-                                        onClick={() => {
-                                          setGoodActionByPPID((prev) => {
-                                            const curr =
-                                              prev[item.ppid]?.action;
-                                            // toggle: if user clicks same action, clear it; otherwise set/replace
-                                            if (curr === kind) {
-                                              const {
-                                                [item.ppid]: _,
-                                                ...rest
-                                              } = prev;
-                                              return rest;
+                            {/* Actions for GOOD parts */}
+                            {!isBad && toLocationId != 4 && (
+                              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                {/* "Original PPID" BAD inventory selector, shown only when an action is selected */}
+                                {goodActionByPPID[item.ppid]?.action && (
+                                  <div className="shrink-0 basis-[280px] w-[280px]">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Original PPID
+                                    </label>
+                                    <Select
+                                      isDisabled={formDisabled}
+                                      instanceId={`orig-${item.ppid}`}
+                                      classNamePrefix="react-select"
+                                      styles={select40Styles}
+                                      placeholder="Select BAD PPID"
+                                      isClearable
+                                      value={
+                                        goodActionByPPID[item.ppid]
+                                          ?.original_bad_ppid
+                                          ? {
+                                              value:
+                                                goodActionByPPID[item.ppid]
+                                                  .original_bad_ppid,
+                                              label:
+                                                goodActionByPPID[item.ppid]
+                                                  .original_bad_ppid,
                                             }
-                                            return {
-                                              ...prev,
-                                              [item.ppid]: {
-                                                action: kind,
-                                                original_bad_ppid:
-                                                  prev[item.ppid]
-                                                    ?.original_bad_ppid || "",
-                                              },
-                                            };
-                                          });
-                                        }}
-                                        className={`px-3 py-2 rounded-md text-white ${
-                                          selected
-                                            ? kind === "not_needed"
-                                              ? "bg-blue-600"
-                                              : "bg-amber-600"
-                                            : "bg-gray-500 hover:bg-gray-600"
-                                        }`}
-                                      >
-                                        {label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                                          : null
+                                      }
+                                      onMenuOpen={async () => {
+                                        await loadBadOptions(item.part_id);
+                                      }}
+                                      onChange={(opt) => {
+                                        const next = opt ? opt.value : "";
+                                        setGoodActionByPPID((prev) => ({
+                                          ...prev,
+                                          [item.ppid]: {
+                                            action: prev[item.ppid]?.action,
+                                            original_bad_ppid: next,
+                                          },
+                                        }));
 
-                {showRootCauseControls && (
-                  <div className="mt-4 p-4 rounded-lg bg-white border border-gray-200 shadow-sm">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Root Cause
-                    </label>
-                    <div className="flex flex-col md:flex-row gap-3">
-                      {/* Root Cause */}
-                      <div className="flex-1 min-w-0">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Category
-                        </label>
-                        <Select
-                          instanceId="root-cause"
-                          classNamePrefix="react-select"
-                          styles={select40Styles}
-                          isClearable
-                          isSearchable
-                          placeholder="Select category"
-                          value={
-                            rootCauseOptions.find(
-                              (o) => o.value === selectedRootCauseId
-                            ) || null
-                          }
-                          onChange={(opt) =>
-                            setSelectedRootCauseId(opt ? opt.value : null)
-                          }
-                          options={rootCauseOptions}
-                        />
-                      </div>
-
-                      {/* Sub-Category */}
-                      <div className="flex-1 min-w-0">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Sub Category
-                        </label>
-                        <Select
-                          instanceId="root-cause-sub"
-                          classNamePrefix="react-select"
-                          styles={select40Styles}
-                          isClearable
-                          isSearchable
-                          placeholder={
-                            toLocationName === "Sent to L11"
-                              ? "Select sub-category (no 'Unable to Repair')"
-                              : "Select sub-category"
-                          }
-                          value={
-                            rootCauseSubOptions.find(
-                              (o) => o.value === selectedRootCauseSubId
-                            ) || null
-                          }
-                          onChange={(opt) =>
-                            setSelectedRootCauseSubId(opt ? opt.value : null)
-                          }
-                          options={rootCauseSubOptions}
-                        />
-                      </div>
+                                        if (next) {
+                                          // Clear the same PPID if it was typed in any Pending block
+                                          setPendingBlocks((list) =>
+                                            list.map((b) =>
+                                              normPPID(b.ppid) ===
+                                              normPPID(next)
+                                                ? { ...b, ppid: "" }
+                                                : b
+                                            )
+                                          );
+                                        }
+                                      }}
+                                      options={getFilteredBadOptions(
+                                        item.part_id,
+                                        goodActionByPPID[item.ppid]
+                                          ?.original_bad_ppid
+                                      )}
+                                    />
+                                  </div>
+                                )}
+                                {!isInPendingParts /* Two mutually-exclusive buttons */ && (
+                                  <div className="flex gap-2 mt-5">
+                                    {["not_needed", "defective"].map((kind) => {
+                                      const selected =
+                                        goodActionByPPID[item.ppid]?.action ===
+                                        kind;
+                                      const label =
+                                        kind === "not_needed"
+                                          ? "Not Needed"
+                                          : "Defective";
+                                      return (
+                                        <button
+                                          key={kind}
+                                          type="button"
+                                          onClick={() => {
+                                            setGoodActionByPPID((prev) => {
+                                              const curr =
+                                                prev[item.ppid]?.action;
+                                              // toggle: if user clicks same action, clear it; otherwise set/replace
+                                              if (curr === kind) {
+                                                const {
+                                                  [item.ppid]: _,
+                                                  ...rest
+                                                } = prev;
+                                                return rest;
+                                              }
+                                              return {
+                                                ...prev,
+                                                [item.ppid]: {
+                                                  action: kind,
+                                                  original_bad_ppid:
+                                                    prev[item.ppid]
+                                                      ?.original_bad_ppid || "",
+                                                },
+                                              };
+                                            });
+                                          }}
+                                          className={`px-3 py-2 rounded-md text-white ${
+                                            selected
+                                              ? kind === "not_needed"
+                                                ? "bg-blue-600"
+                                                : "bg-amber-600"
+                                              : "bg-gray-500 hover:bg-gray-600"
+                                          }`}
+                                        >
+                                          {label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-
-                    {toLocationName === "Sent to L11" && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        “Unable to Repair” isn’t available when sending to L11.
-                      </p>
-                    )}
                   </div>
-                )}
-                {(toLocationId === 5 ||
-                  (system?.location === "In L10" &&
-                    toLocationId != 9 &&
-                    toLocationId != 8 &&
-                    toLocationId != 7 &&
-                    toLocationId != 6)) && (
-                  <div className="mt-5 flex flex-col lg:flex-row gap-4">
-                    {/* Table on the left */}
-                    <div
-                      className={`w-full lg:w-3/5 rounded border border-gray-300`}
-                    >
-                      <table className="rounded w-full bg-white  shadow-sm overflow-hidden ">
-                        <thead>
-                          <tr>
-                            <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
-                              Station
-                            </th>
-                            <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
-                              Status
-                            </th>
-                            <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
-                              Service Tag
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <Station
-                            stationInfo={
-                              selectedStationObj || {
-                                station: "Stn #",
-                                status: 0,
-                                message: "Please select a station",
-                              }
-                            }
-                          />
-                        </tbody>
-                      </table>
-                    </div>
 
-                    {/* Dropdown on the right */}
-                    {system?.location != "In L10" && (
-                      <div className="w-full lg:w-2/5">
-                        <label
-                          htmlFor="extra-options"
-                          className="block text-sm font-medium text-gray-700 mb-1"
-                        >
-                          Select a Station
-                        </label>
-                        <div
-                          className={
-                            system?.location === "In L10"
-                              ? "opacity-50 pointer-events-none"
-                              : ""
-                          }
-                        >
+                  {showRootCauseControls && (
+                    <div className="mt-4 p-4 rounded-lg bg-white border border-gray-200 shadow-sm">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Root Cause
+                      </label>
+                      <div className="flex flex-col md:flex-row gap-3">
+                        {/* Root Cause */}
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Category
+                          </label>
                           <Select
-                            instanceId="extra-options"
-                            className="react-select-container"
+                            isDisabled={formDisabled}
+                            instanceId="root-cause"
                             classNamePrefix="react-select"
+                            styles={select40Styles}
                             isClearable
                             isSearchable
-                            placeholder="Select a station"
+                            placeholder="Select category"
                             value={
-                              stations
-                                .map((station) => ({
-                                  value: station.station_name,
-                                  label: "Station " + station.station_name,
-                                }))
-                                .find((opt) => opt.value === selectedStation) ||
-                              null
+                              rootCauseOptions.find(
+                                (o) => o.value === selectedRootCauseId
+                              ) || null
                             }
-                            onChange={(option) =>
-                              setSelectedStation(option ? option.value : "")
+                            onChange={(opt) =>
+                              setSelectedRootCauseId(opt ? opt.value : null)
                             }
-                            options={stations.map((station) => ({
-                              value: station.station_name,
-                              label: "Station " + station.station_name,
-                            }))}
+                            options={rootCauseOptions}
+                          />
+                        </div>
+
+                        {/* Sub-Category */}
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Sub Category
+                          </label>
+                          <Select
+                            isDisabled={formDisabled}
+                            instanceId="root-cause-sub"
+                            classNamePrefix="react-select"
+                            styles={select40Styles}
+                            isClearable
+                            isSearchable
+                            placeholder={
+                              toLocationName === "Sent to L11"
+                                ? "Select sub-category (no 'Unable to Repair')"
+                                : "Select sub-category"
+                            }
+                            value={
+                              rootCauseSubOptions.find(
+                                (o) => o.value === selectedRootCauseSubId
+                              ) || null
+                            }
+                            onChange={(opt) =>
+                              setSelectedRootCauseSubId(opt ? opt.value : null)
+                            }
+                            options={rootCauseSubOptions}
                           />
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Note:
-                </label>
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Required Note"
-                  disabled={isResolved}
-                  rows={3} // adjust number of visible rows
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100 resize-none"
-                />
-              </div>
+                      {toLocationName === "Sent to L11" && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          “Unable to Repair” isn’t available when sending to
+                          L11.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {(toLocationId === 5 ||
+                    (system?.location === "In L10" &&
+                      toLocationId != 9 &&
+                      toLocationId != 8 &&
+                      toLocationId != 7 &&
+                      toLocationId != 6)) && (
+                    <div className="mt-5 flex flex-col lg:flex-row gap-4">
+                      {/* Table on the left */}
+                      <div
+                        className={`w-full lg:w-3/5 rounded border border-gray-300`}
+                      >
+                        <table className="rounded w-full bg-white  shadow-sm overflow-hidden ">
+                          <thead>
+                            <tr>
+                              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                                Station
+                              </th>
+                              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                                Status
+                              </th>
+                              <th className="bg-gray-50 font-semibold uppercase text-xs text-gray-600 p-3">
+                                Service Tag
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <Station
+                              stationInfo={
+                                selectedStationObj || {
+                                  station: "Stn #",
+                                  status: 0,
+                                  message: "Please select a station",
+                                }
+                              }
+                            />
+                          </tbody>
+                        </table>
+                      </div>
 
-              <button
-                type="submit"
-                disabled={submitting || isResolved}
-                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow disabled:opacity-50 transition"
-              >
-                {submitting ? "Submitting…" : "Update Location"}
-              </button>
+                      {/* Dropdown on the right */}
+                      {system?.location != "In L10" && (
+                        <div className="w-full lg:w-2/5">
+                          <label
+                            htmlFor="extra-options"
+                            className="block text-sm font-medium text-gray-700 mb-1"
+                          >
+                            Select a Station
+                          </label>
+                          <div
+                            className={
+                              system?.location === "In L10"
+                                ? "opacity-50 pointer-events-none"
+                                : ""
+                            }
+                          >
+                            <Select
+                              isDisabled={formDisabled}
+                              instanceId="extra-options"
+                              className="react-select-container"
+                              classNamePrefix="react-select"
+                              isClearable
+                              isSearchable
+                              placeholder="Select a station"
+                              value={
+                                stations
+                                  .map((station) => ({
+                                    value: station.station_name,
+                                    label: "Station " + station.station_name,
+                                  }))
+                                  .find(
+                                    (opt) => opt.value === selectedStation
+                                  ) || null
+                              }
+                              onChange={(option) =>
+                                setSelectedStation(option ? option.value : "")
+                              }
+                              options={stations.map((station) => ({
+                                value: station.station_name,
+                                label: "Station " + station.station_name,
+                              }))}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-              {isRMA ? (
-                isInPalletNumber ? (
-                  <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-2 mt-5 rounded">
-                    This system has been RMA'd but has not shipped yet, you can
-                    view it on pallet
-                    <Link className="hover:underline" to="/shipping">
-                      {" "}
-                      {isInPalletNumber}
-                    </Link>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    Note:
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Required Note"
+                    disabled={isResolved}
+                    rows={3} // adjust number of visible rows
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100 resize-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submitting || isResolved}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow disabled:opacity-50 transition"
+                >
+                  {submitting ? "Submitting…" : "Update Location"}
+                </button>
+
+                {isRMA ? (
+                  isInPalletNumber ? (
+                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-2 mt-5 rounded">
+                      This system has been RMA'd but has not shipped yet, you
+                      can view it on pallet
+                      <Link className="hover:underline" to="/shipping">
+                        {" "}
+                        {isInPalletNumber}
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 mt-5 rounded">
+                      This system has been RMA'd and has shipped back to the L10
+                      factory.
+                      <Link className="hover:underline" to="/shipping">
+                        {" "}
+                        {isInPalletNumber}
+                      </Link>
+                    </div>
+                  )
                 ) : (
-                  <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 mt-5 rounded">
-                    This system has been RMA'd and has shipped back to the L10
-                    factory.
-                    <Link className="hover:underline" to="/shipping">
-                      {" "}
-                      {isInPalletNumber}
-                    </Link>
-                  </div>
-                )
-              ) : (
-                <></>
-              )}
+                  <></>
+                )}
+              </fieldset>
               {formError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
                   {formError}

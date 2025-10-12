@@ -1607,6 +1607,17 @@ router.delete(
       }
       const system_id = systemResult.rows[0].id;
 
+      // Resolve IDs for: "Sent to L11", "RMA VID", "RMA CID", "RMA PID"
+      const resolvedLocRes = await client.query(
+        `
+            SELECT id
+            FROM location
+            WHERE name = ANY($1)
+          `,
+        [["Sent to L11", "RMA VID", "RMA CID", "RMA PID"]]
+      );
+      const RESOLVED_LOCATION_IDS = resolvedLocRes.rows.map((r) => r.id);
+
       // 2. Get history entries newest → oldest
       const historyResult = await client.query(
         `
@@ -1669,6 +1680,23 @@ router.delete(
         return res.status(400).json({
           error: "System is on a locked pallet — cannot roll back history",
         });
+      }
+
+      // 4b. If the *current* (to-be-deleted) entry is a resolved location,
+      //     clear root cause fields on the system.
+      if (
+        deletedToLocationId &&
+        RESOLVED_LOCATION_IDS.includes(deletedToLocationId)
+      ) {
+        await client.query(
+          `
+                  UPDATE system
+                  SET root_cause_id = NULL,
+                      root_cause_sub_category_id = NULL
+                WHERE id = $1
+                `,
+          [system_id]
+        );
       }
 
       // 5. Delete latest history entry
