@@ -181,6 +181,13 @@ function useApi() {
       body: JSON.stringify(payload),
     });
 
+  // list all categories
+  const getRootCauses = () => fetchJSON(`/systems/root-cause`);
+
+  // list all sub-categories
+  const getRootCauseSubCategories = () =>
+    fetchJSON(`/systems/root-cause-sub-categories`);
+
   // inside your useApi() module, alongside updateSystemLocation, etc.
 
   const updateSystemRootCause = (serviceTag, payload) => {
@@ -662,6 +669,8 @@ function useApi() {
     createPartItem,
     updatePartItem,
     deletePartItem,
+    getRootCauses,
+    getRootCauseSubCategories,
   };
 }
 

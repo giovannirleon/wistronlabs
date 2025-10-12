@@ -112,6 +112,12 @@ function SystemPage() {
   const [downloads, setDownloads] = useState([]);
   const [releasedPallets, setreleasedPallets] = useState([]);
 
+  // Root-cause UI state
+  const [rootCauseOptions, setRootCauseOptions] = useState([]); // [{value,label}]
+  const [rootCauseSubOptions, setRootCauseSubOptions] = useState([]); // [{value,label}]
+  const [selectedRootCauseId, setSelectedRootCauseId] = useState(null);
+  const [selectedRootCauseSubId, setSelectedRootCauseSubId] = useState(null);
+
   const [tab, setTab] = useState("history");
   const [logsDir, setLogsDir] = useState(""); // e.g. "2025-09-25/"
 
@@ -159,6 +165,9 @@ function SystemPage() {
     createPartItem,
     updatePartItem,
     deletePartItem,
+    getRootCauses,
+    getRootCauseSubCategories,
+    updateSystemRootCause,
   } = useApi();
 
   const { confirm, ConfirmDialog } = useConfirm();
@@ -340,6 +349,53 @@ function SystemPage() {
       return next;
     });
   };
+
+  const ROOT_CAUSE_LOCATIONS = ["RMA VID", "RMA CID", "RMA PID", "Sent to L11"];
+  const showRootCauseControls = useMemo(
+    () => ROOT_CAUSE_LOCATIONS.includes(toLocationName),
+    [toLocationName]
+  );
+
+  useEffect(() => {
+    if (!showRootCauseControls) {
+      // clear when hidden
+      setSelectedRootCauseId(null);
+      setSelectedRootCauseSubId(null);
+      return;
+    }
+
+    let alive = true;
+    (async () => {
+      try {
+        const [cats, subs] = await Promise.all([
+          getRootCauses(), // expects [{id,name}]
+          getRootCauseSubCategories(), // expects [{id,name}]
+        ]);
+
+        if (!alive) return;
+
+        const catOpts = (cats || []).map((c) => ({
+          value: c.id,
+          label: c.name,
+        }));
+        let subOpts = (subs || []).map((s) => ({ value: s.id, label: s.name }));
+
+        // Hide "Unable to Repair" when sending to L11
+        if (toLocationName === "Sent to L11") {
+          subOpts = subOpts.filter((o) => o.label !== "Unable to Repair");
+        }
+
+        setRootCauseOptions(catOpts);
+        setRootCauseSubOptions(subOpts);
+      } catch (e) {
+        console.error("Failed to load root cause options", e);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [showRootCauseControls, toLocationName]); // ← don't depend on hook fn identities
 
   const markExistingWorking = async (ppid) => {
     try {
@@ -579,60 +635,63 @@ function SystemPage() {
     showToast,
     fetchData
   );
-  const select40Styles = {
-    control: (base, state) => ({
-      ...base,
-      minHeight: 40,
-      height: 40,
-      overflow: "hidden", // don’t grow vertically
-      borderColor: state.isFocused ? "#60A5FA" : "#D1D5DB",
-      boxShadow: "none",
-      "&:hover": { borderColor: state.isFocused ? "#60A5FA" : "#D1D5DB" },
-    }),
-    valueContainer: (base) => ({
-      ...base,
-      padding: "0 8px",
-      overflow: "hidden", // clip long value
-    }),
-    singleValue: (base) => ({
-      ...base,
-      margin: 0,
-      maxWidth: "100%",
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis", // … for long labels
-    }),
-    placeholder: (base) => ({
-      ...base,
-      margin: 0,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-    }),
-    input: (base) => ({
-      ...base,
-      margin: 0,
-      padding: 0,
-    }),
-    indicatorsContainer: (base) => ({ ...base, height: 40 }),
+  const select40Styles = useMemo(
+    () => ({
+      control: (base, state) => ({
+        ...base,
+        minHeight: 40,
+        height: 40,
+        overflow: "hidden", // don’t grow vertically
+        borderColor: state.isFocused ? "#60A5FA" : "#D1D5DB",
+        boxShadow: "none",
+        "&:hover": { borderColor: state.isFocused ? "#60A5FA" : "#D1D5DB" },
+      }),
+      valueContainer: (base) => ({
+        ...base,
+        padding: "0 8px",
+        overflow: "hidden", // clip long value
+      }),
+      singleValue: (base) => ({
+        ...base,
+        margin: 0,
+        maxWidth: "100%",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis", // … for long labels
+      }),
+      placeholder: (base) => ({
+        ...base,
+        margin: 0,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }),
+      input: (base) => ({
+        ...base,
+        margin: 0,
+        padding: 0,
+      }),
+      indicatorsContainer: (base) => ({ ...base, height: 40 }),
 
-    // Dropdown should scroll, not expand
-    menu: (base) => ({
-      ...base,
-      overflow: "hidden",
+      // Dropdown should scroll, not expand
+      menu: (base) => ({
+        ...base,
+        overflow: "hidden",
+      }),
+      menuList: (base) => ({
+        ...base,
+        maxHeight: 220, // pick your height
+        overflowY: "auto", // scroll overflow
+      }),
+      option: (base) => ({
+        ...base,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }),
     }),
-    menuList: (base) => ({
-      ...base,
-      maxHeight: 220, // pick your height
-      overflowY: "auto", // scroll overflow
-    }),
-    option: (base) => ({
-      ...base,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-    }),
-  };
+    []
+  );
 
   // --- PPID normalization (case-insensitive uniqueness) ---
   const normPPID = (s) => (s || "").toUpperCase().trim();
@@ -1225,6 +1284,21 @@ function SystemPage() {
       }
     }
 
+    // Require Root Cause + Sub Category for RMA VID/CID/PID or Sent to L11
+    const destName = locations.find((l) => l.id === toId)?.name || "";
+    const REQUIRES_RC = [
+      "RMA VID",
+      "RMA CID",
+      "RMA PID",
+      "Sent to L11",
+    ].includes(destName);
+    if (REQUIRES_RC && (!selectedRootCauseId || !selectedRootCauseSubId)) {
+      setFormError(
+        "Root Cause and Sub Category are required when moving to RMA (VID/CID/PID) or Sent to L11."
+      );
+      return;
+    }
+
     setFormError("");
     setSubmitting(true);
 
@@ -1356,6 +1430,28 @@ function SystemPage() {
         setToRemovePPIDs(new Set());
       }
 
+      // --- Root Cause submit (only when visible) ---
+      if (showRootCauseControls) {
+        const a = selectedRootCauseId;
+        const b = selectedRootCauseSubId;
+
+        const bothSet = a != null && b != null;
+        const bothNull = a === null && b === null;
+
+        if (!(bothSet || bothNull)) {
+          setFormError(
+            "Select both Root Cause and Sub Category, or clear both."
+          );
+          setSubmitting(false);
+          return;
+        }
+
+        await updateSystemRootCause(serviceTag, {
+          root_cause_id: bothSet ? a : null,
+          root_cause_sub_category_id: bothSet ? b : null,
+        });
+      }
+
       // 3) Move the unit
       // ⬅️ Backend now returns { message, pallet_number?, dpn?, factory_code? } when moving into RMA
       const resp = await updateSystemLocation(serviceTag, {
@@ -1429,6 +1525,8 @@ function SystemPage() {
       setToLocationId("");
       setSelectedStation("");
       setGoodBlocks([]);
+      setSelectedRootCauseId(null);
+      setSelectedRootCauseSubId(null);
       setGoodActionByPPID({});
       setReplacementByOldPPID({});
       showToast("Updated System Location", "success", 3000, "bottom-right");
@@ -2299,7 +2397,78 @@ function SystemPage() {
                   </div>
                 </div>
 
-                {(toLocationId === 5 || system?.location === "In L10") && (
+                {showRootCauseControls && (
+                  <div className="mt-4 p-4 rounded-lg bg-white border border-gray-200 shadow-sm">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Root Cause
+                    </label>
+                    <div className="flex flex-col md:flex-row gap-3">
+                      {/* Root Cause */}
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Category
+                        </label>
+                        <Select
+                          instanceId="root-cause"
+                          classNamePrefix="react-select"
+                          styles={select40Styles}
+                          isClearable
+                          isSearchable
+                          placeholder="Select category"
+                          value={
+                            rootCauseOptions.find(
+                              (o) => o.value === selectedRootCauseId
+                            ) || null
+                          }
+                          onChange={(opt) =>
+                            setSelectedRootCauseId(opt ? opt.value : null)
+                          }
+                          options={rootCauseOptions}
+                        />
+                      </div>
+
+                      {/* Sub-Category */}
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Sub Category
+                        </label>
+                        <Select
+                          instanceId="root-cause-sub"
+                          classNamePrefix="react-select"
+                          styles={select40Styles}
+                          isClearable
+                          isSearchable
+                          placeholder={
+                            toLocationName === "Sent to L11"
+                              ? "Select sub-category (no 'Unable to Repair')"
+                              : "Select sub-category"
+                          }
+                          value={
+                            rootCauseSubOptions.find(
+                              (o) => o.value === selectedRootCauseSubId
+                            ) || null
+                          }
+                          onChange={(opt) =>
+                            setSelectedRootCauseSubId(opt ? opt.value : null)
+                          }
+                          options={rootCauseSubOptions}
+                        />
+                      </div>
+                    </div>
+
+                    {toLocationName === "Sent to L11" && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        “Unable to Repair” isn’t available when sending to L11.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {(toLocationId === 5 ||
+                  (system?.location === "In L10" &&
+                    toLocationId != 9 &&
+                    toLocationId != 8 &&
+                    toLocationId != 7 &&
+                    toLocationId != 6)) && (
                   <div className="mt-5 flex flex-col lg:flex-row gap-4">
                     {/* Table on the left */}
                     <div

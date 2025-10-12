@@ -1141,7 +1141,25 @@ router.get("/snapshot", async (req, res) => {
   if (mode === "perday") {
     const startIdx = params.length + 1; // will be $X (start)
     const inactiveIdx = params.length + 2; // will be $Y (int[] of inactive IDs)
-    perDayExclusionSQL = `AND NOT ( l.id = ANY($${inactiveIdx}::int[]) AND h.changed_at < $${startIdx} )`;
+    //perDayExclusionSQL = `AND NOT ( l.id = ANY($${inactiveIdx}::int[]) AND h.changed_at < $${startIdx} )`;
+    perDayExclusionSQL = `
+    AND NOT (
+      l.id = ANY($${inactiveIdx}::int[])
+      AND h.changed_at < $${startIdx}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pallet p
+        JOIN pallet_system ps ON ps.pallet_id = p.id
+        WHERE p.status = 'released'
+          AND p.released_at >= $${startIdx}
+          AND p.released_at <= $1
+          AND ps.system_id = s.id
+          -- system must be a member at the release instant
+          AND ps.added_at <= p.released_at
+          AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
+      )
+    )
+  `;
     params.push(start); // $startIdx
     params.push(INACTIVE_LOCATION_IDS); // $inactiveIdx
   }
@@ -1187,6 +1205,12 @@ router.get("/snapshot", async (req, res) => {
         to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
         ${selectNotesAggregate}
         , up.unit_parts
+        , CASE
+            WHEN s.root_cause_id IS NULL AND s.root_cause_sub_category_id IS NULL THEN NULL
+            WHEN s.root_cause_id IS NOT NULL AND s.root_cause_sub_category_id IS NOT NULL THEN rc.name || ' - ' || rcs.name
+            WHEN s.root_cause_id IS NOT NULL THEN rc.name
+            ELSE rcs.name
+          END AS root_cause
         , to_char(first_history.first_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS first_received_on
         ${
           includeReceivedFlag
@@ -1199,6 +1223,8 @@ router.get("/snapshot", async (req, res) => {
       JOIN location l      ON h.to_location_id = l.id
       LEFT JOIN factory f  ON s.factory_id = f.id
       LEFT JOIN dpn d      ON s.dpn_id     = d.id
+      LEFT JOIN root_cause rc ON rc.id = s.root_cause_id
+      LEFT JOIN root_cause_sub_category rcs ON rcs.id = s.root_cause_sub_category_id
       ${lateralJoinNotesAggregate}
       ${lateralJoinUnitParts}
       LEFT JOIN LATERAL (
@@ -1268,6 +1294,7 @@ router.get("/snapshot", async (req, res) => {
       "Issue",
       "Note History",
       "Unit Parts",
+      "Root Cause",
     ];
 
     const csvEsc = (v) => {
@@ -1342,6 +1369,7 @@ router.get("/snapshot", async (req, res) => {
       if (Array.isArray(r.unit_parts) && r.unit_parts.length) {
         unitPartsText = r.unit_parts.map((e) => e.line).join("\n");
       }
+      const rootCauseText = r.root_cause || "";
 
       const row = [
         firstLocal, // was r.first_received_on
@@ -1357,6 +1385,7 @@ router.get("/snapshot", async (req, res) => {
         r.issue || "",
         noteHistoryText,
         unitPartsText,
+        rootCauseText,
       ].map(csvEsc);
 
       lines.push(row.join(","));
