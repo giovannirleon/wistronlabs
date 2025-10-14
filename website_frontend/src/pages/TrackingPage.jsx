@@ -551,6 +551,7 @@ function TrackingPage() {
             reportMode={reportMode}
             setReportMode={setReportMode}
             idiotProof={idiotProof}
+            setIdiotProof={setIdiotProof}
           />
         )}
       </main>

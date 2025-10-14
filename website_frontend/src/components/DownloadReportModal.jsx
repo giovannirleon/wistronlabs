@@ -14,7 +14,6 @@ export default function DownloadReportModal({
   onDownload,
   reportMode,
   setReportMode,
-  // NEW ↓ props
   idiotProof,
   setIdiotProof,
 }) {
@@ -39,32 +38,7 @@ export default function DownloadReportModal({
           />
         </label>
 
-        {/* NEW: Idiot Proof toggle */}
-        <div className="flex items-center justify-between border rounded-lg p-3 bg-gray-50">
-          <div>
-            <div className="font-medium">Idiot Proof</div>
-            <div className="text-sm text-gray-500">
-              Use simplified status labels in the report
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIdiotProof(!idiotProof)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-              idiotProof ? "bg-green-600" : "bg-gray-300"
-            }`}
-            aria-pressed={idiotProof}
-            aria-label="Toggle Idiot Proof"
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                idiotProof ? "translate-x-6" : "translate-x-1"
-              }`}
-            />
-          </button>
-        </div>
-
-        <div className="mt-4">
+        <div className="mt-2">
           <div className="flex gap-6">
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input
@@ -91,6 +65,17 @@ export default function DownloadReportModal({
             </label>
           </div>
 
+          {/* Subtle "Idiot Proof" toggle */}
+          <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-500 select-none">
+            <input
+              type="checkbox"
+              checked={idiotProof}
+              onChange={(e) => setIdiotProof(e.target.checked)}
+              className="h-3 w-3 accent-blue-600"
+            />
+            Idiot Proof (simplify statuses)
+          </label>
+
           <p className="text-sm text-gray-500 mt-3">
             You can download data for this date as a cumulative total of all
             completed items up to that day, or only the items completed on that
@@ -107,7 +92,7 @@ export default function DownloadReportModal({
           </button>
           <button
             onClick={() => {
-              onDownload(); // will read idiotProof from parent scope
+              onDownload(); // reads idiotProof from parent
               onClose();
             }}
             className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
