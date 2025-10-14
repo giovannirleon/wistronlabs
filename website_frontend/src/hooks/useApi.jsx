@@ -291,6 +291,7 @@ function useApi() {
     locations,
     includeNote = false,
     noCache = false,
+    simplified = false, // NEW
   } = {}) => {
     if (!date) throw new Error("getSnapshot requires a `date` parameter");
 
@@ -304,6 +305,8 @@ function useApi() {
 
     params.includeNote = includeNote ? "true" : "false";
     params.noCache = noCache ? "true" : "false";
+
+    if (simplified) params.simplified = "true";
 
     const qs = buildQueryString(params);
     return fetchJSON(`/systems/snapshot${qs}`);

@@ -43,6 +43,7 @@ function TrackingPage() {
   const [showActive, setShowActive] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
   const [addSystemFormError, setAddSystemFormError] = useState(false);
+  const [idiotProof, setIdiotProof] = useState(false);
 
   const [serverTime, setServerTime] = useState([]);
 
@@ -105,7 +106,11 @@ function TrackingPage() {
       const historyBeginningDateISO = historyBeginningDateTime.toUTC().toISO();
 
       [activeLocationSnapshotFirstDay, historyData] = await Promise.all([
-        getSnapshot({ date: snapshotDate, locations: activeLocationNames }),
+        getSnapshot({
+          date: snapshotDate,
+          locations: activeLocationNames,
+          simplified: idiotProof,
+        }),
         fetchHistory({
           all: true,
           filters: {
@@ -156,7 +161,7 @@ function TrackingPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [idiotProof]);
 
   const { confirm, ConfirmDialog } = useConfirm();
   const { showToast, Toast } = useToast();
@@ -340,7 +345,6 @@ function TrackingPage() {
       const serverTimeReport = await getServerTime();
       const serverZone = serverTimeReport.zone;
 
-      // You already do this:
       const serverLocal = DateTime.fromISO(reportDate, { zone: serverZone });
       const reportDT = serverLocal
         .set({ hour: 23, minute: 59, second: 59, millisecond: 0 })
@@ -349,23 +353,22 @@ function TrackingPage() {
 
       const startOfDayUTC = serverLocal.startOf("day").toUTC().toISO();
 
-      // Ask backend for a CSV directly, reusing your existing /snapshot endpoint
       const params = new URLSearchParams({
         date: reportDT,
         includeNote: "true",
         noCache: "true",
-        mode: reportMode, // "perday" | "cumulative"
-        includeReceived: "true", // for "Last Received On"
-        format: "csv", // <-- CSV direct
-        timezone: serverZone, // for MM/DD in notes
+        mode: reportMode,
+        includeReceived: "true",
+        format: "csv",
+        timezone: serverZone,
       });
 
       if (reportMode !== "cumulative") {
-        params.set("start", startOfDayUTC); // per-day cutoff
+        params.set("start", startOfDayUTC);
       }
 
-      // If you were passing "locations" before, keep doing it:
-      // params.set("locations", activeLocationNames.join(","));
+      // NEW: pass simplified flag
+      if (idiotProof) params.set("simplified", "true");
 
       const resp = await fetch(
         `${BACKEND_URL}/systems/snapshot?${params.toString()}`
@@ -376,7 +379,9 @@ function TrackingPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `snapshot_${reportDate}_${reportMode}.csv`;
+      a.download = `snapshot_${reportDate}_${reportMode}${
+        idiotProof ? "_simplified" : ""
+      }.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -545,6 +550,7 @@ function TrackingPage() {
             onDownload={handleDownloadReport}
             reportMode={reportMode}
             setReportMode={setReportMode}
+            idiotProof={idiotProof}
           />
         )}
       </main>

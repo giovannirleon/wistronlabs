@@ -1025,6 +1025,7 @@ router.get("/snapshot", async (req, res) => {
     includeReceived, // 'true' to compute "Last Received On"
     format, // 'csv' to return CSV
     timezone, // for MM/DD in notes
+    simplified, // NEW: if true, apply simplified status mapping
   } = req.query;
 
   if (!date) {
@@ -1047,15 +1048,20 @@ router.get("/snapshot", async (req, res) => {
     includeReceived === true;
   const wantCSV = format === "csv";
 
+  // NEW: simplified flag
+  const simplifiedFlag =
+    simplified === "true" || simplified === "1" || simplified === true;
+
   const INACTIVE_LOCATION_IDS = [6, 7, 8, 9];
   const RECEIVED_LOCATION_ID = 1;
 
   const serverZone = process.env.SERVER_TZ || "UTC";
   const displayZone = timezone || serverZone;
 
-  const cacheKey = `${date}:${locations || ""}:${includeNoteFlag}:${mode}:${
-    start || ""
-  }:${includeReceivedFlag}:${displayZone}`;
+  // NEW: add simplifiedFlag to cache key
+  const cacheKey =
+    `${date}:${locations || ""}:${includeNoteFlag}:${mode}:${start || ""}:` +
+    `${includeReceivedFlag}:${displayZone}:${simplifiedFlag}`;
   if (!noCacheFlag && !wantCSV) {
     const cached = snapshotCache.get(cacheKey);
     if (cached) {
@@ -1079,7 +1085,7 @@ router.get("/snapshot", async (req, res) => {
     }
   }
 
-  // Notes aggregate
+  // Notes aggregate (unchanged) ...
   const selectNotesAggregate = includeNoteFlag
     ? `,
         nh.notes_history`
@@ -1111,7 +1117,7 @@ router.get("/snapshot", async (req, res) => {
     `
     : ``;
 
-  // Unit parts aggregate (always included)
+  // Unit parts aggregate (unchanged) ...
   const lateralJoinUnitParts = `
   LEFT JOIN LATERAL (
     SELECT COALESCE(
@@ -1136,12 +1142,11 @@ router.get("/snapshot", async (req, res) => {
   ) up ON TRUE
 `;
 
-  // Per-day exclusion SQL: compute placeholder numbers BEFORE pushing the two params
+  // Per-day exclusion SQL (unchanged) ...
   let perDayExclusionSQL = ``;
   if (mode === "perday") {
-    const startIdx = params.length + 1; // will be $X (start)
-    const inactiveIdx = params.length + 2; // will be $Y (int[] of inactive IDs)
-    //perDayExclusionSQL = `AND NOT ( l.id = ANY($${inactiveIdx}::int[]) AND h.changed_at < $${startIdx} )`;
+    const startIdx = params.length + 1;
+    const inactiveIdx = params.length + 2;
     perDayExclusionSQL = `
     AND NOT (
       l.id = ANY($${inactiveIdx}::int[])
@@ -1154,14 +1159,13 @@ router.get("/snapshot", async (req, res) => {
           AND p.released_at >= $${startIdx}
           AND p.released_at <= $1
           AND ps.system_id = s.id
-          -- system must be a member at the release instant
           AND ps.added_at <= p.released_at
           AND COALESCE(ps.removed_at, 'infinity'::timestamptz) >= p.released_at
       )
     )
   `;
-    params.push(start); // $startIdx
-    params.push(INACTIVE_LOCATION_IDS); // $inactiveIdx
+    params.push(start);
+    params.push(INACTIVE_LOCATION_IDS);
   }
 
   try {
@@ -1184,24 +1188,23 @@ router.get("/snapshot", async (req, res) => {
         d.config AS config,
         d.dell_customer AS dell_customer,
         CASE
-        WHEN trim(l.name) ILIKE 'RMA%' THEN
-          regexp_replace(l.name, '\\s*\\((PENDING|COMPLETE)\\)$', '', 'i')
-          ||
-          CASE
-            WHEN EXISTS (
-              SELECT 1
-              FROM pallet p
-              JOIN pallet_system ps ON ps.pallet_id = p.id
-              WHERE p.status = 'open'
-                AND ps.system_id = s.id
-                AND ps.removed_at IS NULL
-            )
-            THEN ' (PENDING)'
-            ELSE ' (COMPLETE)'
-          END
-        ELSE l.name
-      END AS location,
-
+          WHEN trim(l.name) ILIKE 'RMA%' THEN
+            regexp_replace(l.name, '\\s*\\((PENDING|COMPLETE)\\)$', '', 'i')
+            ||
+            CASE
+              WHEN EXISTS (
+                SELECT 1
+                FROM pallet p
+                JOIN pallet_system ps ON ps.pallet_id = p.id
+                WHERE p.status = 'open'
+                  AND ps.system_id = s.id
+                  AND ps.removed_at IS NULL
+              )
+              THEN ' (PENDING)'
+              ELSE ' (COMPLETE)'
+            END
+          ELSE l.name
+        END AS location,
         to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
         ${selectNotesAggregate}
         , up.unit_parts
@@ -1267,6 +1270,28 @@ router.get("/snapshot", async (req, res) => {
 
     const rows = snapshotResult.rows;
 
+    // NEW: apply simplified mapping (but keep original for PIC usage)
+    if (simplifiedFlag) {
+      const reRMAComplete = /^RMA\s+(VID|CID|PID)\s+\(COMPLETE\)$/i;
+      const reRMAPending = /^RMA\s+(VID|CID|PID)\s+\(PENDING\)$/i;
+      const reInDebugSet = /^(In L10|In Debug - Wistron|Received)$/i;
+
+      for (const r of rows) {
+        const original = (r.location || "").trim();
+        r._orig_location = original; // preserve for PIC extraction in CSV
+
+        if (reRMAComplete.test(original)) {
+          r.location = "Waiting for RMA";
+        } else if (reRMAPending.test(original)) {
+          r.location = "RMA Done";
+        } else if (/^Sent to L11$/i.test(original)) {
+          r.location = "Fixed";
+        } else if (reInDebugSet.test(original)) {
+          r.location = "In Debug";
+        } // else leave as-is
+      }
+    }
+
     if (!wantCSV) {
       if (!noCacheFlag) snapshotCache.set(cacheKey, rows, 300);
       return res.json(rows);
@@ -1308,16 +1333,14 @@ router.get("/snapshot", async (req, res) => {
       day: "2-digit",
     });
 
-    // right above the CSV building loop, next to your MM/DD formatter:
     const fmtDateTime = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Chicago", // <- server zone or FE-provided timezone
+      timeZone: "America/Chicago",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
-      // timeZoneName: "short",   // uncomment if you want "PDT"/"CST" etc.
     });
 
     const lines = [];
@@ -1327,18 +1350,18 @@ router.get("/snapshot", async (req, res) => {
       const firstLocal = r.first_received_on
         ? fmtDateTime.format(new Date(r.first_received_on))
         : "";
-
       const lastLocal =
         includeReceivedFlag && r.last_received_on
           ? fmtDateTime.format(new Date(r.last_received_on))
           : "";
-
       const modifiedLocal = r.date_modified
         ? fmtDateTime.format(new Date(r.date_modified))
         : "";
 
-      const pic = r.location?.startsWith("RMA ")
-        ? r.location
+      // Use original RMA location for PIC extraction so simplified labels don’t break it
+      const locForPic = r._orig_location || r.location || "";
+      const pic = locForPic.startsWith("RMA ")
+        ? locForPic
             .replace(/^RMA\s+/, "")
             .replace(/\s+\((PENDING|COMPLETE)\)$/, "")
         : "";
@@ -1372,12 +1395,12 @@ router.get("/snapshot", async (req, res) => {
       const rootCauseText = r.root_cause || "";
 
       const row = [
-        firstLocal, // was r.first_received_on
-        includeReceivedFlag ? lastLocal : "", // was r.last_received_on
+        firstLocal,
+        includeReceivedFlag ? lastLocal : "",
         modifiedLocal,
         pic,
         r.factory_code || "",
-        r.location || "",
+        r.location || "", // <-- this is simplified if flag on
         r.service_tag || "",
         r.dpn || "",
         `Config ${r.config}` || "",
