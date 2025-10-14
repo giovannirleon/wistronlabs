@@ -1370,7 +1370,7 @@ function SystemPage() {
           (o) => String(o.value) === String(rcSubEffectiveId)
         )?.label || "";
 
-      if (catLabel !== "NTF" || subLabel !== "NTF") {
+      if (catLabel !== "NTF" || subLabel !== "No Trouble Found") {
         setFormError(
           "When sending to L11, Root Cause and Sub Category must both be NTF."
         );
