@@ -399,7 +399,9 @@ function SystemPage() {
         // In RMA (VID/CID/PID): remove NTF from BOTH lists
         if (isRMAto) {
           catOpts = catOpts.filter((o) => o.label !== "NTF");
-          baseSubOpts = baseSubOpts.filter((o) => o.label !== "NTF");
+          baseSubOpts = baseSubOpts.filter(
+            (o) => o.label !== "No Trouble Found"
+          );
         } else {
           // Outside RMA: hide "Unable to Repair"
           baseSubOpts = baseSubOpts.filter(
@@ -415,7 +417,8 @@ function SystemPage() {
         let subOpts = baseSubOpts;
 
         if (isL11to && selectedCat?.label === "NTF") {
-          const ntfSub = baseSubOpts.find((o) => o.label === "NTF") || null;
+          const ntfSub =
+            baseSubOpts.find((o) => o.label === "No Trouble Found") || null;
           if (ntfSub) {
             subOpts = [ntfSub];
             setSelectedRootCauseSubId(String(ntfSub.value));
@@ -424,15 +427,14 @@ function SystemPage() {
             setSelectedRootCauseSubId(null);
           }
         } else if (selectedCat?.label === "NTF") {
-          const ntfSub = baseSubOpts.find((o) => o.label === "NTF") || null;
+          const ntfSub =
+            baseSubOpts.find((o) => o.label === "No Trouble Found") || null;
           subOpts = ntfSub ? [ntfSub] : [];
           if (ntfSub) setSelectedRootCauseSubId(String(ntfSub.value));
         } else {
           // Category ≠ NTF → remove NTF from sub-category options
-          subOpts = baseSubOpts.filter((o) => o.label !== "NTF");
+          subOpts = baseSubOpts.filter((o) => o.label !== "No Trouble Found");
         }
-
-        // ⬆️ keep everything below this line as-is:
 
         // Clear selections if they’re no longer valid
         if (
@@ -467,7 +469,9 @@ function SystemPage() {
       (o) => String(o.value) === String(selectedRootCauseId)
     );
     if (selectedCat?.label === "NTF") {
-      const ntfSub = rootCauseSubOptions.find((o) => o.label === "NTF");
+      const ntfSub = rootCauseSubOptions.find(
+        (o) => o.label === "No Trouble Found"
+      );
       if (ntfSub) setSelectedRootCauseSubId(String(ntfSub.value));
     }
   }, [selectedRootCauseId, rootCauseOptions, rootCauseSubOptions]);
