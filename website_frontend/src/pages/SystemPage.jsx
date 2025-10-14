@@ -201,6 +201,10 @@ function SystemPage() {
     return opts;
   };
 
+  // Add with the other constants near the top of SystemPage()
+  const RMA_LOCATION_NAMES = ["RMA VID", "RMA CID", "RMA PID"];
+  const L11_NAME = "Sent to L11";
+
   // --- Pending Parts state ---
   const [pendingBlocks, setPendingBlocks] = useState([]); // [{id, part_id, ppid}]
   const [partOptions, setPartOptions] = useState([]); // [{value,label}]
@@ -365,7 +369,6 @@ function SystemPage() {
 
   useEffect(() => {
     if (!showRootCauseControls) {
-      // clear when hidden
       setSelectedRootCauseId(null);
       setSelectedRootCauseSubId(null);
       return;
@@ -375,25 +378,74 @@ function SystemPage() {
     (async () => {
       try {
         const [cats, subs] = await Promise.all([
-          getRootCauses(), // expects [{id,name}]
-          getRootCauseSubCategories(), // expects [{id,name}]
+          getRootCauses(), // [{id,name}]
+          getRootCauseSubCategories(), // [{id,name}]
         ]);
-
         if (!alive) return;
 
-        // when options are fetched
-        const catOpts = (cats || []).map((c) => ({
+        const isRMAto = RMA_LOCATION_NAMES.includes(toLocationName); // RMA VID/CID/PID
+        const isL11to = toLocationName === L11_NAME; // "Sent to L11"
+
+        // Base lists
+        let catOpts = (cats || []).map((c) => ({
           value: String(c.id),
           label: c.name,
         }));
-        let subOpts = (subs || []).map((s) => ({
+        let baseSubOpts = (subs || []).map((s) => ({
           value: String(s.id),
           label: s.name,
         }));
 
-        // Hide "Unable to Repair" when sending to L11
-        if (toLocationName === "Sent to L11") {
-          subOpts = subOpts.filter((o) => o.label !== "Unable to Repair");
+        // In RMA (VID/CID/PID): remove NTF from BOTH lists
+        if (isRMAto) {
+          catOpts = catOpts.filter((o) => o.label !== "NTF");
+          baseSubOpts = baseSubOpts.filter((o) => o.label !== "NTF");
+        } else {
+          // Outside RMA: hide "Unable to Repair"
+          baseSubOpts = baseSubOpts.filter(
+            (o) => o.label !== "Unable to Repair"
+          );
+        }
+
+        // Figure out the currently selected category label (after filtering)
+        const selectedCat = catOpts.find(
+          (o) => String(o.value) === String(selectedRootCauseId)
+        );
+
+        let subOpts = baseSubOpts;
+
+        if (isL11to && selectedCat?.label === "NTF") {
+          const ntfSub = baseSubOpts.find((o) => o.label === "NTF") || null;
+          if (ntfSub) {
+            subOpts = [ntfSub];
+            setSelectedRootCauseSubId(String(ntfSub.value));
+          } else {
+            subOpts = [];
+            setSelectedRootCauseSubId(null);
+          }
+        } else if (selectedCat?.label === "NTF") {
+          const ntfSub = baseSubOpts.find((o) => o.label === "NTF") || null;
+          subOpts = ntfSub ? [ntfSub] : [];
+          if (ntfSub) setSelectedRootCauseSubId(String(ntfSub.value));
+        } else {
+          // Category ≠ NTF → remove NTF from sub-category options
+          subOpts = baseSubOpts.filter((o) => o.label !== "NTF");
+        }
+
+        // ⬆️ keep everything below this line as-is:
+
+        // Clear selections if they’re no longer valid
+        if (
+          !catOpts.some((o) => String(o.value) === String(selectedRootCauseId))
+        ) {
+          setSelectedRootCauseId(null);
+        }
+        if (
+          !subOpts.some(
+            (o) => String(o.value) === String(selectedRootCauseSubId)
+          )
+        ) {
+          setSelectedRootCauseSubId(null);
         }
 
         setRootCauseOptions(catOpts);
@@ -406,7 +458,19 @@ function SystemPage() {
     return () => {
       alive = false;
     };
-  }, [showRootCauseControls, toLocationName]); // ← don't depend on hook fn identities
+    // IMPORTANT: include selectedRootCauseId so sub options react to category changes
+  }, [showRootCauseControls, toLocationName, selectedRootCauseId]);
+
+  useEffect(() => {
+    // If the chosen category is NTF, keep sub-category locked to NTF (when available)
+    const selectedCat = rootCauseOptions.find(
+      (o) => String(o.value) === String(selectedRootCauseId)
+    );
+    if (selectedCat?.label === "NTF") {
+      const ntfSub = rootCauseSubOptions.find((o) => o.label === "NTF");
+      if (ntfSub) setSelectedRootCauseSubId(String(ntfSub.value));
+    }
+  }, [selectedRootCauseId, rootCauseOptions, rootCauseSubOptions]);
 
   // Add a new empty block
   const addBadPartBlock = () => {
@@ -1290,6 +1354,24 @@ function SystemPage() {
         "Root Cause and Sub Category are required when moving to RMA (VID/CID/PID) or Sent to L11."
       );
       return;
+    }
+
+    // Hard rule for L11: both category and sub-category must be NTF
+    if (destName === L11_NAME) {
+      const catLabel =
+        rootCauseOptions.find((o) => String(o.value) === String(rcEffectiveId))
+          ?.label || "";
+      const subLabel =
+        rootCauseSubOptions.find(
+          (o) => String(o.value) === String(rcSubEffectiveId)
+        )?.label || "";
+
+      if (catLabel !== "NTF" || subLabel !== "NTF") {
+        setFormError(
+          "When sending to L11, Root Cause and Sub Category must both be NTF."
+        );
+        return;
+      }
     }
 
     setFormError("");
@@ -2443,11 +2525,16 @@ function SystemPage() {
                                           String(rcEffectiveId)
                                       ) || null
                                     }
-                                    onChange={(opt) =>
-                                      setSelectedRootCauseId(
-                                        opt ? String(opt.value) : null
-                                      )
-                                    }
+                                    onChange={(opt) => {
+                                      const next = opt
+                                        ? String(opt.value)
+                                        : null;
+                                      setSelectedRootCauseId(next);
+                                      if (next === null) {
+                                        // if Category was cleared, also clear Sub Category
+                                        setSelectedRootCauseSubId(null);
+                                      }
+                                    }}
                                     options={rootCauseOptions}
                                   />
                                 </div>
