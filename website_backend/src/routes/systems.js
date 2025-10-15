@@ -1395,21 +1395,21 @@ router.get("/snapshot", async (req, res) => {
       const rootCauseText = r.root_cause || "";
 
       const row = [
-        firstLocal,
-        includeReceivedFlag ? lastLocal : "",
-        modifiedLocal,
-        pic,
-        r.factory_code || "",
-        r.location || "", // <-- this is simplified if flag on
-        r.service_tag || "",
-        r.dpn || "",
-        `Config ${r.config}` || "",
-        !simplifiedFlag && (r.dell_customer || ""),
-        r.issue || "",
-        noteHistoryText,
-        rootCauseText,
-        unitPartsText,
-      ].map(csvEsc);
+        firstLocal ?? "",
+        includeReceivedFlag ? lastLocal ?? "" : "",
+        modifiedLocal ?? "",
+        pic ?? "",
+        r.factory_code ?? "",
+        r.location ?? "", // already simplified upstream if needed
+        r.service_tag ?? "",
+        r.dpn ?? "",
+        r.config != null ? `Config ${r.config}` : "",
+        ...(!simplifiedFlag ? [r.dell_customer ?? ""] : []),
+        r.issue ?? "",
+        noteHistoryText ?? "",
+        rootCauseText ?? "",
+        unitPartsText ?? "",
+      ].map((v) => csvEsc(String(v)));
 
       lines.push(row.join(","));
     }
