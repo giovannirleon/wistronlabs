@@ -1281,9 +1281,9 @@ router.get("/snapshot", async (req, res) => {
         r._orig_location = original; // preserve for PIC extraction in CSV
 
         if (reRMAComplete.test(original)) {
-          r.location = "Waiting for RMA";
-        } else if (reRMAPending.test(original)) {
           r.location = "RMA Done";
+        } else if (reRMAPending.test(original)) {
+          r.location = "Waiting for RMA";
         } else if (/^Sent to L11$/i.test(original)) {
           r.location = "Fixed";
         } else if (reInDebugSet.test(original)) {
@@ -1315,11 +1315,11 @@ router.get("/snapshot", async (req, res) => {
       "Service Tag",
       "DPN",
       "Config",
-      "Dell Customer",
+      ...(!simplifiedFlag ? ["Dell Customer"] : []),
       "Issue",
       "Note History",
-      "Unit Parts",
       "Root Cause",
+      "Unit Parts",
     ];
 
     const csvEsc = (v) => {
@@ -1404,11 +1404,11 @@ router.get("/snapshot", async (req, res) => {
         r.service_tag || "",
         r.dpn || "",
         `Config ${r.config}` || "",
-        r.dell_customer || "",
+        !simplifiedFlag && (r.dell_customer || ""),
         r.issue || "",
         noteHistoryText,
-        unitPartsText,
         rootCauseText,
+        unitPartsText,
       ].map(csvEsc);
 
       lines.push(row.join(","));
