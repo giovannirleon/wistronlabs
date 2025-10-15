@@ -10,6 +10,8 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  LabelList,
+  Legend,
 } from "recharts";
 
 function computeActiveLocationsPerDay(
@@ -142,12 +144,13 @@ function SystemLocationsChart({
   locations,
   activeLocationIDs,
   serverTime,
+  printFriendly = false,
 }) {
   const activeLocationNames = locations
     .filter((loc) => activeLocationIDs.includes(loc.id))
     .map((loc) => loc.name);
 
-  const historyByDay = React.useMemo(() => {
+  const historyByDay = useMemo(() => {
     if (!history.length) return null;
     return computeActiveLocationsPerDay(
       snapshot,
@@ -159,28 +162,41 @@ function SystemLocationsChart({
 
   if (!historyByDay) return <div>No data</div>;
 
-  // Flatten for Recharts
   const chartData = historyByDay.map((day) => {
     const row = { date: DateTime.fromISO(day.date).toFormat("MM/dd/yy") };
-    activeLocationNames.forEach((loc) => {
-      row[loc] = day.counts[loc] || 0;
-    });
+    activeLocationNames.forEach((loc) => (row[loc] = day.counts[loc] || 0));
     return row;
   });
 
   const locationKeys = activeLocationNames;
-
   const CHART_COLORS = ["#1f77b4", "#9467bd", "#ff7f0e", "#2ca02c", "#d62728"];
+
+  // Give the legend some headroom when printFriendly
+  const chartMargin = printFriendly
+    ? { top: 28, right: 12, left: 0, bottom: 4 }
+    : { top: 16, right: 12, left: 0, bottom: 4 };
 
   return (
     <div className="bg-white shadow rounded p-4">
       <h2 className="text-xl font-semibold mb-4">Active Locations Per Day</h2>
       <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={chartData}>
+        <LineChart data={chartData} margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />
           <YAxis interval={0} allowDecimals={false} />
           <Tooltip />
+
+          {/* Show legend only for print-friendly */}
+          {printFriendly && (
+            <Legend
+              verticalAlign="top"
+              align="right"
+              iconType="circle"
+              wrapperStyle={{ fontSize: 11, lineHeight: "12px" }}
+              height={36} // <-- this reserves space (add padding)
+            />
+          )}
+
           {locationKeys.map((loc, idx) => (
             <Line
               key={loc}
@@ -191,7 +207,21 @@ function SystemLocationsChart({
               dot={{ r: 2 }}
               stroke={CHART_COLORS[idx % CHART_COLORS.length]}
               isAnimationActive={false}
-            />
+            >
+              {printFriendly && (
+                <LabelList
+                  dataKey={loc}
+                  position="top"
+                  offset={4}
+                  style={{
+                    fontSize: 10,
+                    fill: CHART_COLORS[idx % CHART_COLORS.length],
+                    fontFamily:
+                      "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                  }}
+                />
+              )}
+            </Line>
           ))}
         </LineChart>
       </ResponsiveContainer>

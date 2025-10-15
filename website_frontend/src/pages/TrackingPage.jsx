@@ -44,6 +44,7 @@ function TrackingPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [addSystemFormError, setAddSystemFormError] = useState(false);
   const [idiotProof, setIdiotProof] = useState(false);
+  const [printFriendly, setPrintFriendly] = useState(false);
 
   const [serverTime, setServerTime] = useState([]);
 
@@ -56,6 +57,7 @@ function TrackingPage() {
 
   const chartDays = 7;
   const activeLocationIDs = [1, 2, 3, 4, 5];
+  const systemLocationChartIDs = [1, 2, 4, 5];
   const inactiveLocationIDs = [6, 7, 8, 9];
 
   const {
@@ -446,15 +448,29 @@ function TrackingPage() {
               snapshot={snapshot}
               history={locationChartHistory}
               locations={locations}
-              activeLocationIDs={activeLocationIDs}
+              activeLocationIDs={systemLocationChartIDs}
               serverTime={serverTime}
+              printFriendly={printFriendly}
             />
             <SystemInOutChart
               history={InOutChartHistory}
               locations={locations}
               activeLocationIDs={activeLocationIDs}
               serverTime={serverTime}
+              printFriendly={printFriendly}
             />
+
+            <div className="flex justify-end mt-2">
+              <label className="inline-flex items-center gap-2 text-xs text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={printFriendly}
+                  onChange={(e) => setPrintFriendly(e.target.checked)}
+                  className="h-3 w-3 accent-blue-600"
+                />
+                Print-friendly (show legend & values)
+              </label>
+            </div>
 
             <div className="flex justify-end gap-4 mt-4">
               <label className="flex items-center gap-2 text-sm">

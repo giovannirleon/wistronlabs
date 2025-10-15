@@ -1,7 +1,5 @@
 import React, { useMemo } from "react";
-
 import { DateTime } from "luxon";
-
 import {
   ResponsiveContainer,
   LineChart,
@@ -12,6 +10,8 @@ import {
   CartesianGrid,
   AreaChart,
   Area,
+  LabelList, // <-- added
+  Legend, // <-- added
 } from "recharts";
 
 function computeInOutCountsPerDay(
@@ -27,7 +27,6 @@ function computeInOutCountsPerDay(
       timezone
     );
     if (!dt.isValid) return;
-
     const dayKey = dt.startOf("day").toISODate();
     if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
     dayMap.get(dayKey).push(entry);
@@ -42,7 +41,6 @@ function computeInOutCountsPerDay(
   const today = DateTime.now().setZone(timezone).startOf("day");
 
   const results = [];
-
   let day = firstDay;
 
   while (day <= today) {
@@ -57,7 +55,6 @@ function computeInOutCountsPerDay(
     for (const e of entries) {
       const tag = e.service_tag;
       const toLoc = e.to_location;
-
       if (!firsts.has(tag)) firsts.set(tag, toLoc);
       lasts.set(tag, toLoc);
     }
@@ -65,11 +62,11 @@ function computeInOutCountsPerDay(
     let location1Firsts = 0;
     const inactiveLasts = {};
 
-    for (const [tag, loc] of firsts.entries()) {
+    for (const [, loc] of firsts.entries()) {
       if (loc === locationID1Name) location1Firsts++;
     }
 
-    for (const [tag, loc] of lasts.entries()) {
+    for (const [, loc] of lasts.entries()) {
       if (!activeLocationNames.includes(loc)) {
         inactiveLasts[loc] = (inactiveLasts[loc] || 0) + 1;
       }
@@ -92,6 +89,7 @@ function SystemInOutChart({
   locations,
   activeLocationIDs,
   serverTime,
+  printFriendly = false, // <-- NEW
 }) {
   const activeLocationNames = locations
     .filter((loc) => activeLocationIDs.includes(loc.id))
@@ -107,7 +105,9 @@ function SystemInOutChart({
       serverTime.zone,
       locationID1Name
     );
-  }, [history, activeLocationNames, serverTime.zone]);
+  }, [history, activeLocationNames, serverTime.zone, locationID1Name]);
+
+  if (!inOutCounts) return <div>No data</div>;
 
   // get all unique inactive locations from results
   const allInactiveLocations = new Set();
@@ -132,26 +132,42 @@ function SystemInOutChart({
   });
 
   const ACTIVE_COLOR = "#e63946"; // red
+  const TOTAL_COLOR = "#000000"; // black (dashed)
   const INACTIVE_COLORS = [
-    "#1f77b4", // blue
-    "#2ca02c", // green
-    "#ff7f0e", // orange
-    "#9467bd", // purple
-    "#8c564b", // brown
-    "#17becf", // cyan
-    "#e377c2", // pink
-    "#bcbd22", // olive
+    "#1f77b4",
+    "#2ca02c",
+    "#ff7f0e",
+    "#9467bd",
+    "#8c564b",
+    "#17becf",
+    "#e377c2",
+    "#bcbd22",
   ];
+
+  // Reserve space for legend when printFriendly
+  const chartMargin = printFriendly
+    ? { top: 8, right: 12, left: 0, bottom: 4 }
+    : { top: 16, right: 12, left: 0, bottom: 4 };
 
   return (
     <div className="bg-white shadow rounded p-4">
       <h2 className="text-xl font-semibold mb-4">Daily Movements</h2>
       <ResponsiveContainer width="100%" height={250}>
-        <AreaChart data={chartData}>
+        <AreaChart data={chartData} margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />
           <YAxis interval={0} allowDecimals={false} />
           <Tooltip />
+
+          {printFriendly && (
+            <Legend
+              verticalAlign="top"
+              align="right"
+              iconType="circle"
+              height={36} // space between legend and plot
+              wrapperStyle={{ fontSize: 11, lineHeight: "12px" }}
+            />
+          )}
 
           {/* stacked inactive areas */}
           {Array.from(allInactiveLocations).map((loc, idx) => (
@@ -176,19 +192,47 @@ function SystemInOutChart({
             strokeWidth={2}
             dot={{ r: 2 }}
             isAnimationActive={false}
-          />
+          >
+            {printFriendly && (
+              <LabelList
+                dataKey="location1Firsts"
+                position="top"
+                offset={4}
+                style={{
+                  fontSize: 10,
+                  fill: ACTIVE_COLOR,
+                  fontFamily:
+                    "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                }}
+              />
+            )}
+          </Line>
 
-          {/* Total Received as a line */}
+          {/* Total Resolved as a line */}
           <Line
             type="monotone"
             dataKey="TotalResolved"
             name="Total Resolved"
-            stroke="#000000"
+            stroke={TOTAL_COLOR}
             strokeDasharray="4 2"
             strokeWidth={2}
             dot={{ r: 2 }}
             isAnimationActive={false}
-          />
+          >
+            {printFriendly && (
+              <LabelList
+                dataKey="TotalResolved"
+                position="top"
+                offset={4}
+                style={{
+                  fontSize: 10,
+                  fill: TOTAL_COLOR,
+                  fontFamily:
+                    "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                }}
+              />
+            )}
+          </Line>
         </AreaChart>
       </ResponsiveContainer>
     </div>
