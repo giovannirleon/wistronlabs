@@ -44,7 +44,7 @@ function TrackingPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [addSystemFormError, setAddSystemFormError] = useState(false);
   const [idiotProof, setIdiotProof] = useState(false);
-  const [printFriendly, setPrintFriendly] = useState(false);
+  const [printFriendly, setPrintFriendly] = useState(true);
 
   const [serverTime, setServerTime] = useState([]);
 
@@ -416,6 +416,7 @@ function TrackingPage() {
     <>
       <ConfirmDialog />
       <Toast />
+
       <main className="md:max-w-10/12  mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-semibold text-gray-800">Systems</h1>
@@ -464,11 +465,11 @@ function TrackingPage() {
               <label className="inline-flex items-center gap-2 text-xs text-gray-500">
                 <input
                   type="checkbox"
-                  checked={printFriendly}
-                  onChange={(e) => setPrintFriendly(e.target.checked)}
+                  checked={!printFriendly}
+                  onChange={(e) => setPrintFriendly(!e.target.checked)}
                   className="h-3 w-3 accent-blue-600"
                 />
-                Print-friendly (show legend & values)
+                Sleeker Graph (hide legend & values)
               </label>
             </div>
 

@@ -1488,6 +1488,7 @@ router.get("/history", async (req, res) => {
             to_location_id: "h.to_location_id",
             moved_by_id: "h.moved_by",
             changed_at: "h.changed_at",
+            note: "h.note",
           })}`
         : "";
   }
