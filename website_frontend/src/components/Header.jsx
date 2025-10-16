@@ -197,7 +197,7 @@ function Header() {
           </div>
         )}
       </div>
-      <SmartSearchBar className="" />
+      <SmartSearchBar className="mb-10" />
     </header>
   );
 }
