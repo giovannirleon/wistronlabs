@@ -864,36 +864,68 @@ router.get("/", async (req, res) => {
     all,
     sort_by,
     sort_order,
+    search, // 👈 capture it
   } = req.query;
 
   const params = [];
   let whereSQL = "";
 
-  // parse and build where clause
+  // --- filters (existing) ---
   if (filters) {
     const parsed = typeof filters === "string" ? JSON.parse(filters) : filters;
-
-    whereSQL =
-      parsed && parsed.conditions?.length
-        ? `WHERE ${buildWhereClause(parsed, params, {
-            service_tag: "s.service_tag",
-            issue: "s.issue",
-            location_id: "s.location_id",
-            location: "l.name",
-            dpn: "d.name",
-            dell_customer: "d.dell_customer",
-            manufactured_date: "s.manufactured_date",
-            serial: "s.serial",
-            rev: "s.rev",
-            factory: "f.code",
-            ppid: "s.ppid",
-            root_cause: "rc.name",
-            root_cause_sub_category: "rcs.name",
-          })}`
-        : "";
+    if (parsed && parsed.conditions?.length) {
+      const filtersSQL = buildWhereClause(parsed, params, {
+        service_tag: "s.service_tag",
+        issue: "s.issue",
+        location_id: "s.location_id",
+        location: "l.name",
+        dpn: "d.name",
+        dell_customer: "d.dell_customer",
+        manufactured_date: "s.manufactured_date",
+        serial: "s.serial",
+        rev: "s.rev",
+        factory: "f.code",
+        ppid: "s.ppid",
+        root_cause: "rc.name",
+        root_cause_sub_category: "rcs.name",
+      });
+      if (filtersSQL) whereSQL = `WHERE ${filtersSQL}`;
+    }
   }
 
-  // Sorting
+  // --- free-text search (NEW) ---
+  // AND across terms, OR across fields per term
+  // e.g. search="KR7T5 bianca" -> matches rows that contain "KR7T5" AND "bianca" somewhere among these columns
+  if (search && String(search).trim()) {
+    const terms = String(search).trim().split(/\s+/).slice(0, 8); // cap terms defensively
+    const searchClauses = terms.map((t) => {
+      const p = `%${t}%`;
+      // push one param per field below (keep order consistent with SQL)
+      params.push(p, p, p, p, p, p, p, p, p, p);
+      //            1  2  3  4  5  6  7  8   9   10
+      // fields: service_tag, issue, location, dpn, dpn.config, dell_customer,
+      //         ppid, factory_code, rc.name, rcs.name
+      return `(
+        s.service_tag ILIKE $${params.length - 9} OR
+        s.issue       ILIKE $${params.length - 8} OR
+        l.name        ILIKE $${params.length - 7} OR
+        d.name        ILIKE $${params.length - 6} OR
+        d.config      ILIKE $${params.length - 5} OR
+        d.dell_customer ILIKE $${params.length - 4} OR
+        s.ppid        ILIKE $${params.length - 3} OR
+        f.code        ILIKE $${params.length - 2} OR
+        rc.name       ILIKE $${params.length - 1} OR
+        rcs.name      ILIKE $${params.length - 0}
+      )`;
+    });
+
+    const searchSQL = searchClauses.join(" AND "); // AND across terms
+    whereSQL = whereSQL
+      ? `${whereSQL} AND (${searchSQL})`
+      : `WHERE ${searchSQL}`;
+  }
+
+  // --- sorting (existing) ---
   const allowedSortColumns = {
     service_tag: "s.service_tag",
     issue: "s.issue",
@@ -910,14 +942,13 @@ router.get("/", async (req, res) => {
     root_cause: "rc.name",
     root_cause_sub_category: "rcs.name",
   };
-
   const orderColumn = allowedSortColumns[sort_by] || "s.service_tag";
   const orderDirection = sort_order === "asc" ? "ASC" : "DESC";
   const orderSql = `${orderColumn} ${orderDirection} NULLS LAST`;
 
+  // --- paging (existing) ---
   let limitOffsetSQL = "";
   let pageNum, pageSize, offset;
-
   if (!all || all === "false") {
     pageNum = Math.max(parseInt(page), 1);
     pageSize = Math.min(parseInt(page_size), 100);
@@ -926,59 +957,52 @@ router.get("/", async (req, res) => {
   }
 
   try {
+    const baseSelect = `
+      SELECT 
+        s.id,
+        s.service_tag,
+        s.issue,
+        d.name  AS dpn,
+        d.config AS config,
+        d.dell_customer AS dell_customer,
+        s.manufactured_date,
+        s.serial,
+        s.rev,
+        s.ppid,
+        l.name AS location,
+        f.code AS factory_code,
+        f.name AS factory_name,
+        rc.name  AS root_cause,
+        rcs.name AS root_cause_sub_category,
+        first_history.changed_at AS date_created,
+        first_user.username AS added_by,
+        last_history.changed_at AS date_modified
+      FROM system s
+      JOIN location l ON s.location_id = l.id
+      LEFT JOIN factory f ON s.factory_id = f.id
+      LEFT JOIN dpn d ON s.dpn_id = d.id
+      LEFT JOIN root_cause rc                 ON rc.id  = s.root_cause_id
+      LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
+      LEFT JOIN LATERAL (
+        SELECT h.changed_at, h.moved_by
+        FROM system_location_history h
+        WHERE h.system_id = s.id
+        ORDER BY h.changed_at ASC
+        LIMIT 1
+      ) AS first_history ON TRUE
+      LEFT JOIN users first_user ON first_user.id = first_history.moved_by
+      LEFT JOIN LATERAL (
+        SELECT h.changed_at
+        FROM system_location_history h
+        WHERE h.system_id = s.id
+        ORDER BY h.changed_at DESC
+        LIMIT 1
+      ) AS last_history ON TRUE
+    `;
+
     const [dataResult, countResult] = await Promise.all([
       db.query(
-        `
-        SELECT 
-          s.id,
-          s.service_tag,
-          s.issue,
-          d.name AS dpn,              
-          d.config AS config,
-          d.dell_customer AS dell_customer,
-          s.manufactured_date,
-          s.serial,
-          s.rev,
-          s.ppid,
-          l.name AS location,
-          f.code AS factory_code,
-          f.name AS factory_name,
-          rc.name  AS root_cause,
-          rcs.name AS root_cause_sub_category,
-          first_history.changed_at AS date_created,
-          first_user.username AS added_by,
-          last_history.changed_at AS date_modified
-        FROM system s
-        JOIN location l ON s.location_id = l.id
-        LEFT JOIN factory f ON s.factory_id = f.id
-        LEFT JOIN dpn d ON s.dpn_id = d.id
-        LEFT JOIN root_cause rc                 ON rc.id  = s.root_cause_id
-        LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
-
-        -- first history entry per system
-        LEFT JOIN LATERAL (
-          SELECT h.changed_at, h.moved_by
-          FROM system_location_history h
-          WHERE h.system_id = s.id
-          ORDER BY h.changed_at ASC
-          LIMIT 1
-        ) AS first_history ON TRUE
-
-        LEFT JOIN users first_user ON first_user.id = first_history.moved_by
-
-        -- last history entry per system
-        LEFT JOIN LATERAL (
-          SELECT h.changed_at
-          FROM system_location_history h
-          WHERE h.system_id = s.id
-          ORDER BY h.changed_at DESC
-          LIMIT 1
-        ) AS last_history ON TRUE
-
-        ${whereSQL}
-        ORDER BY ${orderSql}
-        ${limitOffsetSQL}
-        `,
+        `${baseSelect} ${whereSQL} ORDER BY ${orderSql} ${limitOffsetSQL}`,
         params
       ),
       !all || all === "false"
@@ -989,6 +1013,8 @@ router.get("/", async (req, res) => {
             JOIN location l ON s.location_id = l.id
             LEFT JOIN factory f ON s.factory_id = f.id
             LEFT JOIN dpn d ON s.dpn_id = d.id
+            LEFT JOIN root_cause rc                 ON rc.id  = s.root_cause_id
+            LEFT JOIN root_cause_sub_categories rcs ON rcs.id = s.root_cause_sub_category_id
             ${whereSQL}
             `,
             params
@@ -996,12 +1022,9 @@ router.get("/", async (req, res) => {
         : Promise.resolve({ rows: [] }),
     ]);
 
-    if (all && all !== "false") {
-      return res.json(dataResult.rows);
-    }
+    if (all && all !== "false") return res.json(dataResult.rows);
 
-    const total_count = parseInt(countResult.rows[0].count);
-
+    const total_count = parseInt(countResult.rows[0].count, 10);
     res.json({
       data: dataResult.rows,
       total_count,

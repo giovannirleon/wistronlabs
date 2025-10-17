@@ -1360,23 +1360,23 @@ function SystemPage() {
       return;
     }
 
-    // Hard rule for L11: both category and sub-category must be NTF
-    if (destName === L11_NAME) {
-      const catLabel =
-        rootCauseOptions.find((o) => String(o.value) === String(rcEffectiveId))
-          ?.label || "";
-      const subLabel =
-        rootCauseSubOptions.find(
-          (o) => String(o.value) === String(rcSubEffectiveId)
-        )?.label || "";
+    // // Hard rule for L11: both category and sub-category must be NTF
+    // if (destName === L11_NAME) {
+    //   const catLabel =
+    //     rootCauseOptions.find((o) => String(o.value) === String(rcEffectiveId))
+    //       ?.label || "";
+    //   const subLabel =
+    //     rootCauseSubOptions.find(
+    //       (o) => String(o.value) === String(rcSubEffectiveId)
+    //     )?.label || "";
 
-      if (catLabel !== "NTF" || subLabel !== "No Trouble Found") {
-        setFormError(
-          "When sending to L11, Root Cause and Sub Category must both be NTF."
-        );
-        return;
-      }
-    }
+    //   if (catLabel !== "NTF" || subLabel !== "No Trouble Found") {
+    //     setFormError(
+    //       "When sending to L11, Root Cause and Sub Category must both be NTF."
+    //     );
+    //     return;
+    //   }
+    // }
 
     setFormError("");
     setSubmitting(true);

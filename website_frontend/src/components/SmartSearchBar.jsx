@@ -137,43 +137,6 @@ const highlight = (s, needles) => {
     );
 };
 
-// after: const parsed = useMemo(...)
-const { ANDforFilter, ORforFilter } = useMemo(() => {
-  const { tokens, textAND, textOR } = parsed;
-  const fieldKeys = new Set([
-    "st",
-    "service",
-    "service_tag",
-    "ppid",
-    "dpn",
-    "config",
-    "loc",
-    "location",
-    "cust",
-    "customer",
-    "dell_customer",
-    "issue",
-    "rc",
-    "rcsub",
-    "factory",
-    "factory_code",
-    "location_id",
-    "pallet",
-    "status",
-  ]);
-  const covered = new Set(
-    tokens
-      .filter((t) => fieldKeys.has(t.key))
-      .map((t) => (t.value || "").toUpperCase())
-  );
-  return {
-    ANDforFilter: textAND.filter((t) => !covered.has(t.toUpperCase())),
-    ORforFilter: textOR.map((g) =>
-      g.filter((t) => !covered.has(t.toUpperCase()))
-    ),
-  };
-}, [parsed]);
-
 function buildHaystack(row) {
   return upper(
     [
@@ -443,48 +406,58 @@ const difference = (a, needles) => {
   return out;
 };
 
-// ---------- component ----------
 export default function SmartSearchBar() {
   const [q, setQ] = useState("");
   const qDebounced = useDebounced(q, 200);
   const parsed = useMemo(() => parseQuery(qDebounced), [qDebounced]);
 
+  // NEW: values covered by "field chips" (ppid:, dpn:, etc.)
+  const coveredValues = useMemo(
+    () => valuesCoveredByFieldTokens(parsed.tokens || []),
+    [parsed]
+  );
+
+  // NEW: free-text terms that aren't already covered by field chips
+  const { ANDforFilter, ORforFilter } = useMemo(() => {
+    const AND = (parsed.textAND || []).filter(
+      (t) => !coveredValues.has(upper(t))
+    );
+    const OR = (parsed.textOR || []).map((g) =>
+      g.filter((t) => !coveredValues.has(upper(t)))
+    );
+    return { ANDforFilter: AND, ORforFilter: OR };
+  }, [parsed, coveredValues]);
+
   const [open, setOpen] = useState(false);
-  const [focused, setFocused] = useState(false); // 👈 track focus
+  const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
+
   const focusedRef = useRef(false);
   useEffect(() => {
     focusedRef.current = focused;
   }, [focused]);
+
   // hooks
   const _fetchSystems = useSystemsFetch();
   const _fetchHistory = useHistoryFetch();
   const api = useApi();
 
+  // Use the same AND/OR for gating the search
   const shouldSearch = useMemo(() => {
-    const { tokens, textAND, textOR } = parsed;
-    const covered = valuesCoveredByFieldTokens(tokens);
-
-    // filter free-text terms that duplicate chip values
-    const ANDforFilter = textAND.filter((t) => !covered.has(upper(t)));
-    const ORforFilter = textOR.map((g) =>
-      g.filter((t) => !covered.has(upper(t)))
-    );
-
     return (
-      tokens.length > 0 ||
-      textAND.join(" ").trim().length >= 2 ||
-      textOR.length > 0
+      (parsed.tokens && parsed.tokens.length > 0) ||
+      ANDforFilter.join(" ").trim().length >= 2 ||
+      ORforFilter.length > 0
     );
-  }, [parsed]);
+  }, [parsed, ANDforFilter, ORforFilter]);
 
   const needles = useMemo(() => {
     const { tokens, textAND, textOR } = parsed;
     return [
-      ...textAND,
-      ...(textOR.flat?.() || []),
-      ...tokens
+      ...(textAND || []),
+      ...(textOR?.flat?.() || []),
+      ...(tokens || [])
         .filter((t) => !["before", "after", "on"].includes(t.key))
         .map((t) => t.value),
     ].filter(Boolean);
@@ -511,7 +484,6 @@ export default function SmartSearchBar() {
     const fetchSystems = fetchSystemsRef.current;
     const fetchHistory = fetchHistoryRef.current;
     const getPallets = getPalletsRef.current;
-
     const seq = ++seqRef.current;
 
     if (!shouldSearch) {
@@ -526,8 +498,9 @@ export default function SmartSearchBar() {
     (async () => {
       setLoading(true);
       try {
-        const { tokens, textAND, textOR, negatives } = parsed;
+        const { tokens } = parsed;
 
+        // these now exist because they’re defined inside the component
         const uniqAND = [...new Set(ANDforFilter)].sort(
           (a, b) => b.length - a.length
         );
@@ -796,7 +769,7 @@ export default function SmartSearchBar() {
     return () => {
       cancelled = true;
     };
-  }, [parsed, shouldSearch]); // ← watch focus so we can open when results land
+  }, [parsed, shouldSearch, ANDforFilter, ORforFilter]);
 
   return (
     <div className="relative">
