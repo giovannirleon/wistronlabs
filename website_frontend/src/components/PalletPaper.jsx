@@ -16,12 +16,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#111827",
   },
-  title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 10,
-  },
   line: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -48,13 +42,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 4,
     width: 200,
-    height: 40,
+    height: 35,
+  },
+  doa_barcode: {
+    marginTop: 2,
+    marginBottom: 4,
+    width: 200,
+    height: 20,
+  },
+  dpn_barcode: {
+    marginTop: 2,
+    marginBottom: 4,
+    width: 80,
+    height: 20,
   },
   st_barcode: {
     marginTop: 2,
     marginBottom: 4,
     width: 120,
-    height: 40,
+    height: 35,
   },
   // Add these below existing styles
   headerCellST: {
@@ -71,29 +77,55 @@ const styles = StyleSheet.create({
   cellPPID: {
     flex: 2, // 2/3
   },
+  titleBlock: {
+    alignItems: "center", // centers children horizontally
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  title_barcode: {
+    width: 300,
+    height: 40,
+    // alignSelf ensures centering even outside a centered container
+    alignSelf: "center",
+  },
 });
 
 const PalletPaper = ({ pallet }) => {
   return (
     <Document>
       <Page style={styles.page}>
-        <Text style={styles.title}>{pallet.pallet_number}</Text>
-
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>{pallet.pallet_number}</Text>
+          {pallet.pallet_number_barcode && (
+            <Image
+              src={pallet.pallet_number_barcode}
+              style={styles.title_barcode}
+            />
+          )}
+        </View>
         <View style={styles.line}>
           <Text>DOA #: {pallet.doa_number}</Text>
           <Text>Released: {pallet.date_released}</Text>
         </View>
-
+        <View style={styles.line}>
+          <Image src={pallet.pallet_doa_barcode} style={styles.doa_barcode} />
+        </View>
         <View style={styles.line}>
           <Text>DPN: {pallet.dpn}</Text>
           <Text>Destination: {pallet.factory_id}</Text>
         </View>
-
+        <View style={styles.line}>
+          <Image src={pallet.pallet_dpn_barcode} style={styles.dpn_barcode} />
+        </View>
         <View style={styles.tableHeader}>
           <Text style={styles.headerCellST}>Service Tag</Text>
           <Text style={styles.headerCellPPID}>PPID</Text>
         </View>
-
         {pallet.systems.map((sys, idx) => (
           <View key={idx} style={styles.row}>
             <View style={styles.cellST}>
