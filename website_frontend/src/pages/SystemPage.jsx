@@ -1639,6 +1639,10 @@ function SystemPage() {
           systems={[
             {
               service_tag: system.service_tag,
+              issue: system.issue,
+              config: system.config,
+              dpn: system.dpn,
+              dell_customer: system.dell_customer,
               url: `${FRONTEND_URL}${system.service_tag}`,
             },
           ]}
