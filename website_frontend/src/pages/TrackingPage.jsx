@@ -68,6 +68,7 @@ function TrackingPage() {
     getServerTime,
     getSnapshot,
     getSystemHistory,
+    getSystem,
   } = useApi();
 
   const fetchData = async () => {
@@ -185,7 +186,6 @@ function TrackingPage() {
       location_id: 1, // "Received"
       ppid,
       rack_service_tag,
-      // note not sent; server sets "added to system"
     };
 
     const inactive = inactiveSystems.find(
@@ -204,12 +204,8 @@ function TrackingPage() {
         });
         if (!confirmed) {
           showToast(`Skipped ${service_tag}`, "error", 3000, "top-right");
-          return false;
+          return null;
         }
-
-        // If you want to update PPID/rack tag for re-entry as well, do it here (optional):
-        // await api.patch(`/systems/${service_tag}/ppid`, { ppid });
-        // await api.patch(`/systems/${service_tag}/rack-service-tag`, { rack_service_tag });
 
         await moveSystemToReceived(service_tag, issue, "added to system");
         showToast(
@@ -223,11 +219,22 @@ function TrackingPage() {
         showToast(`${service_tag} created`, "success", 3000, "top-right");
       }
 
-      return true;
+      // 🔎 Strictly use getSystem to retrieve the full record
+      const sysFull = await getSystem(service_tag);
+
+      // Build the printable object with safe fallbacks
+      return {
+        service_tag,
+        issue: sysFull?.issue ?? issue ?? "",
+        dpn: sysFull?.dpn ?? "",
+        config: sysFull?.config ?? "",
+        dell_customer: sysFull?.dell_customer ?? "",
+        url: `${FRONTEND_URL}${service_tag}`,
+      };
     } catch (err) {
       console.error(err);
       showToast(`Error with ${service_tag}`, "error", 3000, "top-right");
-      return false;
+      return null;
     }
   }
 
@@ -236,6 +243,7 @@ function TrackingPage() {
     const formData = new FormData(e.target);
 
     if (!bulkMode) {
+      // ---------- SINGLE ADD ----------
       const service_tag = formData.get("service_tag")?.trim().toUpperCase();
       const issue = formData.get("issue")?.trim() || null;
       const ppid = formData.get("ppid")?.trim().toUpperCase();
@@ -247,27 +255,20 @@ function TrackingPage() {
       }
       setAddSystemFormError(false);
 
-      const ok = await addOrUpdateSystem(
+      // add/move then fetch full system via getSystem (inside addOrUpdateSystem)
+      const printable = await addOrUpdateSystem(
         service_tag,
         issue,
         ppid,
         rack_service_tag
       );
 
-      // Generate and open PDF
-
-      if (ok) {
+      // ---------- PDF for single ----------
+      if (printable) {
         await delay(500);
         try {
           const blob = await pdf(
-            <SystemPDFLabel
-              systems={[
-                {
-                  service_tag: service_tag,
-                  url: `${FRONTEND_URL}${service_tag}`,
-                },
-              ]}
-            />
+            <SystemPDFLabel systems={[printable]} />
           ).toBlob();
 
           const url = URL.createObjectURL(blob);
@@ -281,6 +282,7 @@ function TrackingPage() {
       await fetchData();
       setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
     } else {
+      // ---------- BULK ADD ----------
       const csv = formData.get("bulk_csv")?.trim();
       if (!csv) {
         setAddSystemFormError(true);
@@ -288,39 +290,54 @@ function TrackingPage() {
       }
       setAddSystemFormError(false);
 
+      // 1) Pre-validate: every non-empty line must have 4 non-empty items
+      const rawLines = csv.split(/\r?\n/).map((l) => l.trim());
+      const lines = rawLines.filter((l) => l.length > 0); // skip blank lines
+
+      const badLines = [];
+      const parsed = lines.map((line, idx) => {
+        const parts = line.split(/\t|,/).map((s) => (s ?? "").trim());
+        // Expect exactly 4 non-empty fields
+        const [rawTag, issue, ppid, rackServiceTag] = parts;
+        const ok =
+          parts.length === 4 && rawTag && issue && ppid && rackServiceTag;
+
+        if (!ok) badLines.push(idx + 1); // 1-based line number
+        return { rawTag, issue, ppid, rackServiceTag };
+      });
+
+      if (badLines.length > 0) {
+        setAddSystemFormError(true);
+        showToast(
+          `Bulk import error: lines missing required 4 fields → ${badLines.join(
+            ", "
+          )}`,
+          "error",
+          6000,
+          "top-right"
+        );
+        return; // stop before doing any mutations
+      }
+
+      // 2) Process lines now that we know all are valid
       const systemsPDF = [];
-      let ok = false;
-
-      const lines = csv.split("\n");
-      for (const line of lines) {
-        const [rawTag, issue, ppid, rackServiceTag] = line
-          .split(/\t|,/)
-          .map((s) => (s ?? "").trim());
-        if (!rawTag || !ppid || !rackServiceTag) {
-          console.warn(`Skipping invalid line: ${line}`);
-          continue;
-        }
-
-        ok = await addOrUpdateSystem(
+      for (const { rawTag, issue, ppid, rackServiceTag } of parsed) {
+        const printable = await addOrUpdateSystem(
           rawTag.toUpperCase(),
-          issue || null,
+          issue, // required & non-empty from validation
           ppid.toUpperCase(),
           rackServiceTag
         );
-
-        systemsPDF.push({
-          service_tag: rawTag.toUpperCase(),
-          url: `${FRONTEND_URL}${rawTag.toUpperCase()}`,
-        });
+        if (printable) systemsPDF.push(printable);
       }
 
-      if (systemsPDF.length > 0 && ok) {
+      // 3) Generate one PDF containing all labels
+      if (systemsPDF.length > 0) {
         await delay(500);
         try {
           const blob = await pdf(
             <SystemPDFLabel systems={systemsPDF} />
           ).toBlob();
-
           const url = URL.createObjectURL(blob);
           window.open(url, "_blank");
         } catch (err) {

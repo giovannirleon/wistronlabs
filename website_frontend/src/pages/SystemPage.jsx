@@ -1577,6 +1577,8 @@ function SystemPage() {
                   service_tag: system.service_tag,
                   pallet_number: palletNumber,
                   dpn,
+                  config: system.config,
+                  dell_customer: system.dell_customer,
                   factory_code: factoryCode,
                   url: `${FRONTEND_URL}${serviceTag}`,
                   // You just moved it; avoid stale system.location:
@@ -1654,6 +1656,8 @@ function SystemPage() {
               service_tag: system.service_tag,
               pallet_number: palletInfo.pallet_number,
               dpn: palletInfo.dpn,
+              config: system.config,
+              dell_customer: system.dell_customer,
               factory_code: palletInfo.factory_code,
               url: `${FRONTEND_URL}${system.service_tag}`,
               location: system.location,

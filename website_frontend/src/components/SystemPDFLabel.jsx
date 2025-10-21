@@ -31,7 +31,7 @@ const styles = StyleSheet.create({
   text: {
     position: "absolute",
     left: 7,
-    top: 10,
+    top: 13,
     width: 80, // slight reduction to avoid overlap
     fontSize: 13,
     fontFamily: "Helvetica", // modern sans-serif look
@@ -43,10 +43,10 @@ const styles = StyleSheet.create({
   wistron_wrap: {
     position: "absolute",
     left: 7,
-    top: 25,
-    width: 85,
-    height: 24, // ≈ two 10pt lines; adjust as needed
-    overflow: "hidden", // works on View (not Text)
+    top: 27,
+    width: 66, // 75 (qr left) - 7 (this left) - a little padding
+    height: 12, // one line tall
+    overflow: "hidden",
   },
   issue_text: {
     fontSize: 10,
@@ -54,12 +54,14 @@ const styles = StyleSheet.create({
     fontWeight: "light",
     letterSpacing: 0.2,
     lineHeight: 1.2,
-    // color: "#6B7280",
+    // Truncate instead of wrapping:
+    maxLines: 1,
+    textOverflow: "ellipsis",
   },
   dpn_text: {
     position: "absolute",
     left: 7,
-    top: 37,
+    top: 40,
     width: 95, // enough room for DPN + sep + config
     fontSize: 7,
     fontFamily: "Helvetica",
@@ -68,8 +70,17 @@ const styles = StyleSheet.create({
   dell_customer_text: {
     position: "absolute",
     left: 7,
-    top: 45,
-    width: 95, // enough room for DPN + sep + config
+    top: 48,
+    width: 70, // enough room for DPN + sep + config
+    fontSize: 7,
+    fontFamily: "Helvetica",
+    lineHeight: 1.2,
+  },
+  note_text: {
+    position: "absolute",
+    left: 7,
+    top: 50,
+    width: 70, // enough room for DPN + sep + config
     fontSize: 7,
     fontFamily: "Helvetica",
     lineHeight: 1.2,
