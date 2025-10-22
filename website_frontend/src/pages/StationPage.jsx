@@ -120,20 +120,21 @@ function StationPage() {
               <div className="flex flex-col w-full">
                 <Table
                   stations={stations}
-                  stationNumbers={[1, 2]}
-                  tableNumber={1}
-                  link={true}
-                />
-                <Table
-                  stations={stations}
                   stationNumbers={[3, 4]}
                   tableNumber={2}
                   link={true}
                 />
+                <Rack stations={stations} rackNumber={2} link={true} />
               </div>
 
               {/* Right Column */}
               <div className="flex flex-col w-full">
+                <Table
+                  stations={stations}
+                  stationNumbers={[1, 2]}
+                  tableNumber={1}
+                  link={true}
+                />
                 <Rack stations={stations} rackNumber={1} link={true} />
               </div>
             </>
