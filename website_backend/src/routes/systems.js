@@ -1356,29 +1356,55 @@ router.get("/snapshot", async (req, res) => {
       day: "2-digit",
     });
 
-    const fmtDateTime = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Chicago",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
+    // const fmtDateTime = new Intl.DateTimeFormat("en-US", {
+    //   timeZone: "America/Chicago",
+    //   year: "numeric",
+    //   month: "2-digit",
+    //   day: "2-digit",
+    //   hour: "2-digit",
+    //   minute: "2-digit",
+    //   hour12: true,
+    // });
+
+    // replace your fmtDateTime with:
+    const fmtExcelText = (iso) => {
+      if (!iso) return "";
+      // displayZone already comes from query or SERVER_TZ
+      return new Date(iso).toLocaleString("sv-SE", {
+        timeZone: displayZone, // e.g., "America/Chicago"
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    };
 
     const lines = [];
     lines.push(header.join(","));
 
     for (const r of rows) {
+      // const firstLocal = r.first_received_on
+      //   ? fmtDateTime.format(new Date(r.first_received_on))
+      //   : "";
+      // const lastLocal =
+      //   includeReceivedFlag && r.last_received_on
+      //     ? fmtDateTime.format(new Date(r.last_received_on))
+      //     : "";
+      // const modifiedLocal = r.date_modified
+      //   ? fmtDateTime.format(new Date(r.date_modified))
+      //   : "";
       const firstLocal = r.first_received_on
-        ? fmtDateTime.format(new Date(r.first_received_on))
+        ? fmtExcelText(r.first_received_on)
         : "";
       const lastLocal =
         includeReceivedFlag && r.last_received_on
-          ? fmtDateTime.format(new Date(r.last_received_on))
+          ? fmtExcelText(r.last_received_on)
           : "";
       const modifiedLocal = r.date_modified
-        ? fmtDateTime.format(new Date(r.date_modified))
+        ? fmtExcelText(r.date_modified)
         : "";
 
       // Use original RMA location for PIC extraction so simplified labels don’t break it
