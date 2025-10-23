@@ -1,4 +1,4 @@
-import { useEffect, useState, useContext, useMemo } from "react";
+import { useEffect, useState, useContext, useMemo, use } from "react";
 import { useNavigate } from "react-router-dom";
 import Select, { components } from "react-select";
 import { Link } from "react-router-dom";
@@ -15,6 +15,8 @@ import { pdf } from "@react-pdf/renderer";
 import usePrintConfirm from "../hooks/usePrintConfirm";
 import SystemPDFLabel from "../components/SystemPDFLabel.jsx";
 import SystemRMALabel from "../components/SystemRMALabel.jsx";
+import SystemL10PassLabel from "../components/SystemL10PassLabel.jsx";
+import SystemPendingPartsLabel from "../components/SystemPendingPartsLabel.jsx";
 
 import Station from "../components/Station.jsx";
 
@@ -24,6 +26,8 @@ import { allowedNextLocations } from "../helpers/NextAllowedLocations.jsx";
 import useApi from "../hooks/useApi";
 
 import useConfirm from "../hooks/useConfirm";
+import usePrintConfirmPendingParts from "../hooks/usePrintConfirmPendingParts.jsx";
+import usePrintConfirmL11 from "../hooks/usePrintConfirmL11.jsx";
 import useToast from "../hooks/useToast.jsx";
 import useIsMobile from "../hooks/useIsMobile.jsx";
 import useDetailsModal from "../hooks/useDetailsModal.jsx";
@@ -121,6 +125,9 @@ function SystemPage() {
   const [logsDir, setLogsDir] = useState(""); // e.g. "2025-09-25/"
 
   const { confirmPrint, ConfirPrintmModal } = usePrintConfirm();
+  const { confirmPrintPendingParts, ConfirPrintmModalPendingParts } =
+    usePrintConfirmPendingParts();
+  const { confirmPrintL11, ConfirPrintmModalL11 } = usePrintConfirmL11();
 
   const currentLocation = history[0]?.to_location || ""; // most recent location name
 
@@ -1149,6 +1156,65 @@ function SystemPage() {
     );
     const removing = Array.from(toRemovePPIDs || []);
 
+    if (toId === 4) {
+      const up = (s) => (s || "").toUpperCase().trim();
+      const nameOfPart = (i) =>
+        (i?.part_name && i.part_name.trim()) ||
+        (i?.part_id != null
+          ? partNameById.get(i.part_id) || `#${i.part_id}`
+          : "Part");
+
+      // PPID -> current item in unit (so we can read part_id/name)
+      const byPPID = new Map((unitParts || []).map((i) => [up(i.ppid), i]));
+
+      // 1) start with BADs currently in the unit
+      const badNow = new Map(); // PPID -> item
+      for (const i of unitParts || []) {
+        if (i.is_functional === false) badNow.set(up(i.ppid), i);
+      }
+
+      // 2) remove BADs marked as working
+      for (const p of toRemovePPIDs) badNow.delete(up(p));
+
+      // 3) remove BADs that will be replaced by a GOOD PPID
+      for (const oldBad of Object.keys(replacementByOldPPID || {})) {
+        if ((replacementByOldPPID[oldBad] || "").trim())
+          badNow.delete(up(oldBad));
+      }
+
+      // 4) add newly flagged BADs (pending blocks)
+      for (const b of pendingBlocks) {
+        if (b.part_id && (b.ppid || "").trim()) {
+          const ppid = up(b.ppid);
+          // synthesize a minimal item so nameOfPart works
+          badNow.set(ppid, { part_id: b.part_id, part_name: null, ppid });
+        }
+      }
+
+      // 5) add BADs brought back via GOOD-part actions
+      for (const [goodPPID, cfg] of Object.entries(goodActionByPPID || {})) {
+        const back = (cfg?.original_bad_ppid || "").trim();
+        if (!cfg?.action || !back) continue;
+        const goodItem = byPPID.get(up(goodPPID)); // infer part info from the good in unit
+        badNow.set(up(back), {
+          part_id: goodItem?.part_id ?? null,
+          part_name: goodItem?.part_name ?? null,
+          ppid: up(back),
+        });
+      }
+
+      // Build label lines for EVERY remaining BAD PPID (no name-based dedupe)
+      const labelLines = Array.from(badNow.entries())
+        .map(([ppid, info]) => `${nameOfPart(info)}`)
+        .sort((a, b) => a.localeCompare(b));
+
+      const blob = await pdf(
+        <SystemPendingPartsLabel parts={labelLines} />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      window.open(url);
+    }
+
     // ---- Existing note lines (Pending Parts) ----
     //  A) New bad parts identified in unit -> "Non Working"
     const addedNotes = toCreate.map((b) => {
@@ -1551,6 +1617,23 @@ function SystemPage() {
         });
       }
 
+      if (toId === 9) {
+        const blob = await pdf(
+          <SystemL10PassLabel
+            systems={[
+              {
+                service_tag: system.service_tag,
+                dpn: system.dpn,
+                config: system.config,
+                dell_customer: system.dell_customer,
+              },
+            ]}
+          />
+        ).toBlob();
+        const url = URL.createObjectURL(blob);
+        window.open(url);
+      }
+
       // ✅ If RMA destination, print RMA label (prefer backend response)
       if (RMA_LOCATION_IDS.includes(toId)) {
         // Prefer values from response; fall back to current system or a single read of getSystemPallet()
@@ -1625,16 +1708,99 @@ function SystemPage() {
 
   const handlePrint = async () => {
     const locationId = locations.find((l) => l.name === currentLocation)?.id;
+    const inRMA = RMA_LOCATION_IDS.includes(locationId);
+    const inL11 = locationId === 9; // "Sent to L11"
 
+    // --- L11 flow: ask whether to print System ID or the L10 Pass label ---
+    if (inL11) {
+      const choice = await confirmPrintL11(); // "id" | "l11" | null
+      if (!choice) return;
+
+      if (choice === "l11") {
+        // Print L10 Pass label
+        const blob = await pdf(
+          <SystemL10PassLabel
+            systems={[
+              {
+                service_tag: system.service_tag,
+                dpn: system.dpn,
+                config: system.config,
+                dell_customer: system.dell_customer,
+              },
+            ]}
+          />
+        ).toBlob();
+        const url = URL.createObjectURL(blob);
+        window.open(url);
+        return;
+      }
+
+      // Fall through to ID label if "id"
+      const blob = await pdf(
+        <SystemPDFLabel
+          systems={[
+            {
+              service_tag: system.service_tag,
+              issue: system.issue,
+              config: system.config,
+              dpn: system.dpn,
+              dell_customer: system.dell_customer,
+              url: `${FRONTEND_URL}${system.service_tag}`,
+            },
+          ]}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      window.open(url);
+      return;
+    }
+
+    // --- Existing logic below (Pending Parts / RMA / ID) ---
+
+    // any bad parts currently tracked in the unit?
+    const hasBadParts = (unitParts || []).some(
+      (i) => i.is_functional === false
+    );
+
+    // helper: turn an item into a display name (no PPID)
+    const nameOfPart = (i) =>
+      (i?.part_name && i.part_name.trim()) ||
+      (i?.part_id != null
+        ? flatPartOptions.find((o) => o.value === i.part_id)?.label ??
+          `#${i.part_id}`
+        : "Part");
+
+    // If there are bad parts, ask which label to print
+    if (hasBadParts) {
+      const choice = await confirmPrintPendingParts(); // 'id' or 'parts' | null
+      if (!choice) return;
+
+      if (choice === "parts") {
+        const labelLines = (unitParts || [])
+          .filter((i) => i.is_functional === false)
+          .map((i) => nameOfPart(i))
+          .sort((a, b) => a.localeCompare(b));
+
+        const blob = await pdf(
+          <SystemPendingPartsLabel parts={labelLines} />
+        ).toBlob();
+        const url = URL.createObjectURL(blob);
+        window.open(url);
+        return;
+      }
+      // else: fall through to System ID / RMA flow
+    }
+
+    // System ID / RMA labels
     let labelType = "id";
     let palletInfo = [];
-    if (RMA_LOCATION_IDS.includes(locationId)) {
-      console.log("in RMA");
+    if (inRMA) {
       const selected = await confirmPrint(); // "id" or "rma"
-      if (!selected) return; // user exited
+      if (!selected) return;
       labelType = selected;
       palletInfo = await getSystemPallet(system.service_tag);
     }
+
     const blob = await pdf(
       labelType === "id" ? (
         <SystemPDFLabel
@@ -1719,6 +1885,8 @@ function SystemPage() {
       {modal}
       <Toast />
       <ConfirPrintmModal />
+      <ConfirPrintmModalPendingParts />
+      <ConfirPrintmModalL11 />
       <main className="md:max-w-10/12  mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 space-y-6">
         {loading ? (
           <LoadingSkeleton rows={6} />
@@ -1757,13 +1925,17 @@ function SystemPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
-                  onClick={handlePrint}
-                >
-                  Print Label
-                </button>
+                {!isRMA || (isRMA && isInPalletNumber) ? (
+                  <button
+                    type="button"
+                    className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"
+                    onClick={handlePrint}
+                  >
+                    Print Label
+                  </button>
+                ) : (
+                  <></>
+                )}
                 <button
                   type="button"
                   className="bg-gray-600 hover:bg-gray-700 text-white font-medium px-3 py-1.5 text-sm rounded shadow"

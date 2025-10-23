@@ -11,77 +11,91 @@ import { generateQRPNG } from "../utils/generateQR";
 
 const LABEL_WIDTH = 144;
 const LABEL_HEIGHT = 72;
+const SCALE = 0.9;
+const S = (n) => Math.round(n * SCALE * 100) / 100; // neat rounding
 
 const styles = StyleSheet.create({
+  // Make the page act like a centering canvas
   page: {
     padding: 0,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  label: {
+  // Full-size canvas so we can center the scaled label in it
+  canvas: {
     width: LABEL_WIDTH,
     height: LABEL_HEIGHT,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  // Scaled label box (same relative layout, smaller absolute size)
+  label: {
+    width: S(LABEL_WIDTH),
+    height: S(LABEL_HEIGHT),
     position: "relative",
   },
+
+  // --- scaled children ---
   qr: {
     position: "absolute",
-    left: 75,
-    top: 0,
-    width: 70,
-    height: 70,
+    left: S(75),
+    top: S(0),
+    width: S(70),
+    height: S(70),
   },
   text: {
     position: "absolute",
-    left: 7,
-    top: 13,
-    width: 80, // slight reduction to avoid overlap
-    fontSize: 13,
-    fontFamily: "Helvetica", // modern sans-serif look
+    left: S(7),
+    top: S(13),
+    width: S(80),
+    fontSize: S(13),
+    fontFamily: "Helvetica",
     fontWeight: "bold",
-    letterSpacing: 0.5,
-    lineHeight: 1.3,
-    color: "#111827", // gray-900
+    letterSpacing: 0.5, // keep tracking as-is (non-px; okay to leave)
+    lineHeight: 1.3, // unitless line-height is fine
+    color: "#111827",
   },
   wistron_wrap: {
     position: "absolute",
-    left: 7,
-    top: 27,
-    width: 66, // 75 (qr left) - 7 (this left) - a little padding
-    height: 12, // one line tall
+    left: S(7),
+    top: S(27),
+    width: S(66),
+    height: S(12),
     overflow: "hidden",
   },
   issue_text: {
-    fontSize: 10,
+    fontSize: S(10),
     fontFamily: "Helvetica",
     fontWeight: "light",
     letterSpacing: 0.2,
     lineHeight: 1.2,
-    // Truncate instead of wrapping:
     maxLines: 1,
     textOverflow: "ellipsis",
   },
   dpn_text: {
     position: "absolute",
-    left: 7,
-    top: 40,
-    width: 95, // enough room for DPN + sep + config
-    fontSize: 7,
+    left: S(7),
+    top: S(40),
+    width: S(95),
+    fontSize: S(7),
     fontFamily: "Helvetica",
     lineHeight: 1.2,
   },
   dell_customer_text: {
     position: "absolute",
-    left: 7,
-    top: 48,
-    width: 70, // enough room for DPN + sep + config
-    fontSize: 7,
+    left: S(7),
+    top: S(48),
+    width: S(70),
+    fontSize: S(7),
     fontFamily: "Helvetica",
     lineHeight: 1.2,
   },
   note_text: {
     position: "absolute",
-    left: 7,
-    top: 50,
-    width: 70, // enough room for DPN + sep + config
-    fontSize: 7,
+    left: S(7),
+    top: S(50),
+    width: S(70),
+    fontSize: S(7),
     fontFamily: "Helvetica",
     lineHeight: 1.2,
   },
@@ -92,26 +106,30 @@ const SystemPDFLabel = ({ systems }) => {
     <Document>
       {systems.map((system, index) => {
         const qrDataUrl = generateQRPNG(system.url);
-
         return (
           <Page
             key={index}
             size={{ width: LABEL_WIDTH, height: LABEL_HEIGHT }}
             style={styles.page}
           >
-            <View style={styles.label}>
-              <Text style={styles.text}>{system.service_tag}</Text>
-              <View style={styles.wistron_wrap}>
-                <Text style={styles.issue_text}>{system.issue}</Text>
-              </View>
-              <Text style={styles.dpn_text}>
-                {system.dpn} - Config {system.config}
-              </Text>
+            <View style={styles.canvas}>
+              <View style={styles.label}>
+                <Text style={styles.text}>{system.service_tag}</Text>
 
-              <Text style={styles.dell_customer_text}>
-                {system.dell_customer}
-              </Text>
-              <Image style={styles.qr} src={qrDataUrl} />
+                <View style={styles.wistron_wrap}>
+                  <Text style={styles.issue_text}>{system.issue}</Text>
+                </View>
+
+                <Text style={styles.dpn_text}>
+                  {system.dpn} - Config {system.config}
+                </Text>
+
+                <Text style={styles.dell_customer_text}>
+                  {system.dell_customer}
+                </Text>
+
+                <Image style={styles.qr} src={qrDataUrl} />
+              </View>
             </View>
           </Page>
         );

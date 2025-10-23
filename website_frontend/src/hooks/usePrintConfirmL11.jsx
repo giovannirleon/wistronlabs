@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function usePrintConfirm() {
+export default function usePrintConfirmL11() {
   const [isOpen, setIsOpen] = useState(false);
   const resolveRef = useRef(null);
   const resolvedRef = useRef(false);
 
-  const confirmPrint = () =>
+  const confirmPrintL11 = () =>
     new Promise((resolve) => {
       setIsOpen(true);
       resolveRef.current = resolve;
@@ -16,7 +16,7 @@ export default function usePrintConfirm() {
     setIsOpen(false);
     if (!resolvedRef.current && typeof resolveRef.current === "function") {
       resolvedRef.current = true;
-      resolveRef.current(val); // 'id' | 'rma' | null
+      resolveRef.current(val); // 'id' | 'parts' | null
     }
     resolveRef.current = null;
   };
@@ -37,18 +37,18 @@ export default function usePrintConfirm() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen]);
 
-  const ConfirPrintmModal = () =>
+  const ConfirPrintmModalL11 = () =>
     isOpen ? (
       <div
         className="fixed inset-0 flex items-center justify-center bg-black/40 z-[9999] px-2"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="rma-label-title"
-        onMouseDown={handleCancel} // backdrop click
+        aria-labelledby="pp-label-title"
+        onMouseDown={handleCancel} // backdrop click to cancel
       >
         <div
           className="relative bg-white p-6 rounded-xl shadow-xl w-full max-w-sm space-y-4"
-          onMouseDown={(e) => e.stopPropagation()} // prevent backdrop close on inner clicks
+          onMouseDown={(e) => e.stopPropagation()} // prevent backdrop close when clicking inside
         >
           {/* Small top-right X */}
           <button
@@ -63,13 +63,13 @@ export default function usePrintConfirm() {
           </button>
 
           <h2
-            id="rma-label-title"
+            id="pp-label-title"
             className="text-lg font-semibold text-gray-800"
           >
             Choose Label Type
           </h2>
           <p className="text-sm text-gray-600">
-            This system is in an RMA location. Which label would you like to
+            This system has been sent to L11. Which label would you like to
             print?
           </p>
 
@@ -83,14 +83,14 @@ export default function usePrintConfirm() {
             </button>
             <button
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-              onClick={() => handleChoice("rma")}
+              onClick={() => handleChoice("l11")}
             >
-              System RMA Label
+              L10 Pass Label
             </button>
           </div>
         </div>
       </div>
     ) : null;
 
-  return { confirmPrint, ConfirPrintmModal };
+  return { confirmPrintL11, ConfirPrintmModalL11 };
 }
