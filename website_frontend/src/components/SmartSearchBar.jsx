@@ -410,6 +410,7 @@ export default function SmartSearchBar() {
   const [q, setQ] = useState("");
   const qDebounced = useDebounced(q, 200);
   const parsed = useMemo(() => parseQuery(qDebounced), [qDebounced]);
+  const inputRef = useRef(null);
 
   // NEW: values covered by "field chips" (ppid:, dpn:, etc.)
   const coveredValues = useMemo(
@@ -776,6 +777,7 @@ export default function SmartSearchBar() {
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
+        ref={inputRef}
         onFocus={() => {
           setFocused(true);
           if (rows.length) setOpen(true); // immediate open if we already have rows
@@ -802,6 +804,11 @@ export default function SmartSearchBar() {
                 key={s.service_tag}
                 to={`/${encodeURIComponent(s.service_tag)}`}
                 className="block px-3 py-2 text-sm hover:bg-gray-50"
+                onClick={() => {
+                  setOpen(false);
+                  setFocused(false);
+                  inputRef.current?.blur();
+                }}
               >
                 <div className="font-medium text-gray-800">
                   {highlight(s.service_tag, needles)}
