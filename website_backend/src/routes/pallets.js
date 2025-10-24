@@ -6,6 +6,59 @@ const { generatePalletNumber } = require("../utils/generatePalletNumber");
 
 const router = express.Router();
 
+// Ranked, pre-attentive-first keys the frontend can map to icons.
+// Keep keys stable (don’t change spelling) so FE can style them.
+const SHAPE_PRIORITY = [
+  "star",
+  "triangle_up",
+  "triangle_right",
+  "triangle_left",
+  "triangle_down",
+  "circle",
+  "square",
+  "diamond",
+  "pentagon",
+  "hexagon",
+];
+
+// Pick the first free shape; if none free, start reusing with numeric suffixes.
+async function allocateShapeForOpenPallet(client) {
+  // Get all shapes currently in use by open pallets
+  const { rows } = await client.query(
+    `SELECT shape FROM pallet WHERE status = 'open' AND shape IS NOT NULL`
+  );
+  const inUse = new Set(rows.map((r) => r.shape));
+
+  // 1) Try the base pool first
+  for (const s of SHAPE_PRIORITY) {
+    if (!inUse.has(s)) return s;
+  }
+
+  // 2) If all base shapes are used, assign "shape-2", "shape-3", ...
+  //    preferring lower numbers first across the pool.
+  // Build next available suffix map for each base shape
+  const nextSuffix = new Map(SHAPE_PRIORITY.map((s) => [s, 2]));
+  for (const used of inUse) {
+    const m = used.match(/^(.+)-(\d+)$/);
+    if (!m) continue;
+    const base = m[1];
+    const n = parseInt(m[2], 10);
+    if (SHAPE_PRIORITY.includes(base) && Number.isFinite(n)) {
+      nextSuffix.set(base, Math.max(nextSuffix.get(base) || 2, n + 1));
+    }
+  }
+  // Choose the “earliest” base shape by priority with the smallest suffix needed
+  let best = null;
+  for (const base of SHAPE_PRIORITY) {
+    const candidate = `${base}-${nextSuffix.get(base) || 2}`;
+    if (!inUse.has(candidate)) {
+      best = candidate;
+      break;
+    }
+  }
+  return best || "star-2"; // ultra-safe fallback
+}
+
 router.get("/", async (req, res) => {
   const {
     filters,
@@ -75,6 +128,7 @@ router.get("/", async (req, res) => {
            p.id, p.pallet_number, p.factory_id, p.dpn_id, p.status,
           p.doa_number, p.released_at, p.created_at,
           p.locked, p.locked_at, p.locked_by,
+          p.shape,    
           d.name AS dpn,
           f.code AS factory_code,
 
@@ -157,7 +211,7 @@ router.get("/", async (req, res) => {
         LEFT JOIN dpn d           ON d.id = p.dpn_id
         LEFT JOIN factory f       ON f.id = p.factory_id
         ${whereSQL}
-        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, d.name, f.code
+        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, p.shape, d.name, f.code
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
         `,
@@ -253,18 +307,21 @@ router.post("/", authenticateToken, async (req, res) => {
       });
     }
 
-    // Insert pallet (status=open)
+    // Right before INSERT INTO pallet ...
+    const shape = await allocateShapeForOpenPallet(client);
+
+    // Insert pallet (status=open) with shape
     const { rows: ins } = await client.query(
       `
-      INSERT INTO pallet (
-        pallet_number, factory_id, dpn_id, status,
-        created_at, locked, locked_at, locked_by
-      )
-      VALUES ($1, $2, $3, 'open', NOW(), FALSE, NULL, NULL)
-      RETURNING id, pallet_number, factory_id, dpn_id, status,
-                doa_number, released_at, created_at, locked, locked_at, locked_by
-      `,
-      [pallet_number, factory_id_final, dpn_id_final]
+  INSERT INTO pallet (
+    pallet_number, factory_id, dpn_id, status,
+    created_at, locked, locked_at, locked_by, shape
+  )
+  VALUES ($1, $2, $3, 'open', NOW(), FALSE, NULL, NULL, $4)
+  RETURNING id, pallet_number, factory_id, dpn_id, status,
+            doa_number, released_at, created_at, locked, locked_at, locked_by, shape
+  `,
+      [pallet_number, factory_id_final, dpn_id_final, shape]
     );
 
     await client.query("COMMIT");
@@ -301,6 +358,7 @@ router.get("/:pallet_number", async (req, res) => {
         p.id, p.pallet_number, p.factory_id, p.dpn_id, p.status,
         p.doa_number, p.released_at, p.created_at,
         p.locked, p.locked_at, p.locked_by,
+        p.shape, 
         d.name AS dpn,
         f.code AS factory_code,                 
 
@@ -383,7 +441,7 @@ router.get("/:pallet_number", async (req, res) => {
       LEFT JOIN dpn d           ON d.id = p.dpn_id
       LEFT JOIN factory f       ON f.id = p.factory_id
       WHERE p.pallet_number = $1
-      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, d.name, f.code
+      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, p.shape, d.name, f.code
       `,
       [pallet_number]
     );
@@ -701,7 +759,8 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
           released_at = $3,
           locked = FALSE,
           locked_at = NULL,
-          locked_by = NULL
+          locked_by = NULL,
+          shape = NULL  
       WHERE id = $1
       `,
       [pallet_id, doa_number.trim(), t]
@@ -730,7 +789,7 @@ router.delete("/:pallet_number", authenticateToken, async (req, res) => {
       FROM pallet p
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
       WHERE p.pallet_number = $1
-      GROUP BY p.id, p.status
+      i BY p.id, p.status
       `,
       [pallet_number]
     );
