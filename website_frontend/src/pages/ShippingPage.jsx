@@ -626,6 +626,9 @@ export default function ShippingPage() {
         "pallet_number",
         "service_tag",
         "ppid",
+        "DPN",
+        "Config",
+        "Dell Customer",
         "issue",
         "location",
         "factory_code",
@@ -646,11 +649,22 @@ export default function ShippingPage() {
               return {
                 st: s.service_tag,
                 ppid: (d?.ppid || "").trim(),
+                dpn: d?.dpn || "",
+                config: `Config ${d?.config}` || "",
+                dell_customer: d?.dell_customer || "",
                 issue: d?.issue ?? "",
                 location: d?.location ?? "",
               };
             } catch {
-              return { st: s.service_tag, ppid: "", issue: "", location: "" };
+              return {
+                st: s.service_tag,
+                ppid: "",
+                dpn: "",
+                config: "",
+                dell_customer: "",
+                issue: "",
+                location: "",
+              };
             }
           })
         );
@@ -660,6 +674,9 @@ export default function ShippingPage() {
             pallet.pallet_number,
             d.st,
             d.ppid,
+            d.dpn,
+            d.config,
+            d.dell_customer,
             d.issue,
             d.location,
             pallet.factory_code || "", // prefer from pallet payload
