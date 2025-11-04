@@ -680,7 +680,7 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Lock the pallet row
+    // 1) lock pallet
     const { rows: pRows } = await client.query(
       `
       SELECT id, status
@@ -695,12 +695,13 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Pallet not found" });
     }
     const { id: pallet_id, status } = pRows[0];
+
     if (status !== "open") {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Pallet is already released" });
     }
 
-    // Count active and validate PPID
+    // 2) make sure it has active systems
     const { rows: activeCountRows } = await client.query(
       `
       SELECT COUNT(*)::int AS active_count
@@ -714,16 +715,24 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Cannot release an empty pallet" });
     }
 
-    const { rows: missingPPID } = await client.query(
+    // 3) get all active systems on this pallet (with their current location)
+    const { rows: palletSystems } = await client.query(
       `
-      SELECT s.service_tag
+      SELECT s.id   AS system_id,
+             s.location_id AS location_id,
+             s.service_tag AS service_tag,
+             s.ppid AS ppid
       FROM pallet_system ps
       JOIN system s ON s.id = ps.system_id
       WHERE ps.pallet_id = $1
         AND ps.removed_at IS NULL
-        AND (s.ppid IS NULL OR TRIM(s.ppid) = '')
       `,
       [pallet_id]
+    );
+
+    // 4) ensure none are missing PPID
+    const missingPPID = palletSystems.filter(
+      (r) => !r.ppid || !r.ppid.toString().trim()
     );
     if (missingPPID.length) {
       await client.query("ROLLBACK");
@@ -734,23 +743,24 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
       });
     }
 
-    // ONE stable timestamp for this release
+    // 5) one stable timestamp for the release (for pallet + pallet_system)
     const {
       rows: [tsRow],
     } = await client.query(`SELECT NOW() AS t`);
     const t = tsRow.t;
 
-    // Close memberships with the SAME timestamp
+    // 6) close pallet_system memberships
     await client.query(
       `
       UPDATE pallet_system
       SET removed_at = $2
-      WHERE pallet_id = $1 AND removed_at IS NULL
+      WHERE pallet_id = $1
+        AND removed_at IS NULL
       `,
       [pallet_id, t]
     );
 
-    // Update pallet status using the SAME timestamp
+    // 7) update pallet
     await client.query(
       `
       UPDATE pallet
@@ -760,18 +770,36 @@ router.patch("/:pallet_number/release", authenticateToken, async (req, res) => {
           locked = FALSE,
           locked_at = NULL,
           locked_by = NULL,
-          shape = NULL  
+          shape = NULL
       WHERE id = $1
       `,
       [pallet_id, doa_number.trim(), t]
     );
 
+    // 8) add a "same → same" location history entry for every system
+    //     note: DB will fill changed_at; we only supply the columns that exist
+    const movedBy = req.user.userId;
+    const releaseNote = "unit released back to L10 factory";
+
+    for (const row of palletSystems) {
+      const { system_id, location_id } = row;
+      await client.query(
+        `
+        INSERT INTO system_location_history
+          (system_id, from_location_id, to_location_id, note, moved_by)
+        VALUES
+          ($1, $2, $2, $3, $4)
+        `,
+        [system_id, location_id, releaseNote, movedBy]
+      );
+    }
+
     await client.query("COMMIT");
-    res.json({ message: "Pallet released successfully" });
+    return res.json({ message: "Pallet released successfully" });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
-    res.status(500).json({ error: "Failed to release pallet" });
+    return res.status(500).json({ error: "Failed to release pallet" });
   } finally {
     client.release();
   }
