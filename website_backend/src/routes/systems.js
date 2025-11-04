@@ -1432,7 +1432,7 @@ router.get("/snapshot", async (req, res) => {
             const by = e.moved_by || "";
             return fromLoc
               ? `${mmdd} - [${fromLoc} -> ${toLoc}] - ${note} [via] ${by}`
-              : `${mmdd} - [${toLoc}] [via] ${by}`;
+              : `${mmdd} - [${toLoc}] - ${note} [via] ${by}`;
           })
           .join("\n");
       }
