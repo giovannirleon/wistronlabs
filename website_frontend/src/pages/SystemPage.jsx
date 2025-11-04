@@ -1640,6 +1640,7 @@ function SystemPage() {
         let palletNumber = resp?.pallet_number || null;
         let dpn = resp?.dpn ?? system?.dpn ?? null;
         let factoryCode = resp?.factory_code ?? system?.factory_code ?? null;
+        let shape = resp?.shape || null;
 
         if (!palletNumber || !dpn || !factoryCode) {
           try {
@@ -1660,6 +1661,7 @@ function SystemPage() {
                   service_tag: system.service_tag,
                   pallet_number: palletNumber,
                   dpn,
+                  shape: shape,
                   config: system.config,
                   dell_customer: system.dell_customer,
                   factory_code: factoryCode,
@@ -1822,6 +1824,7 @@ function SystemPage() {
               service_tag: system.service_tag,
               pallet_number: palletInfo.pallet_number,
               dpn: palletInfo.dpn,
+              shape: palletInfo.shape,
               config: system.config,
               dell_customer: system.dell_customer,
               factory_code: palletInfo.factory_code,
