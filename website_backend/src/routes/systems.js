@@ -1230,6 +1230,7 @@ router.get("/snapshot", async (req, res) => {
           ELSE l.name
         END AS location,
         to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
+        s.rack_service_tag AS rack_id
         ${selectNotesAggregate}
         , up.unit_parts
         , CASE
@@ -1333,6 +1334,7 @@ router.get("/snapshot", async (req, res) => {
       "First Received On",
       "Last Received On",
       "Date Modified",
+      "Rack ID",
       "PIC",
       "From",
       "Status",
@@ -1448,6 +1450,7 @@ router.get("/snapshot", async (req, res) => {
         firstLocal ?? "",
         includeReceivedFlag ? lastLocal ?? "" : "",
         modifiedLocal ?? "",
+        r.rack_id ?? "",
         pic ?? "",
         r.factory_code ?? "",
         r.location ?? "", // already simplified upstream if needed
