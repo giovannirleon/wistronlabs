@@ -233,8 +233,8 @@ const PalletGrid = ({
         <h2 className="text-md font-medium text-gray-700 pr-32">
           {pallet.pallet_number}
         </h2>
-        <p className="text-xs pb-2 text-gray-500">
-          Config {formatDateHumanReadable(pallet.config)}
+        <p className="text-gray-800 text-sm">
+          Config {pallet.config} - {pallet.dell_customer}
         </p>
         <p className="text-xs pb-2 text-gray-500">
           Created on {formatDateHumanReadable(pallet.created_at)}
