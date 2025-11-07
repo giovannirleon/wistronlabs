@@ -1229,7 +1229,7 @@ router.get("/snapshot", async (req, res) => {
             END
           ELSE l.name
         END AS location,
-        to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified
+        to_char(h.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS date_modified,
         s.rack_service_tag AS rack_id
         ${selectNotesAggregate}
         , up.unit_parts
