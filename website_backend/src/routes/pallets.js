@@ -817,7 +817,7 @@ router.delete("/:pallet_number", authenticateToken, async (req, res) => {
       FROM pallet p
       LEFT JOIN pallet_system ps ON p.id = ps.pallet_id
       WHERE p.pallet_number = $1
-      i BY p.id, p.status
+      GROUP BY p.id, p.status
       `,
       [pallet_number]
     );
