@@ -152,6 +152,10 @@ export default function useDetailsModal(showToast, onUpdated) {
                 }).toFormat("MM/dd/yyyy")}
               </span>
             </div>
+            <div className="flex justify-between">
+              <span className="font-medium">Rack ID:</span>
+              <span>{details.rack_id}</span>
+            </div>
           </div>
         ) : (
           <form
