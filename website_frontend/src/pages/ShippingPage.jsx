@@ -234,6 +234,9 @@ const PalletGrid = ({
           {pallet.pallet_number}
         </h2>
         <p className="text-xs pb-2 text-gray-500">
+          Config {formatDateHumanReadable(pallet.config)}
+        </p>
+        <p className="text-xs pb-2 text-gray-500">
           Created on {formatDateHumanReadable(pallet.created_at)}
         </p>
 

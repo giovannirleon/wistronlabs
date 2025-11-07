@@ -130,8 +130,8 @@ router.get("/", async (req, res) => {
           p.locked, p.locked_at, p.locked_by,
           p.shape,    
           d.name AS dpn,
-          d.config AS dpn_config,
-          d.dell_customer AS dpn_dell_customer,
+          d.config AS config,
+          d.dell_customer AS dell_customer,
           f.code AS factory_code,
 
           -- Open-pallet live members
@@ -365,8 +365,8 @@ router.get("/:pallet_number", async (req, res) => {
         p.locked, p.locked_at, p.locked_by,
         p.shape, 
         d.name AS dpn,
-        d.config AS dpn_config,
-        d.dell_customer AS dpn_dell_customer,
+        d.config AS config,
+        d.dell_customer AS dell_customer,
         f.code AS factory_code,
                
 
