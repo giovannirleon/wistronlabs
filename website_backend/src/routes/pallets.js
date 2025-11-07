@@ -130,6 +130,8 @@ router.get("/", async (req, res) => {
           p.locked, p.locked_at, p.locked_by,
           p.shape,    
           d.name AS dpn,
+          d.config AS dpn_config,
+          d.dell_customer AS dpn_dell_customer,
           f.code AS factory_code,
 
           -- Open-pallet live members
@@ -211,7 +213,10 @@ router.get("/", async (req, res) => {
         LEFT JOIN dpn d           ON d.id = p.dpn_id
         LEFT JOIN factory f       ON f.id = p.factory_id
         ${whereSQL}
-        GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, p.shape, d.name, f.code
+       GROUP BY p.id, p.doa_number, p.released_at, p.created_at,
+         p.locked, p.locked_at, p.locked_by, p.shape,
+         d.name, d.config, d.dell_customer,
+         f.code
         ORDER BY ${orderColumn} ${orderDirection}
         ${limitOffsetSQL}
         `,
@@ -360,7 +365,10 @@ router.get("/:pallet_number", async (req, res) => {
         p.locked, p.locked_at, p.locked_by,
         p.shape, 
         d.name AS dpn,
-        f.code AS factory_code,                 
+        d.config AS dpn_config,
+        d.dell_customer AS dpn_dell_customer,
+        f.code AS factory_code,
+               
 
         -- Open-pallet live members
         COALESCE(
@@ -441,7 +449,12 @@ router.get("/:pallet_number", async (req, res) => {
       LEFT JOIN dpn d           ON d.id = p.dpn_id
       LEFT JOIN factory f       ON f.id = p.factory_id
       WHERE p.pallet_number = $1
-      GROUP BY p.id, p.doa_number, p.released_at, p.created_at, p.locked, p.locked_at, p.locked_by, p.shape, d.name, f.code
+      GROUP BY
+        p.id, p.doa_number, p.released_at, p.created_at,
+        p.locked, p.locked_at, p.locked_by, p.shape,
+        d.name, d.config, d.dell_customer,
+        f.code
+
       `,
       [pallet_number]
     );
