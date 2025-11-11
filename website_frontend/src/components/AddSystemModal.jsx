@@ -154,13 +154,10 @@ ABCDE64,No power,MX0JJ3MGWSJ0057200JMA00,DEFGHI4`}
                 rows={5}
                 required
               />
-              {addSystemFormError ? (
-                <p className="text-red-500 text-sm">
-                  CSV requires four comma- or tab-separated values per line:
-                  service_tag, issue, ppid (23 chars), rack_service_tag.
-                </p>
-              ) : (
-                <p className="text-red-500 text-sm invisible">placeholder</p>
+              {addSystemFormError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
+                  {addSystemFormError}
+                </div>
               )}
             </>
           )}
@@ -177,7 +174,7 @@ ABCDE64,No power,MX0JJ3MGWSJ0057200JMA00,DEFGHI4`}
               type="submit"
               className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
             >
-              Save
+              Add
             </button>
           </div>
         </form>

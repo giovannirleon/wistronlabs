@@ -216,7 +216,7 @@ function TrackingPage() {
         );
       } else {
         await createSystem(payload);
-        showToast(`${service_tag} created`, "success", 3000, "top-right");
+        //showToast(`${service_tag} created`, "success", 3000, "top-right");
       }
 
       // 🔎 Strictly use getSystem to retrieve the full record
@@ -239,7 +239,7 @@ function TrackingPage() {
         err?.message || // fallback
         "Unknown error";
 
-      showToast(msg, "error", 3000, "top-right");
+      //showToast(msg, "error", 3000, "top-right");
       return msg;
     }
   }
@@ -272,7 +272,7 @@ function TrackingPage() {
       );
 
       // ---------- PDF for single ----------
-      if (printable.service_tag) {
+      if (printable?.service_tag) {
         await delay(500);
         try {
           const blob = await pdf(
@@ -284,14 +284,18 @@ function TrackingPage() {
         } catch (err) {
           console.error("Failed to generate PDF", err);
         }
-      } else {
+        setTimeout(
+          () =>
+            showToast("Successfully added unit", "success", 3000, "top-right"),
+          3000
+        );
+      } else if (printable) {
         setAddSystemFormError(printable);
+        console.log("TEST");
         return;
       }
-
-      //setShowModal(false);
+      setShowModal(false);
       await fetchData();
-      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
     } else {
       // ---------- BULK ADD ----------
       const csv = formData.get("bulk_csv")?.trim();
@@ -323,18 +327,20 @@ function TrackingPage() {
             ", "
           )}`
         );
-        showToast(
-          `Bulk import error: lines missing required 4 fields → ${badLines.join(
-            ", "
-          )}`,
-          "error",
-          6000,
-          "top-right"
-        );
+        // showToast(
+        //   `Bulk import error: lines missing required 4 fields → ${badLines.join(
+        //     ", "
+        //   )}`,
+        //   "error",
+        //   6000,
+        //   "top-right"
+        // );
         return; // stop before doing any mutations
       }
 
       // 2) Process lines now that we know all are valid
+
+      let addOrUpdateSysrtemError = false;
       const systemsPDF = [];
       for (const { rawTag, issue, ppid, rackServiceTag } of parsed) {
         let printable = null;
@@ -350,7 +356,15 @@ function TrackingPage() {
           continue; // skip to next line on error
         }
 
-        if (printable) systemsPDF.push(printable);
+        if (printable.service_tag) {
+          systemsPDF.push(printable);
+        } else {
+          setAddSystemFormError(
+            `Stopped processing at ${rawTag}: ${printable}`
+          );
+          addOrUpdateSysrtemError = true;
+          break; // stop processing on error message
+        }
       }
 
       // 3) Generate one PDF containing all labels
@@ -367,9 +381,16 @@ function TrackingPage() {
         }
       }
 
-      //setShowModal(false);
+      if (!addOrUpdateSysrtemError) {
+        setShowModal(false);
+      }
+
       await fetchData();
-      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+      setTimeout(
+        () =>
+          showToast("Successfully added units", "success", 3000, "top-right"),
+        3000
+      );
     }
   }
 
@@ -473,7 +494,7 @@ function TrackingPage() {
                 !token ? "opacity-30 pointer-events-none" : ""
               }`}
             >
-              + New System
+              + Add System
             </button>
           </Tooltip>
         </div>

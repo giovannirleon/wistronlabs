@@ -1,6 +1,7 @@
 // DownloadReportModal.jsx
 import ReactDatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import { useEffect } from "react";
 
 function parseLocalDateString(yyyyMmDd) {
   const [year, month, day] = yyyyMmDd.split("-").map(Number);
@@ -17,6 +18,17 @@ export default function DownloadReportModal({
   idiotProof,
   setIdiotProof,
 }) {
+  // ⬇️ Close on Esc
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose?.(); // unmounts modal; your scanner cleanup runs
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-lg p-8 relative space-y-6">
