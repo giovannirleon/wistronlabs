@@ -1881,8 +1881,45 @@ router.post("/", authenticateToken, async (req, res) => {
     !rack_service_tag?.trim()
   ) {
     return res.status(400).json({
-      error:
-        "service_tag, location_id, ppid, and rack_service_tag are required",
+      error: "Service Tag, Location, PPID, and Rack Service Tag are required",
+    });
+  }
+
+  // normalize rack id
+  const rackUpper = rack_service_tag.trim().toUpperCase();
+
+  // 1) must be exactly 7 chars
+  if (rackUpper.length !== 7) {
+    return res.status(400).json({
+      error: "Rack Service Tag must be exactly 7 characters long",
+    });
+  }
+
+  // 2) must NOT contain common filler words
+  const fillerTokens = [
+    "UNK",
+    "UNKN",
+    "N/A",
+    "NA",
+    "NONE",
+    "NULL",
+    "(NULL)",
+    "NODATA",
+    "NOINFO",
+    "TBD",
+    "TBA",
+    "N/R",
+    "BLANK",
+    "???",
+    "XXX",
+  ];
+
+  // to make matching easier, remove spaces and slashes for the check
+  const rackForMatch = rackUpper.replace(/[\s/.-]/g, "");
+  const hasFiller = fillerTokens.some((tok) => rackForMatch.includes(tok));
+  if (hasFiller) {
+    return res.status(400).json({
+      error: "Please provide a valid Rack Service Tag, not a filler value",
     });
   }
 
@@ -1935,7 +1972,7 @@ router.post("/", authenticateToken, async (req, res) => {
         parsed.manufacturedDate,
         parsed.serial,
         parsed.rev,
-        rack_service_tag.trim().toUpperCase(),
+        rackUpper, // already uppercased above
       ]
     );
     const system_id = ins.rows[0].id;
@@ -1954,9 +1991,7 @@ router.post("/", authenticateToken, async (req, res) => {
 
     await client.query("COMMIT");
 
-    // respond immediately
     const stUpper = service_tag.trim().toUpperCase();
-    const rackUpper = rack_service_tag.trim().toUpperCase();
     res.status(201).json({ service_tag: stUpper });
 
     // fire-and-forget webhook AFTER response
@@ -1972,8 +2007,8 @@ router.post("/", authenticateToken, async (req, res) => {
         },
         body: JSON.stringify({
           script: "/opt/hooks/on-system-created.sh",
-          args: [stUpper, rackUpper], // <-- unit, rack
-          wait: "ack", // immediate acknowledgement from host-runner
+          args: [stUpper, rackUpper],
+          wait: "ack",
         }),
         signal: controller.signal,
       });

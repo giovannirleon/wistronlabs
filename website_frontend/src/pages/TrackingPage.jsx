@@ -255,32 +255,51 @@ function TrackingPage() {
       }
       setAddSystemFormError(false);
 
-      // add/move then fetch full system via getSystem (inside addOrUpdateSystem)
-      const printable = await addOrUpdateSystem(
-        service_tag,
-        issue,
-        ppid,
-        rack_service_tag
-      );
+      try {
+        // add/move then fetch full system via getSystem (inside addOrUpdateSystem)
+        const printable = await addOrUpdateSystem(
+          service_tag,
+          issue,
+          ppid,
+          rack_service_tag
+        );
 
-      // ---------- PDF for single ----------
-      if (printable) {
-        await delay(500);
-        try {
-          const blob = await pdf(
-            <SystemPDFLabel systems={[printable]} />
-          ).toBlob();
-
-          const url = URL.createObjectURL(blob);
-          window.open(url, "_blank");
-        } catch (err) {
-          console.error("Failed to generate PDF", err);
+        // if backend returned an error shape instead of throwing
+        if (printable && printable.error) {
+          showToast(printable.error, "error", 5000, "top-right");
+          return;
         }
-      }
 
-      setShowModal(false);
-      await fetchData();
-      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+        // ---------- PDF for single ----------
+        if (printable) {
+          await delay(500);
+          try {
+            const blob = await pdf(
+              <SystemPDFLabel systems={[printable]} />
+            ).toBlob();
+
+            const url = URL.createObjectURL(blob);
+            window.open(url, "_blank");
+          } catch (err) {
+            console.error("Failed to generate PDF", err);
+          }
+        }
+
+        setShowModal(false);
+        await fetchData();
+        setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+      } catch (err) {
+        // backend/axios/fetch-style error
+        console.error("addOrUpdateSystem failed", err);
+
+        // try to extract backend message
+        const msg =
+          err?.response?.data?.error ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Failed to add system";
+        showToast(msg, "error", 5000, "top-right");
+      }
     } else {
       // ---------- BULK ADD ----------
       const csv = formData.get("bulk_csv")?.trim();
@@ -303,7 +322,7 @@ function TrackingPage() {
           parts.length === 4 && rawTag && issue && ppid && rackServiceTag;
 
         if (!ok) badLines.push(idx + 1); // 1-based line number
-        return { rawTag, issue, ppid, rackServiceTag };
+        return { rawTag, issue, ppid, rackServiceTag, line: idx + 1 };
       });
 
       if (badLines.length > 0) {
@@ -321,17 +340,39 @@ function TrackingPage() {
 
       // 2) Process lines now that we know all are valid
       const systemsPDF = [];
-      for (const { rawTag, issue, ppid, rackServiceTag } of parsed) {
-        const printable = await addOrUpdateSystem(
-          rawTag.toUpperCase(),
-          issue, // required & non-empty from validation
-          ppid.toUpperCase(),
-          rackServiceTag
-        );
-        if (printable) systemsPDF.push(printable);
+      const lineErrors = [];
+
+      for (const { rawTag, issue, ppid, rackServiceTag, line } of parsed) {
+        try {
+          const printable = await addOrUpdateSystem(
+            rawTag.toUpperCase(),
+            issue,
+            ppid.toUpperCase(),
+            rackServiceTag
+          );
+
+          if (printable && printable.error) {
+            // backend returned an error payload
+            lineErrors.push(`Line ${line}: ${printable.error}`);
+          } else if (printable) {
+            systemsPDF.push(printable);
+          }
+        } catch (err) {
+          const msg =
+            err?.response?.data?.error ||
+            err?.response?.data?.message ||
+            err?.message ||
+            "Unknown error";
+          lineErrors.push(`Line ${line}: ${msg}`);
+        }
       }
 
-      // 3) Generate one PDF containing all labels
+      // if any lines failed, show them
+      if (lineErrors.length > 0) {
+        showToast(lineErrors.join(" | "), "error", 8000, "top-right");
+      }
+
+      // 3) Generate one PDF containing all labels (only for successful ones)
       if (systemsPDF.length > 0) {
         await delay(500);
         try {
@@ -347,7 +388,11 @@ function TrackingPage() {
 
       setShowModal(false);
       await fetchData();
-      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+
+      // success toast only if at least one succeeded
+      if (systemsPDF.length > 0) {
+        setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
+      }
     }
   }
 
