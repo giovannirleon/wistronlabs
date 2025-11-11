@@ -42,7 +42,7 @@ function TrackingPage() {
   const [reportDate, setReportDate] = useState("");
   const [showActive, setShowActive] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
-  const [addSystemFormError, setAddSystemFormError] = useState(false);
+  const [addSystemFormError, setAddSystemFormError] = useState(null);
   const [idiotProof, setIdiotProof] = useState(false);
   const [printFriendly, setPrintFriendly] = useState(true);
 
@@ -233,8 +233,14 @@ function TrackingPage() {
       };
     } catch (err) {
       console.error(err);
-      showToast(`Error with ${service_tag}`, "error", 3000, "top-right");
-      return null;
+
+      const msg =
+        err?.body?.error || // <- the good part
+        err?.message || // fallback
+        "Unknown error";
+
+      showToast(msg, "error", 3000, "top-right");
+      return msg;
     }
   }
 
@@ -249,65 +255,51 @@ function TrackingPage() {
       const ppid = formData.get("ppid")?.trim().toUpperCase();
       const rack_service_tag = formData.get("rack_service_tag")?.trim();
 
-      if (!service_tag || !ppid || !rack_service_tag) {
-        setAddSystemFormError(true);
+      if (!service_tag || !ppid || !issue | !rack_service_tag) {
+        setAddSystemFormError("All fields are required.");
         return;
       }
-      setAddSystemFormError(false);
+      setAddSystemFormError(null);
 
-      try {
-        // add/move then fetch full system via getSystem (inside addOrUpdateSystem)
-        const printable = await addOrUpdateSystem(
-          service_tag,
-          issue,
-          ppid,
-          rack_service_tag
-        );
+      let printable = null;
 
-        // if backend returned an error shape instead of throwing
-        if (printable && printable.error) {
-          showToast(printable.error, "error", 5000, "top-right");
-          return;
+      // add/move then fetch full system via getSystem (inside addOrUpdateSystem)
+      printable = await addOrUpdateSystem(
+        service_tag,
+        issue,
+        ppid,
+        rack_service_tag
+      );
+
+      // ---------- PDF for single ----------
+      if (printable.service_tag) {
+        await delay(500);
+        try {
+          const blob = await pdf(
+            <SystemPDFLabel systems={[printable]} />
+          ).toBlob();
+
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank");
+        } catch (err) {
+          console.error("Failed to generate PDF", err);
         }
-
-        // ---------- PDF for single ----------
-        if (printable) {
-          await delay(500);
-          try {
-            const blob = await pdf(
-              <SystemPDFLabel systems={[printable]} />
-            ).toBlob();
-
-            const url = URL.createObjectURL(blob);
-            window.open(url, "_blank");
-          } catch (err) {
-            console.error("Failed to generate PDF", err);
-          }
-        }
-
-        setShowModal(false);
-        await fetchData();
-        setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
-      } catch (err) {
-        // backend/axios/fetch-style error
-        console.error("addOrUpdateSystem failed", err);
-
-        // try to extract backend message
-        const msg =
-          err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          "Failed to add system";
-        showToast(msg, "error", 5000, "top-right");
+      } else {
+        setAddSystemFormError(printable);
+        return;
       }
+
+      //setShowModal(false);
+      await fetchData();
+      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
     } else {
       // ---------- BULK ADD ----------
       const csv = formData.get("bulk_csv")?.trim();
       if (!csv) {
-        setAddSystemFormError(true);
+        setAddSystemFormError("Please provide CSV data for bulk import.");
         return;
       }
-      setAddSystemFormError(false);
+      setAddSystemFormError(null);
 
       // 1) Pre-validate: every non-empty line must have 4 non-empty items
       const rawLines = csv.split(/\r?\n/).map((l) => l.trim());
@@ -316,17 +308,21 @@ function TrackingPage() {
       const badLines = [];
       const parsed = lines.map((line, idx) => {
         const parts = line.split(/\t|,/).map((s) => (s ?? "").trim());
-        // Expect exactly 4 non-empty fields
+        // Expect exact ly 4 non-empty fields
         const [rawTag, issue, ppid, rackServiceTag] = parts;
         const ok =
           parts.length === 4 && rawTag && issue && ppid && rackServiceTag;
 
         if (!ok) badLines.push(idx + 1); // 1-based line number
-        return { rawTag, issue, ppid, rackServiceTag, line: idx + 1 };
+        return { rawTag, issue, ppid, rackServiceTag };
       });
 
       if (badLines.length > 0) {
-        setAddSystemFormError(true);
+        setAddSystemFormError(
+          `Bulk import error: lines missing required 4 fields → ${badLines.join(
+            ", "
+          )}`
+        );
         showToast(
           `Bulk import error: lines missing required 4 fields → ${badLines.join(
             ", "
@@ -340,39 +336,24 @@ function TrackingPage() {
 
       // 2) Process lines now that we know all are valid
       const systemsPDF = [];
-      const lineErrors = [];
-
-      for (const { rawTag, issue, ppid, rackServiceTag, line } of parsed) {
+      for (const { rawTag, issue, ppid, rackServiceTag } of parsed) {
+        let printable = null;
         try {
-          const printable = await addOrUpdateSystem(
+          printable = await addOrUpdateSystem(
             rawTag.toUpperCase(),
-            issue,
+            issue, // required & non-empty from validation
             ppid.toUpperCase(),
             rackServiceTag
           );
-
-          if (printable && printable.error) {
-            // backend returned an error payload
-            lineErrors.push(`Line ${line}: ${printable.error}`);
-          } else if (printable) {
-            systemsPDF.push(printable);
-          }
         } catch (err) {
-          const msg =
-            err?.response?.data?.error ||
-            err?.response?.data?.message ||
-            err?.message ||
-            "Unknown error";
-          lineErrors.push(`Line ${line}: ${msg}`);
+          console.error("Error processing line:", rawTag, err);
+          continue; // skip to next line on error
         }
+
+        if (printable) systemsPDF.push(printable);
       }
 
-      // if any lines failed, show them
-      if (lineErrors.length > 0) {
-        showToast(lineErrors.join(" | "), "error", 8000, "top-right");
-      }
-
-      // 3) Generate one PDF containing all labels (only for successful ones)
+      // 3) Generate one PDF containing all labels
       if (systemsPDF.length > 0) {
         await delay(500);
         try {
@@ -386,13 +367,9 @@ function TrackingPage() {
         }
       }
 
-      setShowModal(false);
+      //setShowModal(false);
       await fetchData();
-
-      // success toast only if at least one succeeded
-      if (systemsPDF.length > 0) {
-        setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
-      }
+      setTimeout(() => showToast("", "success", 3000, "top-right"), 3000);
     }
   }
 
@@ -489,7 +466,7 @@ function TrackingPage() {
           >
             <button
               onClick={() => {
-                setAddSystemFormError(false);
+                setAddSystemFormError(null);
                 setShowModal(true);
               }}
               className={`bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-s ${

@@ -138,13 +138,10 @@ export default function AddSystemModal({
                 autoUpper
               />
 
-              {addSystemFormError ? (
-                <p className="text-red-500 text-sm">
-                  Service Tag, Issue, PPID, and Rack Service Tag are all
-                  required.
-                </p>
-              ) : (
-                <p className="text-red-500 text-sm invisible">placeholder</p>
+              {addSystemFormError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
+                  {addSystemFormError}
+                </div>
               )}
             </>
           ) : (
