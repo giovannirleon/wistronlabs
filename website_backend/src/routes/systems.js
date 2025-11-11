@@ -2024,25 +2024,28 @@ router.post("/", authenticateToken, async (req, res) => {
       console.error("host-runner call failed:", e);
     }
   } catch (err) {
-  await client.query("ROLLBACK");
-  console.error(err);
+    await client.query("ROLLBACK");
+    console.error(err);
 
-  if (err.code === "23505") {
-    if (err.constraint === "system_service_tag_key") {
-      return res.status(409).json({ error: "Service Tag already exists" });
-    }
-    if (err.constraint === "system_ppid_key") {
+    if (err.code === "23505") {
+      if (err.constraint === "system_service_tag_key") {
+        return res.status(409).json({ error: "Service Tag already exists" });
+      }
+      if (err.constraint === "system_ppid_key") {
+        return res
+          .status(409)
+          .json({
+            error: "PPID already exists (this unit is already in the system)",
+          });
+      }
+      // fallback if some other unique hits in future
       return res
         .status(409)
-        .json({ error: "PPID already exists" });
+        .json({ error: "Duplicate value violates unique constraint" });
     }
-    // fallback if some other unique hits in future
-    return res.status(409).json({ error: "Duplicate value violates unique constraint" });
-  }
 
-  return res.status(500).json({ error: "Failed to create system" });
-}
-
+    return res.status(500).json({ error: "Failed to create system" });
+  } finally {
     client.release();
   }
 });
