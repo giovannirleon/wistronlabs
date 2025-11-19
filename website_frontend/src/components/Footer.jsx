@@ -12,11 +12,10 @@ function Footer() {
     let alive = true;
     (async () => {
       try {
-        const res = await getServerTime(); // expect { zone: "America/Chicago", localtime: "..." }
+        const res = await getServerTime();
         if (!alive) return;
         setServerZone(res?.zone || "UTC");
       } catch {
-        // Fallback to client's zone if API fails
         setServerZone(
           Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
         );
@@ -25,7 +24,8 @@ function Footer() {
     return () => {
       alive = false;
     };
-  }, [getServerTime]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 2) Tick every second
   useEffect(() => {

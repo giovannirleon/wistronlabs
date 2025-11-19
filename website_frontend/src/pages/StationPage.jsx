@@ -49,7 +49,7 @@ function StationPage() {
   useEffect(() => {
     // fetch stations every 1s
     fetchData();
-    const interval = setInterval(fetchStations, 1000);
+    const interval = setInterval(fetchStations, 10000);
     return () => clearInterval(interval);
   }, []);
 

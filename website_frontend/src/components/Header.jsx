@@ -23,9 +23,9 @@ function Header() {
     let isMounted = true;
     (async () => {
       try {
-        const data = await getMe(); // ← await the Promise
+        const data = await getMe(); // still uses getMe, just not in deps
         if (!isMounted) return;
-        setUser(data?.user ?? null); // ← store the actual user object
+        setUser(data?.user ?? null);
       } catch (e) {
         console.error("getUser failed:", e);
         if (isMounted) setUser(null);
@@ -34,7 +34,10 @@ function Header() {
     return () => {
       isMounted = false;
     };
-  }, [token, getMe]);
+    // We only care about token changes here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   // ...
 
   return (
