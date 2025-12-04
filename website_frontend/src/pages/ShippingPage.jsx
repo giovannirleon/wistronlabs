@@ -944,15 +944,6 @@ export default function ShippingPage() {
     // STEP 1: Move systems
     for (const move of moves) {
       try {
-        console.log(
-          "Moving system:",
-          move.service_tag,
-          "from",
-          move.from_pallet_number,
-          "to",
-          move.to_pallet_number
-        );
-        console.log(move);
         await moveSystemBetweenPallets({
           service_tag: move.service_tag,
           from_pallet_number: move.from_pallet_number,
