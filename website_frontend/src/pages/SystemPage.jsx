@@ -351,7 +351,13 @@ function SystemPage() {
   const isInReceived = system?.location === "Received";
 
   const canAddGoodParts =
-    (isInDebugWistron && toLocationId !== 4 && !isInPendingParts && !isInL10) || // current location is Debug, but not sending to Pending
+    (isInDebugWistron &&
+      toLocationId !== 4 &&
+      !isInPendingParts &&
+      !isInL10 &&
+      toLocationId != 6 &&
+      toLocationId != 7 &&
+      toLocationId != 8) || // current location is Debug, but not sending to Pending
     (toIsDebugOrL10 &&
       toLocationId !== 4 &&
       !isInPendingParts &&
