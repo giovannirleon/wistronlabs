@@ -891,20 +891,22 @@ export default function ShippingPage() {
       const current = pallets.find((p) => p.id === initial.id);
       if (!current) continue;
 
-      (initial.active_systems || []).forEach((system) => {
-        if (!system) return;
+      (initial.active_systems || [])
+        .filter((system) => system && system.service_tag)
+        .forEach((system) => {
+          if (!system) return;
 
-        const currentPallet = pallets.find((p) =>
-          p.active_systems.some((s) => s?.service_tag === system.service_tag)
-        );
-        if (!currentPallet || currentPallet.id === initial.id) return;
+          const currentPallet = pallets.find((p) =>
+            p.active_systems.some((s) => s?.service_tag === system.service_tag)
+          );
+          if (!currentPallet || currentPallet.id === initial.id) return;
 
-        moves.push({
-          service_tag: system.service_tag,
-          from_pallet_number: initial.pallet_number,
-          to_pallet_number: currentPallet.pallet_number,
+          moves.push({
+            service_tag: system.service_tag,
+            from_pallet_number: initial.pallet_number,
+            to_pallet_number: currentPallet.pallet_number,
+          });
         });
-      });
     }
 
     const isSlotEmpty = (s) => !s || !s.service_tag; // treat placeholder as empty
@@ -942,6 +944,15 @@ export default function ShippingPage() {
     // STEP 1: Move systems
     for (const move of moves) {
       try {
+        console.log(
+          "Moving system:",
+          move.service_tag,
+          "from",
+          move.from_pallet_number,
+          "to",
+          move.to_pallet_number
+        );
+        console.log(move);
         await moveSystemBetweenPallets({
           service_tag: move.service_tag,
           from_pallet_number: move.from_pallet_number,
