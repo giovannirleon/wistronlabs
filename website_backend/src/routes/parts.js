@@ -15,7 +15,7 @@ const router = express.Router();
  * - part_category_name=<text>       (ILIKE)
  * - unit_id=#
  * - unit_service_tag=<text>         (ILIKE)
- * - q=<text>                        (ILIKE across ppid, part name, unit tag, category)
+ * - q=<text>                        (ILIKE across ppid, part name, part dpn, unit tag, category)
  */
 router.get("/", async (req, res) => {
   const {
@@ -83,7 +83,11 @@ router.get("/", async (req, res) => {
     params.push(`%${q.trim()}%`);
     const idx = params.length;
     where.push(
-      `(pl.ppid ILIKE $${idx} OR p.name ILIKE $${idx} OR s.service_tag ILIKE $${idx} OR pc.name ILIKE $${idx})`
+      `(pl.ppid ILIKE $${idx}
+        OR p.name ILIKE $${idx}
+        OR p.dpn ILIKE $${idx}
+        OR s.service_tag ILIKE $${idx}
+        OR pc.name ILIKE $${idx})`
     );
   }
 
@@ -97,6 +101,7 @@ router.get("/", async (req, res) => {
         pl.id,
         pl.part_id,
         p.name AS part_name,
+        p.dpn AS part_dpn,
         pc.name AS part_category_name,
         pl.place,
         pl.unit_id,
@@ -131,9 +136,16 @@ router.get("/:ppid", async (req, res) => {
       `
       SELECT
         pl.ppid,
-        pl.id, pl.part_id, p.name AS part_name,
-        pl.place, pl.unit_id, s.service_tag AS unit_service_tag,
-        pl.is_functional, pl.created_at, pl.updated_at
+        pl.id,
+        pl.part_id,
+        p.name AS part_name,
+        p.dpn AS part_dpn,
+        pl.place,
+        pl.unit_id,
+        s.service_tag AS unit_service_tag,
+        pl.is_functional,
+        pl.created_at,
+        pl.updated_at
       FROM part_list pl
       JOIN parts  p  ON p.id = pl.part_id
       LEFT JOIN system s ON s.id = pl.unit_id

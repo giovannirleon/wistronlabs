@@ -204,6 +204,7 @@ router.get("/part", async (req, res) => {
         p.id,
         p.name,
         p.part_category_id,
+        p.dpn,
         pc.name AS category_name
       FROM parts p
       LEFT JOIN part_categories pc ON pc.id = p.part_category_id
@@ -228,6 +229,7 @@ router.get("/part/:id", async (req, res) => {
         p.id,
         p.name,
         p.part_category_id,
+        p.dpn,
         pc.name AS category_name
       FROM parts p
       LEFT JOIN part_categories pc ON pc.id = p.part_category_id
@@ -243,38 +245,50 @@ router.get("/part/:id", async (req, res) => {
   }
 });
 
-// POST /api/v1/systems/part   { name, part_category_id? }  (admin)
+// POST /api/v1/systems/part   { name, dpn, part_category_id? }  (admin)
 router.post("/part", authenticateToken, ensureAdmin, async (req, res) => {
-  const { name, part_category_id } = req.body || {};
+  const { name, part_category_id, dpn } = req.body || {};
   const cleanName = (name || "").trim();
-  if (!cleanName) {
-    return res.status(400).json({ error: "name is required" });
+  const cleanDpn = (dpn || "").trim();
+
+  if (!cleanName || !cleanDpn) {
+    return res.status(400).json({ error: "name and dpn are required" });
   }
+
   try {
     const { rows } = await db.query(
       `
-      INSERT INTO parts (name, part_category_id)
-      VALUES ($1, $2)
-      RETURNING id, name, part_category_id
+      INSERT INTO parts (name, part_category_id, dpn)
+      VALUES ($1, $2, $3)
+      RETURNING id, name, part_category_id, dpn
       `,
-      [cleanName, part_category_id || null]
+      [cleanName, part_category_id || null, cleanDpn]
     );
     return res.status(201).json(rows[0]);
   } catch (e) {
     console.error(e);
     if (isPgUniqueViolation(e)) {
-      return res.status(409).json({ error: "Part name already exists" });
+      if (e.constraint === "parts_name_key") {
+        return res.status(409).json({ error: "Part name already exists" });
+      }
+      if (e.constraint === "parts_dpn_key") {
+        return res.status(409).json({ error: "Part DPN already exists" });
+      }
+      return res
+        .status(409)
+        .json({ error: "Unique constraint violation on parts" });
     }
     return res.status(500).json({ error: "Failed to create part" });
   }
 });
 
-// PATCH /api/v1/systems/part/:id   { name?, part_category_id? }  (admin)
+// PATCH /api/v1/systems/part/:id   { name?, dpn?, part_category_id? }  (admin)
 router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
-  const { name, part_category_id } = req.body || {};
+  const { name, part_category_id, dpn } = req.body || {};
 
   const fields = [];
   const vals = [];
+
   if (typeof name !== "undefined") {
     fields.push(`name = $${fields.length + 1}`);
     vals.push(String(name || "").trim());
@@ -283,6 +297,15 @@ router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
     fields.push(`part_category_id = $${fields.length + 1}`);
     vals.push(part_category_id || null);
   }
+  if (typeof dpn !== "undefined") {
+    const cleanDpn = String(dpn || "").trim();
+    if (!cleanDpn) {
+      return res.status(400).json({ error: "dpn cannot be empty" });
+    }
+    fields.push(`dpn = $${fields.length + 1}`);
+    vals.push(cleanDpn);
+  }
+
   if (!fields.length) {
     return res.status(400).json({ error: "Nothing to update" });
   }
@@ -293,7 +316,7 @@ router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
       UPDATE parts
          SET ${fields.join(", ")}
        WHERE id = $${fields.length + 1}
-   RETURNING id, name, part_category_id
+   RETURNING id, name, part_category_id, dpn
       `,
       [...vals, req.params.id]
     );
@@ -302,7 +325,15 @@ router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
   } catch (e) {
     console.error(e);
     if (isPgUniqueViolation(e)) {
-      return res.status(409).json({ error: "Part name already exists" });
+      if (e.constraint === "parts_name_key") {
+        return res.status(409).json({ error: "Part name already exists" });
+      }
+      if (e.constraint === "parts_dpn_key") {
+        return res.status(409).json({ error: "Part DPN already exists" });
+      }
+      return res
+        .status(409)
+        .json({ error: "Unique constraint violation on parts" });
     }
     return res.status(500).json({ error: "Failed to update part" });
   }
