@@ -1,3 +1,5 @@
+const db = require("../db");
+
 async function ensureAdmin(req, res, next) {
   try {
     if (!req.user?.userId) {
