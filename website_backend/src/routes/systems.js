@@ -308,7 +308,7 @@ router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/v1/systems/part/:id (admin) – block if referenced
+// DELETE /api/v1/systems/part/:id
 router.delete("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
   const id = req.params.id;
   try {
@@ -324,7 +324,7 @@ router.delete("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
 
     if (ref.rows[0].used) {
       return res.status(409).json({
-        error: "Cannot delete part: referenced by part_list",
+        error: "Cannot delete part: parts in inventory or in systems",
       });
     }
 
