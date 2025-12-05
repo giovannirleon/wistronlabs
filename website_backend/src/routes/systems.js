@@ -308,6 +308,38 @@ router.patch("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
   }
 });
 
+// DELETE /api/v1/systems/part/:id (admin) – block if referenced
+router.delete("/part/:id", authenticateToken, ensureAdmin, async (req, res) => {
+  const id = req.params.id;
+  try {
+    // Block delete if referenced in part_list
+    const ref = await db.query(
+      `
+          SELECT EXISTS(
+            SELECT 1 FROM part_list WHERE part_id = $1
+          ) AS used
+        `,
+      [id]
+    );
+
+    if (ref.rows[0].used) {
+      return res.status(409).json({
+        error: "Cannot delete part: referenced by part_list",
+      });
+    }
+
+    const del = await db.query(`DELETE FROM parts WHERE id = $1`, [id]);
+    if (del.rowCount === 0) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+
+    return res.json({ message: "Part deleted" });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to delete part" });
+  }
+});
+
 // ---------- PART CATEGORY CRUD ----------
 
 // GET /api/v1/systems/part-category (?q= to search by name)
@@ -2032,11 +2064,9 @@ router.post("/", authenticateToken, async (req, res) => {
         return res.status(409).json({ error: "Service Tag already exists" });
       }
       if (err.constraint === "system_ppid_key") {
-        return res
-          .status(409)
-          .json({
-            error: "PPID already exists (this unit is already in the system)",
-          });
+        return res.status(409).json({
+          error: "PPID already exists (this unit is already in the system)",
+        });
       }
       // fallback if some other unique hits in future
       return res
