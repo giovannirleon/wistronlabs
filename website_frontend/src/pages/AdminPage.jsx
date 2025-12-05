@@ -571,9 +571,9 @@ function AdminPage() {
     }
   };
 
-  const sanitizeName = (s = "") => s.trim().toUpperCase();
-  const sanitizeConfig = (s = "") => s.trim().toUpperCase();
-  const sanitizeCustomer = (s = "") => s.trim();
+  const sanitizeName = (s) => ((s ?? "") + "").trim().toUpperCase();
+  const sanitizeConfig = (s) => ((s ?? "") + "").trim().toUpperCase();
+  const sanitizeCustomer = (s) => ((s ?? "") + "").trim();
 
   const validateRow = (row) => {
     const name = sanitizeName(row.name);
