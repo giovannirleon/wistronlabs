@@ -1,298 +1,198 @@
 const express = require("express");
 const db = require("../db");
 const { authenticateToken } = require("./auth");
+const { ensureAdmin } = require("../utils/ensureAdmin");
 
 const router = express.Router();
 
-/**
- * GET /api/v1/parts/list
- * Filters (all optional):
- * - place=inventory|unit
- * - is_functional=true|false
- * - part_id=#
- * - part_name=<text>                (ILIKE)
- * - part_category_id=#
- * - part_category_name=<text>       (ILIKE)
- * - unit_id=#
- * - unit_service_tag=<text>         (ILIKE)
- * - q=<text>                        (ILIKE across ppid, part name, part dpn, unit tag, category)
- */
+// GET /api/v1/systems/part  (?q= to search by part name, ?category_id=123 to filter)
 router.get("/", async (req, res) => {
-  const {
-    place,
-    is_functional,
-    part_id,
-    part_name,
-    part_category_id,
-    part_category_name,
-    unit_id,
-    unit_service_tag,
-    q,
-  } = req.query;
-
-  const where = [];
+  const { q, category_id } = req.query;
   const params = [];
-
-  if (place) {
-    params.push(place);
-    where.push(`pl.place = $${params.length}`);
-  }
-
-  if (typeof is_functional !== "undefined") {
-    // Accept "true"/"false"/"1"/"0"
-    const val =
-      is_functional === "true" ||
-      is_functional === "1" ||
-      is_functional === true;
-    params.push(val);
-    where.push(`pl.is_functional = $${params.length}`);
-  }
-
-  if (part_id) {
-    params.push(part_id);
-    where.push(`pl.part_id = $${params.length}`);
-  }
-
-  if (part_name && part_name.trim()) {
-    params.push(`%${part_name.trim()}%`);
-    where.push(`p.name ILIKE $${params.length}`);
-  }
-
-  if (part_category_id) {
-    params.push(part_category_id);
-    where.push(`pc.id = $${params.length}`);
-  }
-
-  if (part_category_name && part_category_name.trim()) {
-    params.push(`%${part_category_name.trim()}%`);
-    where.push(`pc.name ILIKE $${params.length}`);
-  }
-
-  if (unit_id) {
-    params.push(unit_id);
-    where.push(`pl.unit_id = $${params.length}`);
-  }
-
-  if (unit_service_tag && unit_service_tag.trim()) {
-    params.push(`%${unit_service_tag.trim()}%`);
-    where.push(`s.service_tag ILIKE $${params.length}`);
-  }
+  const where = [];
 
   if (q && q.trim()) {
-    // single placeholder reused in the ORs on purpose
     params.push(`%${q.trim()}%`);
-    const idx = params.length;
-    where.push(
-      `(pl.ppid ILIKE $${idx}
-        OR p.name ILIKE $${idx}
-        OR p.dpn ILIKE $${idx}
-        OR s.service_tag ILIKE $${idx}
-        OR pc.name ILIKE $${idx})`
-    );
+    where.push(`p.name ILIKE $${params.length}`);
+  }
+  if (category_id) {
+    params.push(category_id);
+    where.push(`p.part_category_id = $${params.length}`);
   }
 
-  const whereSQL = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   try {
     const { rows } = await db.query(
       `
-      SELECT
-        pl.ppid,
-        pl.id,
-        pl.part_id,
-        p.name AS part_name,
-        p.dpn AS part_dpn,
-        pc.name AS part_category_name,
-        pl.place,
-        pl.unit_id,
-        s.service_tag AS unit_service_tag,
-        pl.is_functional,
-        pl.created_at,
-        pl.updated_at
-      FROM part_list pl
-      JOIN parts p ON p.id = pl.part_id
-      LEFT JOIN part_categories pc ON pc.id = p.part_category_id
-      LEFT JOIN system s ON s.id = pl.unit_id
-      ${whereSQL}
-      ORDER BY pl.created_at DESC
-      `,
+        SELECT
+          p.id,
+          p.name,
+          p.part_category_id,
+          p.dpn,
+          pc.name AS category_name
+        FROM parts p
+        LEFT JOIN part_categories pc ON pc.id = p.part_category_id
+        ${whereSql}
+        ORDER BY p.name ASC
+        `,
       params
     );
-    res.json(rows);
+    return res.json(rows);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "Failed to list part items" });
+    return res.status(500).json({ error: "Failed to list parts" });
   }
 });
 
-/**
- * GET /api/v1/parts/list/:ppid
- * Fetch a single part item by PPID (PPID is unique).
- */
-router.get("/:ppid", async (req, res) => {
-  const ppid = String(req.params.ppid || "").toUpperCase();
+// GET /api/v1/systems/part/:id
+router.get("/:id", async (req, res) => {
   try {
     const { rows } = await db.query(
       `
-      SELECT
-        pl.ppid,
-        pl.id,
-        pl.part_id,
-        p.name AS part_name,
-        p.dpn AS part_dpn,
-        pl.place,
-        pl.unit_id,
-        s.service_tag AS unit_service_tag,
-        pl.is_functional,
-        pl.created_at,
-        pl.updated_at
-      FROM part_list pl
-      JOIN parts  p  ON p.id = pl.part_id
-      LEFT JOIN system s ON s.id = pl.unit_id
-      WHERE pl.ppid = $1
-      `,
-      [ppid]
+        SELECT
+          p.id,
+          p.name,
+          p.part_category_id,
+          p.dpn,
+          pc.name AS category_name
+        FROM parts p
+        LEFT JOIN part_categories pc ON pc.id = p.part_category_id
+        WHERE p.id = $1
+        `,
+      [req.params.id]
     );
-    if (!rows.length)
-      return res.status(404).json({ error: "Part item not found" });
-    res.json(rows[0]);
+    if (!rows.length) return res.status(404).json({ error: "Part not found" });
+    return res.json(rows[0]);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "Failed to fetch part item" });
+    return res.status(500).json({ error: "Failed to fetch part" });
   }
 });
 
-/**
- * POST /api/v1/parts/list/:ppid
- * Body: { part_id, place?='inventory', unit_id?, is_functional?=true }
- * Creates a new physical item with the given PPID.
- */
-router.post("/:ppid", authenticateToken, async (req, res) => {
-  const ppid = String(req.params.ppid || "").toUpperCase();
-  const {
-    part_id,
-    place = "inventory",
-    unit_id,
-    is_functional = true,
-  } = req.body || {};
+// POST /api/v1/systems/part   { name, dpn, part_category_id? }  (admin)
+router.post("/", authenticateToken, ensureAdmin, async (req, res) => {
+  const { name, part_category_id, dpn } = req.body || {};
+  const cleanName = (name || "").trim();
+  const cleanDpn = (dpn || "").trim();
 
-  if (!ppid) return res.status(400).json({ error: "PPID is required in path" });
-  if (!part_id) return res.status(400).json({ error: "part_id is required" });
-  if (place === "unit" && !unit_id) {
-    return res
-      .status(400)
-      .json({ error: "unit_id required when place='unit'" });
+  if (!cleanName || !cleanDpn) {
+    return res.status(400).json({ error: "name and dpn are required" });
   }
 
   try {
     const { rows } = await db.query(
       `
-      INSERT INTO part_list (ppid, part_id, place, unit_id, is_functional)
-      VALUES ($1,   $2,      $3,    $4,      $5)
-      RETURNING *
-      `,
-      [ppid, part_id, place, place === "unit" ? unit_id : null, !!is_functional]
+        INSERT INTO parts (name, part_category_id, dpn)
+        VALUES ($1, $2, $3)
+        RETURNING id, name, part_category_id, dpn
+        `,
+      [cleanName, part_category_id || null, cleanDpn]
     );
-    res.status(201).json(rows[0]);
+    return res.status(201).json(rows[0]);
   } catch (e) {
     console.error(e);
-    if (e.code === "23505")
-      return res.status(409).json({ error: "PPID already exists" }); // unique_violation
-    if (e.code === "23503")
-      return res.status(400).json({ error: "Invalid part_id or unit_id" }); // FK
-    if (e.code === "23514")
-      return res.status(400).json({ error: "Invalid place/unit pairing" }); // CHECK
-    res.status(500).json({ error: "Failed to create part item" });
+    if (isPgUniqueViolation(e)) {
+      if (e.constraint === "parts_name_key") {
+        return res.status(409).json({ error: "Part name already exists" });
+      }
+      if (e.constraint === "parts_dpn_key") {
+        return res.status(409).json({ error: "Part DPN already exists" });
+      }
+      return res
+        .status(409)
+        .json({ error: "Unique constraint violation on parts" });
+    }
+    return res.status(500).json({ error: "Failed to create part" });
   }
 });
 
-/**
- * PATCH /api/v1/parts/list/:ppid
- * Body: { part_id?, place?, unit_id?, is_functional?, ppid? }  // ppid lets you rename
- */
-router.patch("/:ppid", authenticateToken, async (req, res) => {
-  const current = String(req.params.ppid || "").toUpperCase();
-  const { part_id, place, unit_id, is_functional, ppid } = req.body || {};
-
-  if (
-    part_id === undefined &&
-    place === undefined &&
-    unit_id === undefined &&
-    is_functional === undefined &&
-    ppid === undefined
-  ) {
-    return res.status(400).json({ error: "Nothing to update" });
-  }
+// PATCH /api/v1/systems/part/:id   { name?, dpn?, part_category_id? }  (admin)
+router.patch("/:id", authenticateToken, ensureAdmin, async (req, res) => {
+  const { name, part_category_id, dpn } = req.body || {};
 
   const fields = [];
   const vals = [];
 
-  if (part_id !== undefined) {
-    fields.push(`part_id = $${fields.length + 1}`);
-    vals.push(part_id);
+  if (typeof name !== "undefined") {
+    fields.push(`name = $${fields.length + 1}`);
+    vals.push(String(name || "").trim());
   }
-  if (place !== undefined) {
-    fields.push(`place = $${fields.length + 1}`);
-    vals.push(place);
+  if (typeof part_category_id !== "undefined") {
+    fields.push(`part_category_id = $${fields.length + 1}`);
+    vals.push(part_category_id || null);
   }
-  if (unit_id !== undefined) {
-    fields.push(`unit_id = $${fields.length + 1}`);
-    vals.push(unit_id);
-  }
-  if (is_functional !== undefined) {
-    fields.push(`is_functional = $${fields.length + 1}`);
-    vals.push(!!is_functional);
-  }
-  if (ppid !== undefined) {
-    fields.push(`ppid = $${fields.length + 1}`);
-    vals.push(ppid ? ppid.toUpperCase() : null);
+  if (typeof dpn !== "undefined") {
+    const cleanDpn = String(dpn || "").trim();
+    if (!cleanDpn) {
+      return res.status(400).json({ error: "dpn cannot be empty" });
+    }
+    fields.push(`dpn = $${fields.length + 1}`);
+    vals.push(cleanDpn);
   }
 
-  vals.push(current);
+  if (!fields.length) {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
 
   try {
     const { rows } = await db.query(
-      `UPDATE part_list SET ${fields.join(", ")} WHERE ppid = $${
-        vals.length
-      } RETURNING *`,
-      vals
+      `
+        UPDATE parts
+           SET ${fields.join(", ")}
+         WHERE id = $${fields.length + 1}
+     RETURNING id, name, part_category_id, dpn
+        `,
+      [...vals, req.params.id]
     );
-    if (!rows.length)
-      return res.status(404).json({ error: "Part item not found" });
-    res.json(rows[0]);
+    if (!rows.length) return res.status(404).json({ error: "Part not found" });
+    return res.json(rows[0]);
   } catch (e) {
     console.error(e);
-    if (e.code === "23505")
-      return res.status(409).json({ error: "PPID already exists" });
-    if (e.code === "23503")
-      return res.status(400).json({ error: "Invalid part_id or unit_id" });
-    if (e.code === "23514")
-      return res.status(400).json({ error: "Invalid place/unit pairing" });
-    res.status(500).json({ error: "Failed to update part item" });
+    if (isPgUniqueViolation(e)) {
+      if (e.constraint === "parts_name_key") {
+        return res.status(409).json({ error: "Part name already exists" });
+      }
+      if (e.constraint === "parts_dpn_key") {
+        return res.status(409).json({ error: "Part DPN already exists" });
+      }
+      return res
+        .status(409)
+        .json({ error: "Unique constraint violation on parts" });
+    }
+    return res.status(500).json({ error: "Failed to update part" });
   }
 });
 
-/**
- * DELETE /api/v1/parts/list/:ppid
- * Only delete when the item is currently in inventory.
- */
-router.delete("/:ppid", authenticateToken, async (req, res) => {
-  const ppid = String(req.params.ppid || "").toUpperCase();
+// DELETE /api/v1/systems/part/:id
+router.delete("/:id", authenticateToken, ensureAdmin, async (req, res) => {
+  const id = req.params.id;
   try {
-    const { rows } = await db.query(
-      `DELETE FROM part_list WHERE ppid = $1 AND place = 'inventory' RETURNING ppid`,
-      [ppid]
+    // Block delete if referenced in part_list
+    const ref = await db.query(
+      `
+            SELECT EXISTS(
+              SELECT 1 FROM part_list WHERE part_id = $1
+            ) AS used
+          `,
+      [id]
     );
-    if (!rows.length) {
+
+    if (ref.rows[0].used) {
       return res.status(409).json({
-        error:
-          "Can only delete items that are in inventory (or PPID not found)",
+        error: "Cannot delete part: parts in inventory or in systems",
       });
     }
-    res.json({ message: "Part item deleted" });
+
+    const del = await db.query(`DELETE FROM parts WHERE id = $1`, [id]);
+    if (del.rowCount === 0) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+
+    return res.json({ message: "Part deleted" });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "Failed to delete part item" });
+    return res.status(500).json({ error: "Failed to delete part" });
   }
 });
 

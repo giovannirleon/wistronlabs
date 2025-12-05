@@ -460,26 +460,24 @@ function useApi() {
 
   // Part Categories API
   const getPartCategories = ({ q } = {}) =>
-    fetchJSON(
-      `/systems/part-category${q ? `?q=${encodeURIComponent(q)}` : ""}`
-    );
+    fetchJSON(`/part-categories${q ? `?q=${encodeURIComponent(q)}` : ""}`);
 
   const createPartCategory = ({ name }) =>
-    fetchJSON(`/systems/part-category`, {
+    fetchJSON(`/part-categories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: String(name || "").trim() }),
     });
 
   const updatePartCategory = (id, payload) =>
-    fetchJSON(`/systems/part-category/${encodeURIComponent(id)}`, {
+    fetchJSON(`/part-categories/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload), // { name? }
     });
 
   const deletePartCategory = (id) =>
-    fetchJSON(`/systems/part-category/${encodeURIComponent(id)}`, {
+    fetchJSON(`/part-categories/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
 
@@ -489,11 +487,11 @@ function useApi() {
     if (q) qs.push(`q=${encodeURIComponent(q)}`);
     if (category_id) qs.push(`category_id=${encodeURIComponent(category_id)}`);
     const suffix = qs.length ? `?${qs.join("&")}` : "";
-    return fetchJSON(`/systems/part${suffix}`);
+    return fetchJSON(`/parts${suffix}`);
   };
 
   const createPart = ({ name, part_category_id }) =>
-    fetchJSON(`/systems/part`, {
+    fetchJSON(`/parts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -503,14 +501,14 @@ function useApi() {
     });
 
   const updatePart = (id, payload) =>
-    fetchJSON(`/systems/part/${encodeURIComponent(id)}`, {
+    fetchJSON(`/parts/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload), // { name?, part_category_id? }
     });
 
   const deletePart = (id) =>
-    fetchJSON(`/systems/part/${encodeURIComponent(id)}`, { method: "DELETE" });
+    fetchJSON(`/parts/${encodeURIComponent(id)}`, { method: "DELETE" });
 
   const getMe = () => fetchJSON(`/auth/me`);
 
@@ -590,17 +588,17 @@ function useApi() {
     if (isFuncStr !== undefined) add("is_functional", isFuncStr);
 
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return fetchJSON(`/parts/${suffix}`);
+    return fetchJSON(`/part-items/${suffix}`);
   };
 
   // Read one by PPID
   const getPartItem = async (ppid) =>
-    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`);
+    fetchJSON(`/part-items/${encodeURIComponent(String(ppid).toUpperCase())}`);
 
   // Create by PPID in path
   // payload = { part_id, place='inventory', unit_id, is_functional=true }
   const createPartItem = async (ppid, payload) =>
-    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`, {
+    fetchJSON(`/part-items/${encodeURIComponent(String(ppid).toUpperCase())}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -609,7 +607,7 @@ function useApi() {
   // Update by PPID in path
   // payload can include: { part_id?, place?, unit_id?, is_functional?, ppid? }  // ppid renames
   const updatePartItem = async (ppid, payload) =>
-    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`, {
+    fetchJSON(`/part-items/${encodeURIComponent(String(ppid).toUpperCase())}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -617,7 +615,7 @@ function useApi() {
 
   // Delete by PPID in path
   const deletePartItem = async (ppid) =>
-    fetchJSON(`/parts/${encodeURIComponent(String(ppid).toUpperCase())}`, {
+    fetchJSON(`/part-items/${encodeURIComponent(String(ppid).toUpperCase())}`, {
       method: "DELETE",
     });
 
