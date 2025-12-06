@@ -490,12 +490,13 @@ function useApi() {
     return fetchJSON(`/parts${suffix}`);
   };
 
-  const createPart = ({ name, part_category_id }) =>
+  const createPart = ({ name, dpn, part_category_id }) =>
     fetchJSON(`/parts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: String(name || "").trim(),
+        dpn: String(dpn || "").trim(),
         part_category_id: part_category_id || null,
       }),
     });

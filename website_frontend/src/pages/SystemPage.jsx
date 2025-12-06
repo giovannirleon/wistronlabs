@@ -42,7 +42,9 @@ const buildGroupedPartOptions = (parts = []) => {
     if (!byCat.has(cat)) byCat.set(cat, []);
     byCat.get(cat).push({
       value: p.id,
-      label: p.name,
+      label: p.name, // keep label as name for singleValue
+      name: p.name, // explicit name
+      dpn: p.dpn, // <-- NEW
       category_name: cat,
       part_category_id: p.part_category_id,
     });
@@ -56,29 +58,45 @@ const buildGroupedPartOptions = (parts = []) => {
     }));
 };
 
-// 2) search by part label OR category name
+// 2) search by part label OR category name OR DPN
 const filterPartOption = (option, rawInput) => {
   if (!rawInput) return true;
   const term = rawInput.toLowerCase();
+
   const label = (option?.label || "").toLowerCase();
   const cat = (
     option?.data?.category_name ??
     option?.category_name ??
     ""
   ).toLowerCase();
-  return label.includes(term) || cat.includes(term);
+  const dpn = (option?.data?.dpn ?? option?.dpn ?? "").toLowerCase();
+
+  return (
+    label.includes(term) || cat.includes(term) || dpn.includes(term) // <-- NEW: searchable by DPN
+  );
 };
 
-// 3) optional: custom option line (shows a tiny category chip)
+// 3) custom  line (shows DPN + tiny category chip)
 const PartOption = (props) => {
   const cat = props.data.category_name;
+  const dpn = props.data.dpn;
+
   return (
     <components.Option {...props}>
-      <div className="flex items-center justify-between">
-        <span>{props.label}</span>
-        <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-          {cat}
-        </span>
+      <div className="flex flex-col gap-1">
+        <div className="text-sm font-medium text-gray-800 truncate">
+          {props.data.name || props.label}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          {dpn && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-mono">
+              {dpn}
+            </span>
+          )}
+          <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+            {cat}
+          </span>
+        </div>
       </div>
     </components.Option>
   );
@@ -281,10 +299,10 @@ function SystemPage() {
   const removeGoodBlock = (id) =>
     setGoodBlocks((list) => list.filter((b) => b.id !== id));
 
-  // Map part_id -> part name for quick lookups in note lines
+  // Map part_id -> part name (not "DPN - name") for notes
   const partNameById = useMemo(() => {
     const m = new Map();
-    flatPartOptions.forEach((o) => m.set(o.value, o.label));
+    flatPartOptions.forEach((o) => m.set(o.value, o.name || o.label));
     return m;
   }, [flatPartOptions]);
 

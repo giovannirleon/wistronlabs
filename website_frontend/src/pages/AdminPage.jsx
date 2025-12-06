@@ -322,6 +322,7 @@ function AdminPage() {
     baselineParts.forEach((p) =>
       m.set(String(p.id), {
         name: p.name,
+        dpn: p.dpn ?? "",
         part_category_id: p.part_category_id ?? null,
       })
     );
@@ -343,6 +344,7 @@ function AdminPage() {
       return (
         base &&
         (base.name !== p.name ||
+          base.dpn !== p.dpn ||
           (base.part_category_id ?? null) !== (p.part_category_id ?? null))
       );
     });
@@ -356,10 +358,14 @@ function AdminPage() {
     setParts((cur) => [{ id: newId, name: "" }, ...cur]);
   };
 
-  const onPartCellChange = (id, value) => {
+  const onPartCellNameChange = (id, value) => {
     setParts((cur) =>
       cur.map((p) => (p.id === id ? { ...p, name: value } : p))
     );
+  };
+
+  const onPartCellDPNChange = (id, value) => {
+    setParts((cur) => cur.map((p) => (p.id === id ? { ...p, dpn: value } : p)));
   };
 
   const onPartDiscard = () => {
@@ -376,38 +382,68 @@ function AdminPage() {
     try {
       const isTemp = (id) => typeof id === "string" && id.startsWith("new-");
 
+      // New rows: now consider dpn as well
       const newRows = parts.filter(
-        (p) => isTemp(p.id) && (p.name?.trim() || p.part_category_id != null)
+        (p) =>
+          isTemp(p.id) &&
+          ((p.name && p.name.trim()) ||
+            (p.dpn && p.dpn.trim()) ||
+            p.part_category_id != null)
       );
+
+      // Changed rows: detect name, dpn, and category changes
       const changedRows = parts.filter((p) => {
         if (isTemp(p.id)) return false;
         const base = partBaselineMap.get(String(p.id));
+        if (!base) return false;
+
         return (
-          base &&
-          (base.name !== p.name ||
-            (base.part_category_id ?? null) !== (p.part_category_id ?? null))
+          (base.name || "") !== (p.name || "") ||
+          (base.dpn || "") !== (p.dpn || "") ||
+          (base.part_category_id ?? null) !== (p.part_category_id ?? null)
         );
       });
 
+      // --- Create new parts ---
       for (const row of newRows) {
+        const nameSan = (row.name || "").trim().toUpperCase();
+        const dpnSan = (row.dpn || "").trim().toUpperCase();
+
+        if (!nameSan) throw new Error("Part name is required");
+        if (!dpnSan) throw new Error("DPN is required");
+
         const payload = {
-          name: (row.name || "").trim().toUpperCase(),
+          name: nameSan,
+          dpn: dpnSan,
           part_category_id: row.part_category_id || null,
         };
-        if (!payload.name) throw new Error("Part name is required");
+
         await createPart(payload);
       }
 
+      // --- Update existing parts ---
       for (const row of changedRows) {
         const base = partBaselineMap.get(String(row.id));
         const nameSan = (row.name || "").trim().toUpperCase();
+        const dpnSan = (row.dpn || "").trim().toUpperCase();
+
+        if (!nameSan) throw new Error("Part name is required");
+        if (!dpnSan) throw new Error("DPN is required");
+
         const payload = {};
-        if (nameSan !== base.name) payload.name = nameSan;
+
+        if (nameSan !== (base.name || "")) {
+          payload.name = nameSan;
+        }
+        if (dpnSan !== (base.dpn || "")) {
+          payload.dpn = dpnSan;
+        }
         if (
           (row.part_category_id ?? null) !== (base.part_category_id ?? null)
         ) {
           payload.part_category_id = row.part_category_id || null;
         }
+
         if (Object.keys(payload).length) {
           await updatePart(row.id, payload);
         }
@@ -1397,6 +1433,7 @@ function AdminPage() {
                 <thead className="bg-gray-50 text-gray-600">
                   <tr>
                     <th className="text-left font-medium px-3 py-2">Part</th>
+                    <th className="text-left font-medium px-3 py-2">DPN</th>
                     <th className="text-left font-medium px-3 py-2">
                       Category
                     </th>
@@ -1439,12 +1476,24 @@ function AdminPage() {
                             <input
                               value={p.name ?? ""}
                               onChange={(e) =>
-                                onPartCellChange(p.id, e.target.value)
+                                onPartCellNameChange(p.id, e.target.value)
                               }
                               className={`w-full rounded-md border px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                                 changed ? "border-amber-300" : "border-gray-300"
                               }`}
                               placeholder="e.g. FAN MODULE"
+                            />
+                          </td>
+                          <td className="px-3 py-2 align-middle">
+                            <input
+                              value={p.dpn ?? ""}
+                              onChange={(e) =>
+                                onPartCellDPNChange(p.id, e.target.value)
+                              }
+                              className={`w-full rounded-md border px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                changed ? "border-amber-300" : "border-gray-300"
+                              }`}
+                              placeholder="e.g. A1B2C3"
                             />
                           </td>
                           <td className="px-3 py-2 align-middle">
