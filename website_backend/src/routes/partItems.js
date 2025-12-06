@@ -170,8 +170,8 @@ router.get("/:ppid", async (req, res) => {
 
 /**
  * POST /api/v1/parts/list/:ppid
- * Body: { part_id, place?='inventory', unit_id?, unit_service_tag?, is_functional?=true }
- * - last_unit_id is ALWAYS NULL on creation.
+ * Body: { part_id, place?='inventory', unit_id?, unit_service_tag?, last_unit_id?, is_functional?=true }
+ * - last_unit_id is taken from the body (can be NULL or a valid system.id).
  */
 router.post("/:ppid", authenticateToken, async (req, res) => {
   const ppid = String(req.params.ppid || "").toUpperCase();
@@ -180,6 +180,7 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
     place = "inventory",
     unit_id,
     unit_service_tag,
+    last_unit_id,
     is_functional = true,
   } = req.body || {};
 
@@ -215,10 +216,17 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
     const { rows } = await db.query(
       `
       INSERT INTO part_list (ppid, part_id, place, unit_id, last_unit_id, is_functional)
-      VALUES ($1,   $2,      $3,    $4,      NULL,         $5)
+      VALUES ($1,   $2,      $3,    $4,      $5,           $6)
       RETURNING *
       `,
-      [ppid, part_id, place, resolvedUnitId, !!is_functional]
+      [
+        ppid,
+        part_id,
+        place,
+        resolvedUnitId,
+        last_unit_id ?? null,
+        !!is_functional,
+      ]
     );
     res.status(201).json(rows[0]);
   } catch (e) {
@@ -226,7 +234,9 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
     if (e.code === "23505")
       return res.status(409).json({ error: "PPID already exists" }); // unique_violation
     if (e.code === "23503")
-      return res.status(400).json({ error: "Invalid part_id or unit_id" }); // FK
+      return res.status(400).json({
+        error: "Invalid part_id, unit_id or last_unit_id",
+      }); // FK
     if (e.code === "23514")
       return res.status(400).json({ error: "Invalid place/unit pairing" }); // CHECK
     res.status(500).json({ error: "Failed to create part item" });
@@ -240,23 +250,29 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
  *   place?,
  *   unit_service_tag?,    // preferred
  *   unit_id?,             // optional legacy support
+ *   last_unit_id?,        // explicit control, no auto logic
  *   is_functional?,
  *   ppid?                 // rename PPID
  * }
- * - last_unit_id is computed automatically:
- *   * place: 'unit' -> 'inventory' => last_unit_id = old.unit_id
- *   * unit moves from A -> B       => last_unit_id = A
  */
 router.patch("/:ppid", authenticateToken, async (req, res) => {
   const current = String(req.params.ppid || "").toUpperCase();
-  const { part_id, place, unit_id, unit_service_tag, is_functional, ppid } =
-    req.body || {};
+  const {
+    part_id,
+    place,
+    unit_id,
+    unit_service_tag,
+    last_unit_id,
+    is_functional,
+    ppid,
+  } = req.body || {};
 
   if (
     part_id === undefined &&
     place === undefined &&
     unit_id === undefined &&
     unit_service_tag === undefined &&
+    last_unit_id === undefined &&
     is_functional === undefined &&
     ppid === undefined
   ) {
@@ -264,10 +280,10 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
   }
 
   try {
-    // 1) Load existing row so we can compare
+    // 1) Load existing row so we can compare (for place/unit_id constraint logic)
     const existingResult = await db.query(
       `
-      SELECT place, unit_id, last_unit_id
+      SELECT place, unit_id
       FROM part_list
       WHERE ppid = $1
       `,
@@ -321,27 +337,7 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
       unitExplicitlyChanged = true;
     }
 
-    // 3) Compute new last_unit_id
-    let newLastUnitId = existing.last_unit_id;
-
-    // Case 1: part moved out of a unit back to inventory
-    if (
-      existing.place === "unit" &&
-      newPlace === "inventory" &&
-      existing.unit_id !== null
-    ) {
-      newLastUnitId = existing.unit_id;
-    }
-    // Case 2: part moved from one unit to another
-    else if (
-      existing.unit_id !== null &&
-      newUnitId !== null &&
-      newUnitId !== existing.unit_id
-    ) {
-      newLastUnitId = existing.unit_id;
-    }
-
-    // 4) Build dynamic UPDATE
+    // 3) Build dynamic UPDATE
     const fields = [];
     const vals = [];
 
@@ -357,11 +353,10 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
       fields.push(`unit_id = $${fields.length + 1}`);
       vals.push(newUnitId);
     }
-
-    // Always set last_unit_id based on our computed logic
-    fields.push(`last_unit_id = $${fields.length + 1}`);
-    vals.push(newLastUnitId);
-
+    if (last_unit_id !== undefined) {
+      fields.push(`last_unit_id = $${fields.length + 1}`);
+      vals.push(last_unit_id);
+    }
     if (is_functional !== undefined) {
       fields.push(`is_functional = $${fields.length + 1}`);
       vals.push(!!is_functional);
@@ -369,6 +364,10 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
     if (ppid !== undefined) {
       fields.push(`ppid = $${fields.length + 1}`);
       vals.push(ppid ? ppid.toUpperCase() : null);
+    }
+
+    if (!fields.length) {
+      return res.status(400).json({ error: "Nothing to update" });
     }
 
     vals.push(current);
@@ -388,7 +387,9 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
     if (e.code === "23505")
       return res.status(409).json({ error: "PPID already exists" });
     if (e.code === "23503")
-      return res.status(400).json({ error: "Invalid part_id or unit_id" });
+      return res
+        .status(400)
+        .json({ error: "Invalid part_id, unit_id or last_unit_id" });
     if (e.code === "23514")
       return res.status(400).json({ error: "Invalid place/unit pairing" });
     res.status(500).json({ error: "Failed to update part item" });
