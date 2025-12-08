@@ -335,11 +335,14 @@ function SystemPage() {
 
   const donorUnitOptions = useMemo(
     () =>
-      donorSystems.map((u) => ({
-        value: u.id,
-        label: `${u.service_tag} – ${u.location || ""}`,
-      })),
-    [donorSystems]
+      donorSystems
+        // ⬇️ exclude the current unit
+        .filter((u) => !system || u.id !== system.id)
+        .map((u) => ({
+          value: u.id,
+          label: `${u.service_tag} – ${u.location || ""}`,
+        })),
+    [donorSystems, system?.id]
   );
 
   const donorUnitsById = useMemo(() => {
