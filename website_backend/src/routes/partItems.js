@@ -28,6 +28,7 @@ router.get("/", async (req, res) => {
     unit_id,
     unit_service_tag,
     q,
+    replacement_defective,
   } = req.query;
 
   const where = [];
@@ -46,6 +47,15 @@ router.get("/", async (req, res) => {
       is_functional === true;
     params.push(val);
     where.push(`pl.is_functional = $${params.length}`);
+  }
+
+  if (typeof replacement_defective !== "undefined") {
+    const val =
+      replacement_defective === "true" ||
+      replacement_defective === "1" ||
+      replacement_defective === true;
+    params.push(val);
+    where.push(`pl.replacement_defective = $${params.length}`);
   }
 
   if (part_id) {
@@ -109,6 +119,7 @@ router.get("/", async (req, res) => {
         pl.last_unit_id,
         s_last.service_tag AS last_unit_service_tag,
         pl.is_functional,
+        pl.replacement_defective,
         pl.created_at,
         pl.updated_at
       FROM part_list pl
@@ -149,6 +160,7 @@ router.get("/:ppid", async (req, res) => {
         pl.last_unit_id,
         s_last.service_tag AS last_unit_service_tag,
         pl.is_functional,
+        pl.replacement_defective,
         pl.created_at,
         pl.updated_at
       FROM part_list pl
@@ -182,6 +194,7 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
     unit_service_tag,
     last_unit_id,
     is_functional = true,
+    replacement_defective = false,
   } = req.body || {};
 
   if (!ppid) return res.status(400).json({ error: "PPID is required in path" });
@@ -215,8 +228,8 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
 
     const { rows } = await db.query(
       `
-      INSERT INTO part_list (ppid, part_id, place, unit_id, last_unit_id, is_functional)
-      VALUES ($1,   $2,      $3,    $4,      $5,           $6)
+      INSERT INTO part_list (ppid, part_id, place, unit_id, last_unit_id, is_functional, replacement_defective)
+      VALUES ($1,   $2,      $3,    $4,      $5,           $6,            $7)
       RETURNING *
       `,
       [
@@ -226,8 +239,10 @@ router.post("/:ppid", authenticateToken, async (req, res) => {
         resolvedUnitId,
         last_unit_id ?? null,
         !!is_functional,
+        !!replacement_defective,
       ]
     );
+
     res.status(201).json(rows[0]);
   } catch (e) {
     console.error(e);
@@ -264,6 +279,7 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
     unit_service_tag,
     last_unit_id,
     is_functional,
+    replacement_defective,
     ppid,
   } = req.body || {};
 
@@ -274,7 +290,8 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
     unit_service_tag === undefined &&
     last_unit_id === undefined &&
     is_functional === undefined &&
-    ppid === undefined
+    ppid === undefined &&
+    replacement_defective === undefined
   ) {
     return res.status(400).json({ error: "Nothing to update" });
   }
@@ -368,6 +385,11 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
 
     if (!fields.length) {
       return res.status(400).json({ error: "Nothing to update" });
+    }
+
+    if (replacement_defective !== undefined) {
+      fields.push(`replacement_defective = $${fields.length + 1}`);
+      vals.push(!!replacement_defective);
     }
 
     vals.push(current);

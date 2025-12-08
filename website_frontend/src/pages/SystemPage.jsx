@@ -188,6 +188,12 @@ function SystemPage() {
     usePrintConfirmPendingParts();
   const { confirmPrintL11, ConfirPrintmModalL11 } = usePrintConfirmL11();
 
+  // For GOOD parts marked Not Needed / Defective:
+  // - which inventory BAD parts were originally swapped from this unit
+  // - and which ones had their Original PPID auto-locked
+  const [invOriginalsByPPID, setInvOriginalsByPPID] = useState({}); // goodPPID -> [{ppid, ...}]
+  const [autoOriginalLockedByPPID, setAutoOriginalLockedByPPID] = useState({}); // goodPPID -> true
+
   const currentLocation = history[0]?.to_location || ""; // most recent location name
 
   const resolvedIDs = [6, 7, 8, 9];
@@ -925,6 +931,123 @@ function SystemPage() {
     });
   };
 
+  // All BAD parts of this part_id that "belong" to this unit (last_unit_id == this unit),
+  // including ones in other units and in inventory. We also annotate whether the
+  // owning unit is still "live" (active or RMA with an open pallet) using donorSystems.
+  const findOriginalMatches = async (partId) => {
+    if (!partId || !system?.id) return [];
+    const thisUnitId = Number(system.id);
+
+    try {
+      const [unitRows, invRows] = await Promise.all([
+        getPartItems({
+          place: "unit",
+          is_functional: false,
+          part_id: partId,
+        }),
+        getPartItems({
+          place: "inventory",
+          is_functional: false,
+          part_id: partId,
+        }),
+      ]);
+
+      // BAD parts currently in some unit, whose last_unit_id == this unit
+      const unitMatches = (unitRows || [])
+        .filter((r) => Number(r.last_unit_id) === thisUnitId)
+        // Ignore bad parts that currently live in THIS unit
+        .filter((r) => Number(r.unit_id) !== thisUnitId)
+        .map((r) => {
+          const ownerUnitId = r.unit_id ? Number(r.unit_id) : null;
+          const owner = donorSystems.find((u) => u.id === ownerUnitId);
+
+          return {
+            ...r,
+            place: "unit",
+            owner_unit_id: ownerUnitId,
+            owner_service_tag: r.unit_service_tag || owner?.service_tag || null,
+            // "live origin" = in donorSystems (active or RMA with open pallet, not Sent to L11)
+            is_live_origin: !!owner,
+          };
+        });
+
+      // BAD parts sitting in inventory whose last_unit_id == this unit
+      const inventoryMatches = (invRows || [])
+        .filter((r) => Number(r.last_unit_id) === thisUnitId)
+        .map((r) => ({
+          ...r,
+          place: "inventory",
+          owner_unit_id: null,
+          owner_service_tag: null,
+          is_live_origin: false, // inventory never counts as "live unit"
+        }));
+
+      return [...unitMatches, ...inventoryMatches];
+    } catch (e) {
+      console.error("findOriginalMatches failed for part", partId, e);
+      return [];
+    }
+  };
+
+  // --- Auto-detect "original" BAD part for a GOOD part in this unit ---
+  // Priority: always use matches where last_unit_id == this unit.
+  // We keep all matches (live + shipped), and auto-lock only when there
+  // is exactly one match AND it comes from a live unit.
+  const autoSelectOriginalForGood = async (goodPPID, partId) => {
+    if (!partId || !system?.id) return;
+
+    try {
+      const matches = await findOriginalMatches(partId);
+
+      setInvOriginalsByPPID((prev) => ({
+        ...prev,
+        [goodPPID]: matches,
+      }));
+
+      if (matches.length === 1) {
+        const chosen = matches[0];
+
+        setGoodActionByPPID((prev) => {
+          const prevCfg = prev[goodPPID] || {};
+          const nextCfg = {
+            ...prevCfg,
+            original_bad_ppid: chosen.ppid,
+          };
+
+          // ✅ Only force Defective if this is from a non-live *unit* donor
+          // Inventory originals should NEVER force "Defective".
+          const isNonLiveDonor =
+            chosen.place === "unit" &&
+            !!chosen.owner_unit_id &&
+            !chosen.is_live_origin;
+
+          if (isNonLiveDonor && prevCfg.action === "not_needed") {
+            nextCfg.action = "defective";
+          }
+
+          return {
+            ...prev,
+            [goodPPID]: nextCfg,
+          };
+        });
+
+        setAutoOriginalLockedByPPID((prev) => ({
+          ...prev,
+          [goodPPID]: true,
+        }));
+      } else {
+        // Multiple or zero matches → user must choose, no auto-lock
+        setAutoOriginalLockedByPPID((prev) => {
+          const copy = { ...prev };
+          delete copy[goodPPID];
+          return copy;
+        });
+      }
+    } catch (err) {
+      console.error("Failed to auto-select original PPID for", goodPPID, err);
+    }
+  };
+
   const handleDelete = async () => {
     console.log("deleting");
 
@@ -1404,7 +1527,7 @@ function SystemPage() {
       return ` - ${name} (${goodPPID}) has been added and (${badPPID}) has been placed into inventory as bad.`;
     });
 
-    // 2) Good part currently in the system returned to inventory (Defective | Not Needed)
+    // 2) Good part currently in the system returned / reconciled (Defective | Not Needed)
     const returnedNotes = actionEntriesPreview.map(([goodPPID, cfg]) => {
       const item = (unitParts || []).find(
         (r) => normPPID(r.ppid) === normPPID(goodPPID)
@@ -1414,14 +1537,33 @@ function SystemPage() {
         (item?.part_id
           ? partNameById.get(item.part_id) || `#${item?.part_id}`
           : "Part");
+
       const reason = cfg.action === "defective" ? "defective" : "not needed";
+
       const original = String(cfg.original_bad_ppid || "")
         .toUpperCase()
         .trim();
+      const goodUpper = String(goodPPID).toUpperCase().trim();
 
-      return ` - ${name} (${String(goodPPID)
-        .toUpperCase()
-        .trim()}) has been placed back into inventory due to it being ${reason}${
+      // Look up the selected original to see if it came from a non-live donor
+      const matches = invOriginalsByPPID[goodPPID] || [];
+      const originalNorm = normPPID(original);
+      const selectedMatch =
+        matches.find((m) => normPPID(m.ppid) === originalNorm) || null;
+
+      const isInactiveDonor =
+        cfg.action === "defective" &&
+        !!selectedMatch &&
+        !!selectedMatch.owner_unit_id &&
+        !selectedMatch.is_live_origin;
+
+      if (isInactiveDonor && original) {
+        // Special case: donor system is shipped / inactive, no real "swap" possible
+        return ` - ${name} (${goodUpper}) has been marked as defective in this unit because the original system has already shipped or is inactive; original part (${original}) was not reinstalled.`;
+      }
+
+      // Default messaging (live donor / inventory scenarios)
+      return ` - ${name} (${goodUpper}) has been placed back into its original location due to it being ${reason}${
         original ? ` and original part (${original}) reinstalled` : ""
       }.`;
     });
@@ -1497,17 +1639,17 @@ function SystemPage() {
     // Validate "Not Needed / Defective" swaps for GOOD parts
     for (const [goodPPID, cfg] of Object.entries(goodActionByPPID)) {
       if (!cfg?.action) continue;
+
+      const good = normPPID(goodPPID);
+
       if (!cfg.original_bad_ppid?.trim()) {
         setFormError(
-          "For each Good part marked Not Needed or Defective, you must select an Original PPID (a BAD inventory PPID of the same part)."
+          "For each Good part marked Not Needed or Defective, you must select an Original PPID."
         );
         return;
       }
-      // Prevent same PPID
-      if (
-        goodPPID.toUpperCase().trim() ===
-        cfg.original_bad_ppid.toUpperCase().trim()
-      ) {
+
+      if (good === normPPID(cfg.original_bad_ppid)) {
         setFormError(
           "Original PPID must be different from the current good PPID."
         );
@@ -1623,76 +1765,209 @@ function SystemPage() {
               const donorUnitId = b.donor_unit_id;
 
               // 1) Add GOOD part into CURRENT unit
+              //    last_unit_id = donor unit (where it came from)
               await createPartItem(donorGoodPPID, {
                 part_id: partId,
                 place: "unit",
                 unit_id: system.id,
                 is_functional: true,
+                last_unit_id: donorUnitId,
               });
 
               // 2) Add BAD part into DONOR unit
+              //    last_unit_id = current unit (where the bad part originated)
               await createPartItem(badPPID, {
                 part_id: partId,
                 place: "unit",
                 unit_id: donorUnitId,
                 is_functional: false,
+                last_unit_id: system.id,
               });
             } else {
               // --- Normal inventory flow ---
               const goodPPID = String(b.ppid).toUpperCase().trim();
 
-              // 1) Move GOOD from inventory -> unit
+              // 1) Move GOOD from inventory -> unit (no last_unit change)
               await updatePartItem(goodPPID, {
                 place: "unit",
                 unit_id: system.id,
               });
 
-              // 2) Create BAD in inventory (same part)
+              // 2) Create BAD in inventory (same part), originating from this unit
               await createPartItem(badPPID, {
                 part_id: partId,
                 place: "inventory",
                 unit_id: null,
                 is_functional: false,
+                last_unit_id: system.id,
               });
             }
           })
         );
       }
 
-      // B) Handle GOOD part actions: bring BAD from inventory into unit,
-      //    then move the GOOD back to inventory (Not Needed) or mark BAD then move to inventory (Defective)
+      // B) Handle GOOD part actions:
+      //    - If original_bad_ppid belongs to a live unit (matches last_unit_id == this unit and owner in donorSystems):
+      //         → delete GOOD, move that BAD back into this unit.
+      //    - If original_bad_ppid belongs to a shipped / inactive unit or inventory (with last_unit_id == this unit):
+      //         → only Defective is allowed; mark GOOD as bad in this unit, leave the matched part untouched.
+      //    - If there are no last_unit matches, original_bad_ppid comes from inventory:
+      //         → inventory swap (GOOD → inventory, BAD → unit).
       if (Object.keys(goodActionByPPID).length > 0) {
         const entries = Object.entries(goodActionByPPID).filter(
-          ([goodPPID, cfg]) => !!cfg?.action && !!cfg?.original_bad_ppid
+          ([, cfg]) => !!cfg?.action
         );
 
         await Promise.all(
           entries.map(async ([goodPPID, cfg]) => {
-            const badPPID = String(cfg.original_bad_ppid).toUpperCase().trim();
-            const good = String(goodPPID).toUpperCase().trim();
+            const good = normPPID(goodPPID);
+            const action = cfg.action; // "not_needed" | "defective"
 
-            // 1) Move BAD from inventory -> unit (keep nonfunctional)
+            const goodItem = (unitParts || []).find(
+              (r) => normPPID(r.ppid) === good
+            );
+            if (!goodItem) return;
+
+            // Good part originally came from inventory (no last_unit_id recorded)
+            const fromInventory = goodItem.last_unit_id == null;
+
+            const matches = invOriginalsByPPID[goodPPID] || [];
+            const origBadNorm = normPPID(cfg.original_bad_ppid || "");
+            const candidate = origBadNorm
+              ? matches.find((m) => normPPID(m.ppid) === origBadNorm)
+              : null;
+
+            // Helper: scrap borrowed good (move to inventory as bad, then delete)
+            const scrapBorrowedGood = async () => {
+              await updatePartItem(good, {
+                place: "inventory",
+                unit_id: null,
+                is_functional: false,
+                // NOTE: for Not Needed, do NOT overwrite last_unit_id here.
+                // We want to preserve where this good part actually came from
+                // (e.g. the donor unit), not stamp it with the current unit.
+              });
+              await deletePartItem(good);
+            };
+
+            // 1) "Live unit" origin (donor logic, excluding current unit)
+            if (
+              candidate &&
+              candidate.place === "unit" &&
+              candidate.is_live_origin
+            ) {
+              const originUnitId = candidate.unit_id;
+
+              // Always move the original BAD back into the CURRENT unit
+              await updatePartItem(candidate.ppid, {
+                place: "unit",
+                unit_id: system.id,
+                is_functional: false,
+                last_unit_id: originUnitId,
+              });
+
+              if (action === "not_needed") {
+                // NOT NEEDED:
+                // - delete good part (same as before)
+                //   (we move it to inventory as bad, then delete record)
+                await scrapBorrowedGood();
+              } else if (action === "defective") {
+                // DEFECTIVE:
+                // - move GOOD part back to the donor (origin) unit
+                // - mark it as defective there
+                await updatePartItem(good, {
+                  place: "unit",
+                  unit_id: originUnitId,
+                  is_functional: false,
+                  // this unit "used up" the part; record that if you want
+                  last_unit_id: system.id,
+                });
+              }
+
+              return;
+            }
+
+            // 2) Origin is shipped / inactive unit or inventory (still with last_unit_id = this unit).
+            //    UI should only allow Defective here; we just mark the GOOD as bad in this unit.
+            if (candidate && !candidate.is_live_origin) {
+              if (fromInventory) {
+                // Good part was originally from inventory (last_unit_id is null on the good).
+                // We have a matching original BAD (candidate) in inventory with last_unit_id = this unit.
+                // Behavior:
+                //   * Move the original BAD back into THIS unit.
+                //   * Send the GOOD back to inventory as good (Not Needed) or bad (Defective).
+
+                // 1) Move original bad into this unit
+                await updatePartItem(candidate.ppid, {
+                  place: "unit",
+                  unit_id: system.id,
+                  is_functional: false, // original was tracked as bad
+                  // keep candidate.last_unit_id as-is (it should already be this unit)
+                });
+
+                // 2) Move the good part back to inventory
+                const goodUpdate = {
+                  place: "inventory",
+                  unit_id: null,
+                  is_functional: action === "defective" ? false : true,
+                };
+
+                if (action === "defective") {
+                  // This unit actually consumed/failed the part; stamp provenance now.
+                  goodUpdate.last_unit_id = system.id;
+                }
+
+                await updatePartItem(good, goodUpdate);
+              } else {
+                // Origin is a shipped/inactive donor unit or an inventory part that
+                // already has last_unit_id tied to this unit.
+                if (action === "defective") {
+                  // Mark it bad in this unit (this unit keeps the consumed part)
+                  await updatePartItem(good, {
+                    place: "unit",
+                    unit_id: system.id,
+                    is_functional: false,
+                  });
+                } else {
+                  // Not Needed: simple return-to-inventory as good, but *don’t* touch last_unit_id
+                  await updatePartItem(good, {
+                    place: "inventory",
+                    unit_id: null,
+                    is_functional: true,
+                  });
+                }
+              }
+              return;
+            }
+
+            // 3) No last_unit matches for this unit → pure inventory swap
+            const badPPID = origBadNorm;
+            if (!badPPID) {
+              // nothing to do if we somehow got here without an original
+              return;
+            }
+
+            // Move the BAD from inventory -> unit (keep nonfunctional)
             await updatePartItem(badPPID, {
               place: "unit",
               unit_id: system.id,
               is_functional: false,
             });
 
-            // 2) Handle the GOOD currently in unit
-            if (cfg.action === "not_needed") {
-              // just send the good part back to inventory
-              await updatePartItem(good, {
-                place: "inventory",
-                unit_id: null,
-              });
-            } else if (cfg.action === "defective") {
-              // mark the good part as bad and move it back to inventory
-              await updatePartItem(good, {
-                is_functional: false,
-                place: "inventory",
-                unit_id: null,
-              });
+            // Move the GOOD from unit -> inventory, functional/non-functional based on action.
+            // For Defective we record this unit as the consumer; for Not Needed we leave last_unit_id unchanged.
+            const goodUpdate = {
+              place: "inventory",
+              unit_id: null,
+              is_functional: action === "defective" ? false : true,
+            };
+
+            if (action === "defective") {
+              // Only defective should stamp this unit as last_unit_id
+              goodUpdate.last_unit_id = system.id;
             }
+
+            await updatePartItem(good, goodUpdate);
           })
         );
       }
@@ -1725,8 +2000,10 @@ function SystemPage() {
               place: "inventory",
               unit_id: null,
               is_functional: false,
+              last_unit_id: system.id, // came from this unit
             });
-            // Move the GOOD from inventory -> unit
+
+            // Move the GOOD from inventory -> unit (no last_unit change)
             await updatePartItem(String(goodPPID).toUpperCase().trim(), {
               place: "unit",
               unit_id: system.id,
@@ -1744,12 +2021,12 @@ function SystemPage() {
               is_functional: true,
               place: "inventory",
               unit_id: null,
+              last_unit_id: system.id, // moved out of this unit
             });
             await deletePartItem(ppid);
           })
         );
 
-        // refresh the list only if we actually removed something
         await refreshUnitParts();
         setToRemovePPIDs(new Set());
       }
@@ -1874,6 +2151,8 @@ function SystemPage() {
       setSelectedRootCauseSubId(null);
       setGoodActionByPPID({});
       setReplacementByOldPPID({});
+      setInvOriginalsByPPID({});
+      setAutoOriginalLockedByPPID({});
       showToast("Updated System Location", "success", 3000, "bottom-right");
       await fetchData();
     } catch (err) {
@@ -2366,17 +2645,17 @@ function SystemPage() {
                                         updateGoodBlock(block.id, "ppid", next);
                                       }}
                                       options={[
-                                        {
-                                          value: PULL_FROM_UNIT_VALUE,
-                                          label: "Pull from Unit",
-                                          isSpecial: true,
-                                        },
                                         ...((block.part_id &&
                                           getFilteredGoodOptions(
                                             block.part_id,
                                             block.ppid
                                           )) ||
                                           []),
+                                        {
+                                          value: PULL_FROM_UNIT_VALUE,
+                                          label: "Pull from Unit",
+                                          isSpecial: true,
+                                        },
                                       ]}
                                       components={{
                                         Option: GoodPPIDOption,
@@ -2660,140 +2939,146 @@ function SystemPage() {
                         return (
                           <div
                             key={item.ppid}
-                            className={`border border-gray-300 rounded-lg p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 pb-5 ${
+                            className={`border border-gray-300 rounded-lg p-3 bg-white shadow-sm ${
                               queued ? "border-red-300 bg-red-50 " : ""
                             }`}
                           >
-                            <div className="flex-1">
-                              <div className="block text-sm font-medium text-gray-700 mb-2">
-                                <span
-                                  className={`px-2 py-1 text-xs rounded-full ${
-                                    isBad
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-green-100 text-green-700"
-                                  }`}
-                                >
-                                  {isBad ? "Bad " : "Good "}
-                                  Part
-                                </span>
+                            <div className="flex flex-col md:flex-row md:items-center gap-3 pb-3">
+                              <div className="flex-1">
+                                <div className="block text-sm font-medium text-gray-700 mb-2">
+                                  <span
+                                    className={`px-2 py-1 text-xs rounded-full ${
+                                      isBad
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-green-100 text-green-700"
+                                    }`}
+                                  >
+                                    {isBad ? "Bad " : "Good "}
+                                    Part
+                                  </span>
+                                </div>
+                                <input
+                                  className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
+                                  value={item.part_name || `#${item.part_id}`}
+                                  disabled
+                                  readOnly
+                                />
                               </div>
-                              <input
-                                className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
-                                value={item.part_name || `#${item.part_id}`}
-                                disabled
-                                readOnly
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                PPID
-                              </label>
-                              <input
-                                className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
-                                value={item.ppid || ""}
-                                disabled
-                                readOnly
-                              />
-                            </div>
-                            {/* Actions for BAD parts */}
-                            {isBad && toLocationId != 4 && (
-                              <div className="flex flex-col md:flex-row md:items-center gap-3">
-                                {/* Replacement PPID (only when allowed) */}
-                                {canAddGoodParts && (
-                                  <div className="shrink-0 basis-[280px] w-[280px] ">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Replacement PPID
-                                    </label>
-                                    <Select
-                                      instanceId={`repl-${item.ppid}`}
-                                      classNamePrefix="react-select"
-                                      styles={select40Styles}
-                                      placeholder="Select replacement PPID"
-                                      isClearable
-                                      isDisabled={queued || formDisabled} // grey out if Mark as Working is active
-                                      value={
-                                        replacementByOldPPID[item.ppid]
-                                          ? {
-                                              value:
-                                                replacementByOldPPID[item.ppid],
-                                              label:
-                                                replacementByOldPPID[item.ppid],
-                                            }
-                                          : null
-                                      }
-                                      onMenuOpen={async () => {
-                                        await loadGoodOptions(item.part_id);
-                                      }}
-                                      onChange={(opt) => {
-                                        const next = opt ? opt.value : "";
-                                        setReplacementByOldPPID((s) => ({
-                                          ...s,
-                                          [item.ppid]: next,
-                                        }));
-                                        if (next) {
-                                          // Clear the same PPID if it was chosen in any Good Part block
-                                          setGoodBlocks((list) =>
-                                            list.map((b) =>
-                                              normPPID(b.ppid) ===
-                                              normPPID(next)
-                                                ? { ...b, ppid: "" }
-                                                : b
-                                            )
-                                          );
-                                        }
-                                        // If a replacement is chosen, ensure "Mark as Working" is OFF (your existing code)
-                                        if (opt?.value) {
-                                          setToRemovePPIDs((prev) => {
-                                            if (!prev.has(item.ppid))
-                                              return prev;
-                                            const nextSet = new Set(prev);
-                                            nextSet.delete(item.ppid);
-                                            return nextSet;
-                                          });
-                                        }
-                                      }}
-                                      options={getFilteredGoodOptions(
-                                        item.part_id,
-                                        replacementByOldPPID[item.ppid]
-                                      )}
-                                    />
-                                  </div>
-                                )}
-                                {!isInPendingParts && (
-                                  <div className="md:w-auto">
-                                    {(() => {
-                                      // Is there a chosen replacement PPID that exists in the GOOD inventory cache?
-                                      const chosen =
-                                        replacementByOldPPID[item.ppid];
-                                      const validReplacement =
-                                        !!chosen &&
-                                        (
-                                          goodOptionsCache.get(item.part_id) ||
-                                          []
-                                        ).some((opt) => opt.value === chosen);
-
-                                      const disableMark =
-                                        submitting || validReplacement;
-
-                                      return (
-                                        <button
-                                          disabled={disableMark}
-                                          type="button"
-                                          onClick={() => {
-                                            // Toggle mark-as-working, and if marking -> clear any replacement chosen
-                                            toggleRemovePPID(item.ppid);
-                                            setReplacementByOldPPID((s) => {
-                                              const next = { ...s };
-                                              // If we just queued Mark as Working, nuke the replacement
-                                              if (
-                                                !toRemovePPIDs.has(item.ppid)
-                                              ) {
-                                                next[item.ppid] = "";
+                              <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  PPID
+                                </label>
+                                <input
+                                  className="w-full h-10 rounded-md border border-gray-300 px-3 bg-gray-50 cursor-not-allowed"
+                                  value={item.ppid || ""}
+                                  disabled
+                                  readOnly
+                                />
+                              </div>
+                              {/* Actions for BAD parts */}
+                              {isBad && toLocationId != 4 && (
+                                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                  {/* Replacement PPID (only when allowed) */}
+                                  {canAddGoodParts && (
+                                    <div className="shrink-0 basis-[280px] w-[280px] ">
+                                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Replacement PPID
+                                      </label>
+                                      <Select
+                                        instanceId={`repl-${item.ppid}`}
+                                        classNamePrefix="react-select"
+                                        styles={select40Styles}
+                                        placeholder="Select replacement PPID"
+                                        isClearable
+                                        isDisabled={queued || formDisabled} // grey out if Mark as Working is active
+                                        value={
+                                          replacementByOldPPID[item.ppid]
+                                            ? {
+                                                value:
+                                                  replacementByOldPPID[
+                                                    item.ppid
+                                                  ],
+                                                label:
+                                                  replacementByOldPPID[
+                                                    item.ppid
+                                                  ],
                                               }
-                                              return next;
+                                            : null
+                                        }
+                                        onMenuOpen={async () => {
+                                          await loadGoodOptions(item.part_id);
+                                        }}
+                                        onChange={(opt) => {
+                                          const next = opt ? opt.value : "";
+                                          setReplacementByOldPPID((s) => ({
+                                            ...s,
+                                            [item.ppid]: next,
+                                          }));
+                                          if (next) {
+                                            // Clear the same PPID if it was chosen in any Good Part block
+                                            setGoodBlocks((list) =>
+                                              list.map((b) =>
+                                                normPPID(b.ppid) ===
+                                                normPPID(next)
+                                                  ? { ...b, ppid: "" }
+                                                  : b
+                                              )
+                                            );
+                                          }
+                                          // If a replacement is chosen, ensure "Mark as Working" is OFF (your existing code)
+                                          if (opt?.value) {
+                                            setToRemovePPIDs((prev) => {
+                                              if (!prev.has(item.ppid))
+                                                return prev;
+                                              const nextSet = new Set(prev);
+                                              nextSet.delete(item.ppid);
+                                              return nextSet;
                                             });
-                                          }}
-                                          className={`relative px-3 py-2 rounded-md text-white whitespace-nowrap mt-5 
+                                          }
+                                        }}
+                                        options={getFilteredGoodOptions(
+                                          item.part_id,
+                                          replacementByOldPPID[item.ppid]
+                                        )}
+                                      />
+                                    </div>
+                                  )}
+                                  {!isInPendingParts && (
+                                    <div className="md:w-auto">
+                                      {(() => {
+                                        // Is there a chosen replacement PPID that exists in the GOOD inventory cache?
+                                        const chosen =
+                                          replacementByOldPPID[item.ppid];
+                                        const validReplacement =
+                                          !!chosen &&
+                                          (
+                                            goodOptionsCache.get(
+                                              item.part_id
+                                            ) || []
+                                          ).some((opt) => opt.value === chosen);
+
+                                        const disableMark =
+                                          submitting || validReplacement;
+
+                                        return (
+                                          <button
+                                            disabled={disableMark}
+                                            type="button"
+                                            onClick={() => {
+                                              // Toggle mark-as-working, and if marking -> clear any replacement chosen
+                                              toggleRemovePPID(item.ppid);
+                                              setReplacementByOldPPID((s) => {
+                                                const next = { ...s };
+                                                // If we just queued Mark as Working, nuke the replacement
+                                                if (
+                                                  !toRemovePPIDs.has(item.ppid)
+                                                ) {
+                                                  next[item.ppid] = "";
+                                                }
+                                                return next;
+                                              });
+                                            }}
+                                            className={`relative px-3 py-2 rounded-md text-white whitespace-nowrap mt-5 
                                       ${
                                         queued
                                           ? "bg-gray-500 hover:bg-gray-600"
@@ -2801,147 +3086,635 @@ function SystemPage() {
                                           ? "bg-gray-400 cursor-not-allowed"
                                           : "bg-green-600 hover:bg-gren-700"
                                       }`}
-                                          title={
-                                            validReplacement
-                                              ? "Disable or clear the replacement to mark as working"
-                                              : undefined
-                                          }
-                                        >
-                                          <span className="invisible block">
-                                            Mark as Working
-                                          </span>
-                                          <span className="absolute inset-0 flex items-center justify-center">
-                                            {queued
-                                              ? "Undo"
-                                              : "Mark as Working"}
-                                          </span>
-                                        </button>
-                                      );
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Actions for GOOD parts */}
-                            {!isBad && toLocationId != 4 && (
-                              <div className="flex flex-col md:flex-row md:items-center gap-3">
-                                {/* "Original PPID" BAD inventory selector, shown only when an action is selected */}
-                                {goodActionByPPID[item.ppid]?.action && (
-                                  <div className="shrink-0 basis-[280px] w-[280px]">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Original PPID
-                                    </label>
-                                    <Select
-                                      isDisabled={formDisabled}
-                                      instanceId={`orig-${item.ppid}`}
-                                      classNamePrefix="react-select"
-                                      styles={select40Styles}
-                                      placeholder="Select BAD PPID"
-                                      isClearable
-                                      value={
-                                        goodActionByPPID[item.ppid]
-                                          ?.original_bad_ppid
-                                          ? {
-                                              value:
-                                                goodActionByPPID[item.ppid]
-                                                  .original_bad_ppid,
-                                              label:
-                                                goodActionByPPID[item.ppid]
-                                                  .original_bad_ppid,
+                                            title={
+                                              validReplacement
+                                                ? "Disable or clear the replacement to mark as working"
+                                                : undefined
                                             }
-                                          : null
-                                      }
-                                      onMenuOpen={async () => {
-                                        await loadBadOptions(item.part_id);
-                                      }}
-                                      onChange={(opt) => {
-                                        const next = opt ? opt.value : "";
-                                        setGoodActionByPPID((prev) => ({
-                                          ...prev,
-                                          [item.ppid]: {
-                                            action: prev[item.ppid]?.action,
-                                            original_bad_ppid: next,
-                                          },
-                                        }));
+                                          >
+                                            <span className="invisible block">
+                                              Mark as Working
+                                            </span>
+                                            <span className="absolute inset-0 flex items-center justify-center">
+                                              {queued
+                                                ? "Undo"
+                                                : "Mark as Working"}
+                                            </span>
+                                          </button>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {/* Actions for GOOD parts */}
+                              {!isBad &&
+                                toLocationId !== 4 &&
+                                (() => {
+                                  const goodPPID = item.ppid;
+                                  const goodCfg =
+                                    goodActionByPPID[goodPPID] || {};
+                                  const hasAction = !!goodCfg.action;
 
-                                        if (next) {
-                                          // Clear the same PPID if it was typed in any Pending block
-                                          setPendingBlocks((list) =>
-                                            list.map((b) =>
-                                              normPPID(b.ppid) ===
-                                              normPPID(next)
-                                                ? { ...b, ppid: "" }
-                                                : b
-                                            )
-                                          );
-                                        }
-                                      }}
-                                      options={getFilteredBadOptions(
-                                        item.part_id,
-                                        goodActionByPPID[item.ppid]
-                                          ?.original_bad_ppid
-                                      )}
-                                    />
-                                  </div>
-                                )}
-                                {isInDebugWistron &&
-                                  !isResolved /* Two mutually-exclusive buttons */ && (
-                                    <div className="flex gap-2 mt-5">
-                                      {["not_needed", "defective"].map(
-                                        (kind) => {
-                                          const selected =
-                                            goodActionByPPID[item.ppid]
-                                              ?.action === kind;
-                                          const label =
-                                            kind === "not_needed"
-                                              ? "Not Needed"
-                                              : "Defective";
+                                  const hasSearched =
+                                    Object.prototype.hasOwnProperty.call(
+                                      invOriginalsByPPID,
+                                      goodPPID
+                                    );
+
+                                  const matches = hasSearched
+                                    ? invOriginalsByPPID[goodPPID] || []
+                                    : [];
+
+                                  const liveMatches = matches.filter(
+                                    (m) => m.is_live_origin
+                                  );
+                                  const hasAnyMatches = matches.length > 0;
+                                  const hasLiveMatches = liveMatches.length > 0;
+
+                                  // NEW:
+                                  const hasInventoryOnly =
+                                    matches.some((m) => !m.owner_unit_id) &&
+                                    !matches.some((m) => m.owner_unit_id);
+
+                                  const hasInventoryMatches = matches.some(
+                                    (m) => !m.owner_unit_id
+                                  );
+
+                                  const currentOrig =
+                                    goodCfg.original_bad_ppid || "";
+
+                                  const selectedMatch =
+                                    matches.find(
+                                      (m) =>
+                                        normPPID(m.ppid) ===
+                                        normPPID(currentOrig)
+                                    ) || null;
+
+                                  // Good part came from inventory if it has no last_unit_id
+                                  const fromInventoryGood =
+                                    item.last_unit_id == null;
+
+                                  // Only non-live *donor units* (owner_unit_id present) force Defective.
+                                  // Inventory originals (owner_unit_id == null) do NOT force Defective.
+                                  const forcedDefective =
+                                    !!selectedMatch &&
+                                    selectedMatch.place === "unit" &&
+                                    !!selectedMatch.owner_unit_id &&
+                                    !selectedMatch.is_live_origin;
+
+                                  const fallbackInventoryOptions =
+                                    !hasAnyMatches
+                                      ? getFilteredBadOptions(
+                                          item.part_id,
+                                          currentOrig
+                                        )
+                                      : [];
+
+                                  const options = hasAnyMatches
+                                    ? matches
+                                        // Ignore any matches whose owner is the current unit
+                                        .filter(
+                                          (r) =>
+                                            !r.owner_unit_id ||
+                                            r.owner_unit_id !== system.id
+                                        )
+                                        .filter((r) => {
+                                          const v = normPPID(r.ppid);
                                           return (
-                                            <button
-                                              key={kind}
-                                              type="button"
-                                              onClick={() => {
-                                                setGoodActionByPPID((prev) => {
-                                                  const curr =
-                                                    prev[item.ppid]?.action;
-                                                  // toggle: if user clicks same action, clear it; otherwise set/replace
-                                                  if (curr === kind) {
-                                                    const {
-                                                      [item.ppid]: _,
-                                                      ...rest
-                                                    } = prev;
-                                                    return rest;
+                                            v === normPPID(currentOrig) ||
+                                            !selectedBadPPIDs.has(v)
+                                          );
+                                        })
+                                        .map((r) => {
+                                          const fromInventory =
+                                            r.place === "inventory" ||
+                                            !r.owner_unit_id;
+
+                                          // What to show on the chip
+                                          const ownerLabel = fromInventory
+                                            ? "Inventory"
+                                            : r.owner_service_tag ||
+                                              (r.owner_unit_id
+                                                ? `Unit #${r.owner_unit_id}`
+                                                : null);
+
+                                          // "Shipped" only makes sense for donor units that are no longer live
+                                          const isShipped =
+                                            !fromInventory &&
+                                            !!r.owner_unit_id &&
+                                            !r.is_live_origin;
+
+                                          return {
+                                            value: r.ppid,
+                                            label: r.ppid,
+                                            meta: {
+                                              ownerLabel,
+                                              is_shipped: isShipped,
+                                            },
+                                          };
+                                        })
+                                    : fallbackInventoryOptions.map((opt) => ({
+                                        ...opt,
+                                        meta: {
+                                          ownerLabel: "Inventory",
+                                          is_shipped: false,
+                                        },
+                                      }));
+
+                                  // Not Needed:
+                                  //  - allowed only if there is at least one live match
+                                  //  - and the currently selected match (if any) is live
+                                  const canChooseNotNeeded =
+                                    !forcedDefective &&
+                                    (fromInventoryGood
+                                      ? true
+                                      : hasInventoryOnly
+                                      ? // Only inventory matches (no donor units) → allow Not Needed
+                                        true
+                                      : hasAnyMatches
+                                      ? // Have donor-unit matches → require at least one live donor
+                                        hasLiveMatches
+                                      : // No matches at all → allow
+                                        true);
+
+                                  const canChooseDefective = true;
+
+                                  const handleActionClick = async (kind) => {
+                                    // Guard: never allow Not Needed when forbidden by logic
+                                    if (
+                                      kind === "not_needed" &&
+                                      !canChooseNotNeeded
+                                    )
+                                      return;
+
+                                    const prevCfg =
+                                      goodActionByPPID[goodPPID] || {};
+                                    const prevAction = prevCfg.action;
+                                    const isSameButton = prevAction === kind;
+
+                                    // Clicking the same button toggles that action OFF
+                                    if (isSameButton) {
+                                      // Clear action + original for this good PPID
+                                      setGoodActionByPPID((prev) => {
+                                        const { [goodPPID]: _omit, ...rest } =
+                                          prev;
+                                        return rest;
+                                      });
+
+                                      // Clear auto-lock flag
+                                      setAutoOriginalLockedByPPID((prev) => {
+                                        const copy = { ...prev };
+                                        delete copy[goodPPID];
+                                        return copy;
+                                      });
+
+                                      // Also clear cached matches so they’ll be recomputed next click
+                                      setInvOriginalsByPPID((prev) => {
+                                        const copy = { ...prev };
+                                        delete copy[goodPPID];
+                                        return copy;
+                                      });
+
+                                      return;
+                                    }
+
+                                    // Set new action (keep current original_bad_ppid if present)
+                                    setGoodActionByPPID((prev) => ({
+                                      ...prev,
+                                      [goodPPID]: {
+                                        ...(prev[goodPPID] || {}),
+                                        action: kind,
+                                      },
+                                    }));
+
+                                    // If we haven’t searched for matches yet, do it now
+                                    const alreadySearched =
+                                      Object.prototype.hasOwnProperty.call(
+                                        invOriginalsByPPID,
+                                        goodPPID
+                                      );
+                                    if (!alreadySearched) {
+                                      await autoSelectOriginalForGood(
+                                        goodPPID,
+                                        item.part_id
+                                      );
+                                    }
+                                  };
+
+                                  // ----- Helper messages (under the buttons) -----
+                                  const unitMatches = matches.filter(
+                                    (m) => m.owner_unit_id
+                                  );
+                                  const hasUnitMatches = unitMatches.length > 0;
+                                  const inventoryMatchesOnly = matches.filter(
+                                    (m) => !m.owner_unit_id
+                                  );
+
+                                  const moreThanOneInventoryMatch =
+                                    inventoryMatchesOnly.length > 1;
+
+                                  // Cross-swap = auto-locked single origin from another unit
+                                  const isCrossSwap =
+                                    !!autoOriginalLockedByPPID[goodPPID] &&
+                                    unitMatches.length === 1;
+
+                                  const showSingleUnitMsg =
+                                    hasAction &&
+                                    !!currentOrig &&
+                                    hasUnitMatches;
+
+                                  const showMultiUnitMsg =
+                                    hasUnitMatches && unitMatches.length > 1;
+
+                                  const showMultiInventoryMsg =
+                                    !hasUnitMatches &&
+                                    moreThanOneInventoryMatch;
+
+                                  const showHelper =
+                                    isCrossSwap ||
+                                    showSingleUnitMsg ||
+                                    showMultiUnitMsg ||
+                                    showMultiInventoryMsg;
+
+                                  return (
+                                    <div className="flex flex-col gap-2">
+                                      {/* Row: Original PPID selector + buttons */}
+                                      <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                        {/* Original PPID selector */}
+                                        {hasAction && hasSearched && (
+                                          <div className="shrink-0 basis-[280px] w-[280px]">
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                              Original PPID
+                                              {selectedMatch &&
+                                                selectedMatch.owner_unit_id && // only show for unit-origin parts
+                                                !selectedMatch.is_live_origin && (
+                                                  <span className="px-2 py-1 ml-1 text-xs rounded-full bg-red-100 text-red-700">
+                                                    {selectedMatch.owner_service_tag &&
+                                                      selectedMatch.owner_service_tag}
+                                                    {" - "}
+                                                    Shipped
+                                                  </span>
+                                                )}
+                                            </label>
+
+                                            {(() => {
+                                              // Lock whenever we auto-locked and there is exactly 1 match
+                                              const lockOriginal =
+                                                !!autoOriginalLockedByPPID[
+                                                  goodPPID
+                                                ] &&
+                                                matches.length === 1 &&
+                                                selectedMatch;
+
+                                              if (
+                                                lockOriginal &&
+                                                selectedMatch
+                                              ) {
+                                                return (
+                                                  <div className="h-10 rounded-md border border-gray-300 bg-gray-50 px-3 flex items-center text-xs sm:text-sm font-mono">
+                                                    <span>
+                                                      {selectedMatch.ppid}
+                                                    </span>
+                                                    {selectedMatch.owner_service_tag && (
+                                                      <span className="ml-2 text-gray-500">
+                                                        –{" "}
+                                                        {
+                                                          selectedMatch.owner_service_tag
+                                                        }
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                );
+                                              }
+
+                                              // Editable select when 0 or >1 matches
+                                              return (
+                                                <Select
+                                                  isDisabled={formDisabled}
+                                                  instanceId={`orig-${goodPPID}`}
+                                                  classNamePrefix="react-select"
+                                                  styles={select40Styles}
+                                                  placeholder={
+                                                    hasAnyMatches
+                                                      ? "Select original BAD PPID"
+                                                      : "Select BAD PPID from inventory"
                                                   }
-                                                  return {
-                                                    ...prev,
-                                                    [item.ppid]: {
-                                                      action: kind,
-                                                      original_bad_ppid:
-                                                        prev[item.ppid]
-                                                          ?.original_bad_ppid ||
-                                                        "",
+                                                  isClearable
+                                                  value={
+                                                    currentOrig
+                                                      ? {
+                                                          value: currentOrig,
+                                                          label: currentOrig,
+                                                          meta: selectedMatch && {
+                                                            ownerLabel:
+                                                              selectedMatch.owner_service_tag ||
+                                                              (selectedMatch.owner_unit_id
+                                                                ? `Unit #${selectedMatch.owner_unit_id}`
+                                                                : null),
+                                                            is_shipped:
+                                                              !selectedMatch.is_live_origin,
+                                                          },
+                                                        }
+                                                      : null
+                                                  }
+                                                  onMenuOpen={async () => {
+                                                    // If there were no last_unit matches, ensure inventory BADs are loaded
+                                                    if (!hasAnyMatches) {
+                                                      await loadBadOptions(
+                                                        item.part_id
+                                                      );
+                                                    }
+                                                  }}
+                                                  onChange={(opt) => {
+                                                    const next = opt
+                                                      ? opt.value
+                                                      : "";
+                                                    const picked =
+                                                      next && matches.length
+                                                        ? matches.find(
+                                                            (m) =>
+                                                              normPPID(
+                                                                m.ppid
+                                                              ) ===
+                                                              normPPID(next)
+                                                          )
+                                                        : null;
+
+                                                    setGoodActionByPPID(
+                                                      (prev) => {
+                                                        const prevCfg =
+                                                          prev[goodPPID] || {};
+
+                                                        // 🔹 If the selection was cleared, wipe both the Original PPID and the action
+                                                        if (!next) {
+                                                          return {
+                                                            ...prev,
+                                                            [goodPPID]: {
+                                                              ...prevCfg,
+                                                              original_bad_ppid:
+                                                                "",
+                                                              action: null, // <- this untoggles "Not needed" and "Defective"
+                                                            },
+                                                          };
+                                                        }
+
+                                                        // 🔹 Normal case: a BAD PPID was selected
+                                                        const nextCfg = {
+                                                          ...prevCfg,
+                                                          original_bad_ppid:
+                                                            next,
+                                                        };
+
+                                                        // Only force Defective when the original is from a *non-live donor unit*.
+                                                        // Inventory origins (place === "inventory") must NEVER auto-flip to Defective.
+                                                        if (
+                                                          picked &&
+                                                          picked.place ===
+                                                            "unit" && // real donor unit
+                                                          picked.owner_unit_id && // has an owning unit
+                                                          !picked.is_live_origin && // donor is no longer active
+                                                          prevCfg.action ===
+                                                            "not_needed" // only correct an invalid Not Needed state
+                                                        ) {
+                                                          nextCfg.action =
+                                                            "defective";
+                                                        }
+
+                                                        return {
+                                                          ...prev,
+                                                          [goodPPID]: nextCfg,
+                                                        };
+                                                      }
+                                                    );
+
+                                                    if (next) {
+                                                      // Clear the same PPID if it was typed in any Pending block
+                                                      setPendingBlocks((list) =>
+                                                        list.map((b) =>
+                                                          normPPID(b.ppid) ===
+                                                          normPPID(next)
+                                                            ? { ...b, ppid: "" }
+                                                            : b
+                                                        )
+                                                      );
+                                                    }
+                                                  }}
+                                                  options={options}
+                                                  components={{
+                                                    Option: (props) => {
+                                                      const meta =
+                                                        props.data.meta || {};
+                                                      return (
+                                                        <components.Option
+                                                          {...props}
+                                                        >
+                                                          <>
+                                                            <span
+                                                              className={`px-2 py-1 text-xs rounded-full ${
+                                                                meta.is_shipped
+                                                                  ? "bg-red-100 text-red-700"
+                                                                  : "bg-blue-100 text-blue-700"
+                                                              }`}
+                                                            >
+                                                              {meta.ownerLabel &&
+                                                                meta.ownerLabel}
+                                                              {" - "}
+                                                              {meta.is_shipped
+                                                                ? "Shipped"
+                                                                : "Active"}
+                                                            </span>
+                                                          </>
+                                                          {"  "}
+                                                          {props.data.value}
+                                                        </components.Option>
+                                                      );
                                                     },
-                                                  };
-                                                });
-                                              }}
-                                              className={`px-3 py-2 rounded-md text-white ${
-                                                selected
-                                                  ? kind === "not_needed"
+                                                  }}
+                                                />
+                                              );
+                                            })()}
+                                          </div>
+                                        )}
+
+                                        {/* Not Needed / Defective buttons */}
+                                        {isInDebugWistron && !isResolved && (
+                                          <div className="flex gap-2 mt-6">
+                                            {canChooseNotNeeded && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleActionClick(
+                                                    "not_needed"
+                                                  )
+                                                }
+                                                disabled={formDisabled}
+                                                className={`px-3 py-2 rounded-md text-white ${
+                                                  goodCfg.action ===
+                                                  "not_needed"
                                                     ? "bg-blue-600"
-                                                    : "bg-amber-600"
+                                                    : "bg-gray-500 hover:bg-gray-600"
+                                                }`}
+                                              >
+                                                Not Needed
+                                              </button>
+                                            )}
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleActionClick("defective")
+                                              }
+                                              disabled={
+                                                !canChooseDefective ||
+                                                formDisabled
+                                              }
+                                              className={`px-3 py-2 rounded-md text-white ${
+                                                goodCfg.action === "defective"
+                                                  ? "bg-amber-600"
                                                   : "bg-gray-500 hover:bg-gray-600"
                                               }`}
                                             >
-                                              {label}
+                                              Defective
                                             </button>
-                                          );
-                                        }
-                                      )}
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  )}
-                              </div>
-                            )}
+                                  );
+                                })()}
+                            </div>
+                            {/* Cross-swap / original helper lines – full width, under everything */}
+                            {!isBad &&
+                              toLocationId !== 4 &&
+                              (() => {
+                                const goodCfg =
+                                  goodActionByPPID[item.ppid] || {};
+                                const hasAction = !!goodCfg.action;
+                                if (!hasAction) return null;
+
+                                // Only show helper text once we’ve actually done the match lookup
+                                const hasSearchedForOriginal =
+                                  Object.prototype.hasOwnProperty.call(
+                                    invOriginalsByPPID,
+                                    item.ppid
+                                  );
+                                if (!hasSearchedForOriginal) return null;
+
+                                const invMatches =
+                                  invOriginalsByPPID[item.ppid] || [];
+                                if (invMatches.length === 0) return null;
+
+                                const originalBad = normPPID(
+                                  goodCfg.original_bad_ppid || ""
+                                );
+
+                                // Safely find the selected match (if any)
+                                let selectedMatch = null;
+                                if (originalBad) {
+                                  for (const m of invMatches) {
+                                    if (normPPID(m.ppid) === originalBad) {
+                                      selectedMatch = m;
+                                      break;
+                                    }
+                                  }
+                                }
+
+                                const unitMatches = invMatches.filter(
+                                  (m) => m.owner_unit_id
+                                );
+                                const hasUnitMatches = unitMatches.length > 0;
+
+                                const inventoryMatchesOnly = invMatches.filter(
+                                  (m) => !m.owner_unit_id
+                                );
+                                const moreThanOneInventoryMatch =
+                                  inventoryMatchesOnly.length > 1;
+
+                                // Single cross-swap from a *live* donor unit
+                                const isCrossSwap =
+                                  !!autoOriginalLockedByPPID[item.ppid] &&
+                                  unitMatches.length === 1 &&
+                                  unitMatches[0].is_live_origin === true;
+
+                                // One selected/locked match from a *live* donor
+                                const showSingleUnitMsgActive =
+                                  !!autoOriginalLockedByPPID[item.ppid] &&
+                                  !!goodCfg.original_bad_ppid &&
+                                  !!selectedMatch &&
+                                  selectedMatch.is_live_origin === true;
+
+                                // One selected/locked match from a *non-live* donor (shipped/inactive) and action is Defective
+                                const showSingleUnitMsgInactive =
+                                  !!autoOriginalLockedByPPID[item.ppid] &&
+                                  !!goodCfg.original_bad_ppid &&
+                                  !!selectedMatch &&
+                                  !!selectedMatch.owner_unit_id &&
+                                  selectedMatch.is_live_origin === false &&
+                                  goodCfg.action === "defective";
+
+                                const showMultiUnitMsg =
+                                  hasUnitMatches && unitMatches.length > 1;
+
+                                const showMultiInventoryMsg =
+                                  !hasUnitMatches && moreThanOneInventoryMatch;
+
+                                if (
+                                  !isCrossSwap &&
+                                  !showSingleUnitMsgActive &&
+                                  !showSingleUnitMsgInactive &&
+                                  !showMultiUnitMsg &&
+                                  !showMultiInventoryMsg
+                                ) {
+                                  return null;
+                                }
+
+                                return (
+                                  <div className="mt-2 space-y-1 text-[10px] text-gray-500">
+                                    {isCrossSwap && (
+                                      <p className="italic">
+                                        This good part is currently borrowed
+                                        from another active unit. When you
+                                        submit, it will be reconciled with that
+                                        unit using the selected Original PPID.
+                                      </p>
+                                    )}
+
+                                    {showSingleUnitMsgActive && (
+                                      <p className="italic">
+                                        Original part will be moved back into
+                                        this unit when you submit.
+                                      </p>
+                                    )}
+
+                                    {showSingleUnitMsgInactive && (
+                                      <p className="italic">
+                                        Because the original system has already
+                                        shipped or is inactive, this part will
+                                        stay in the current unit and be marked
+                                        as defective; no original part will be
+                                        reinstalled.
+                                      </p>
+                                    )}
+
+                                    {showMultiUnitMsg && (
+                                      <p className="italic">
+                                        There is more than one part that was
+                                        pulled from another system. Please
+                                        choose the correct original PPID.
+                                      </p>
+                                    )}
+
+                                    {showMultiInventoryMsg && (
+                                      <p className="italic">
+                                        Original PPID isn&apos;t linked to a
+                                        known system. Please select the original
+                                        PPID from inventory.
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                           </div>
                         );
                       })}
