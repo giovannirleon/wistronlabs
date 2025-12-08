@@ -383,24 +383,27 @@ router.patch("/:ppid", authenticateToken, async (req, res) => {
       vals.push(ppid ? ppid.toUpperCase() : null);
     }
 
-    if (!fields.length) {
-      return res.status(400).json({ error: "Nothing to update" });
-    }
-
+    // 🔹 MOVE THIS UP BEFORE the !fields.length check
     if (replacement_defective !== undefined) {
       fields.push(`replacement_defective = $${fields.length + 1}`);
       vals.push(!!replacement_defective);
+    }
+
+    // Now this correctly considers replacement_defective too
+    if (!fields.length) {
+      return res.status(400).json({ error: "Nothing to update" });
     }
 
     vals.push(current);
 
     const { rows } = await db.query(
       `UPDATE part_list
-       SET ${fields.join(", ")}
-       WHERE ppid = $${vals.length}
-       RETURNING *`,
+   SET ${fields.join(", ")}
+   WHERE ppid = $${vals.length}
+   RETURNING *`,
       vals
     );
+
     if (!rows.length)
       return res.status(404).json({ error: "Part item not found" });
     res.json(rows[0]);

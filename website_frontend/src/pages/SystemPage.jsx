@@ -2153,6 +2153,10 @@ function SystemPage() {
       setReplacementByOldPPID({});
       setInvOriginalsByPPID({});
       setAutoOriginalLockedByPPID({});
+      // Clear cached GOOD/BAD option lists so dropdowns re-fetch from backend
+      setGoodOptionsCache(new Map());
+      setBadOptionsCache(new Map());
+
       showToast("Updated System Location", "success", 3000, "bottom-right");
       await fetchData();
     } catch (err) {
