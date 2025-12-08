@@ -955,6 +955,7 @@ function SystemPage() {
       // BAD parts currently in some unit, whose last_unit_id == this unit
       const unitMatches = (unitRows || [])
         .filter((r) => Number(r.last_unit_id) === thisUnitId)
+        .filter((r) => !r.replacement_defective) // NEW: ignore already-marked replacements
         // Ignore bad parts that currently live in THIS unit
         .filter((r) => Number(r.unit_id) !== thisUnitId)
         .map((r) => {
@@ -974,6 +975,7 @@ function SystemPage() {
       // BAD parts sitting in inventory whose last_unit_id == this unit
       const inventoryMatches = (invRows || [])
         .filter((r) => Number(r.last_unit_id) === thisUnitId)
+        .filter((r) => !r.replacement_defective) // NEW: ignore already-marked replacements
         .map((r) => ({
           ...r,
           place: "inventory",
@@ -1742,6 +1744,16 @@ function SystemPage() {
     setSubmitting(true);
 
     try {
+      // Collect per-unit notes for any unit↔unit part transactions in this submit.
+      // key = donor service_tag (UPPERCASE), value = [noteLine, ...]
+      const donorLocationNotes = {};
+
+      const addDonorNote = (svcTag, line) => {
+        if (!svcTag || !line) return;
+        const key = String(svcTag).trim().toUpperCase();
+        donorLocationNotes[key] = [...(donorLocationNotes[key] || []), line];
+      };
+
       // A) Install GOOD parts selected in "Add Good Part"
       if (goodBlocks.length > 0) {
         const toProcess = goodBlocks.filter(
@@ -1783,6 +1795,19 @@ function SystemPage() {
                 is_functional: false,
                 last_unit_id: system.id,
               });
+
+              // Record a donor-unit note for this unit↔unit transaction
+              const donorUnit = donorUnitsById.get(donorUnitId);
+              const donorTag = donorUnit?.service_tag;
+              const partName = partNameById.get(partId) || `#${partId}`;
+
+              if (donorTag) {
+                addDonorNote(
+                  donorTag,
+                  ` - ${partName} (${donorGoodPPID}) was pulled from this system and installed into ${system.service_tag}; ` +
+                    `(${badPPID}) has been recorded here as non-working as part of this swap.`
+                );
+              }
             } else {
               // --- Normal inventory flow ---
               const goodPPID = String(b.ppid).toUpperCase().trim();
@@ -1883,13 +1908,50 @@ function SystemPage() {
                   last_unit_id: system.id,
                 });
               }
+              // Donor unit note for this live-unit reconciliation
+              const originUnit = donorUnitsById.get(originUnitId);
+              const originTag =
+                originUnit?.service_tag || candidate.owner_service_tag || null;
+
+              if (originTag) {
+                const partName =
+                  goodItem?.part_name ||
+                  (goodItem?.part_id
+                    ? partNameById.get(goodItem.part_id) ||
+                      `#${goodItem.part_id}`
+                    : "Part");
+                const reason =
+                  action === "defective" ? "defective" : "not needed";
+
+                addDonorNote(
+                  originTag,
+                  ` - ${partName} (${good}) was reconciled with ${system.service_tag} via unit-to-unit swap (original BAD: ${candidate.ppid}, marked ${reason} in the process).`
+                );
+              }
 
               return;
             }
 
             // 2) Origin is shipped / inactive unit or inventory (still with last_unit_id = this unit).
             //    UI should only allow Defective here; we just mark the GOOD as bad in this unit.
+            //    NEW: if this was a non-live donor unit, mark that original BAD as replacement_defective
+            //    so it won't be offered again as an "Original PPID".
             if (candidate && !candidate.is_live_origin) {
+              // If this original came from a non-live donor unit (not inventory) and we're marking
+              // the GOOD here as defective, flag that original as "replacement_defective".
+              // - owner_unit_id != null  -> real donor unit
+              // - place === "unit"       -> currently lives in a unit
+              // - is_live_origin === false -> donor is shipped/inactive (not in donorSystems)
+              if (
+                candidate.owner_unit_id && // donor unit, not inventory
+                candidate.place === "unit" &&
+                action === "defective"
+              ) {
+                await updatePartItem(candidate.ppid, {
+                  replacement_defective: true,
+                });
+              }
+
               if (fromInventory) {
                 // Good part was originally from inventory (last_unit_id is null on the good).
                 // We have a matching original BAD (candidate) in inventory with last_unit_id = this unit.
@@ -2051,6 +2113,35 @@ function SystemPage() {
           root_cause_id: bothSet ? a : null,
           root_cause_sub_category_id: bothSet ? b : null,
         });
+      }
+
+      // D) For any donor systems involved in unit↔unit part moves, write a note
+      // using their current location as the "to" location (no actual move).
+      if (Object.keys(donorLocationNotes).length > 0) {
+        await Promise.all(
+          Object.entries(donorLocationNotes).map(async ([donorTag, lines]) => {
+            const donor = donorSystems.find(
+              (u) =>
+                (u.service_tag || "").toUpperCase() === donorTag.toUpperCase()
+            );
+
+            const donorLocName = donor?.location || "Received";
+            const donorLocId =
+              locations.find((l) => l.name === donorLocName)?.id ||
+              locations.find((l) => l.name === "Received")?.id;
+
+            if (!donorLocId) return;
+
+            const donorNote =
+              `Parts transaction with ${system.service_tag}:\n` +
+              lines.join(" ");
+
+            await updateSystemLocation(donorTag, {
+              to_location_id: donorLocId,
+              note: donorNote,
+            });
+          })
+        );
       }
 
       // 3) Move the unit
