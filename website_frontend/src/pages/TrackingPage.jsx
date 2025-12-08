@@ -178,6 +178,7 @@ function TrackingPage() {
       sort_by: "location",
       sort_order: "desc",
       all: true,
+      serverZone: serverTime.zone,
     });
 
     const payload = {
@@ -467,9 +468,10 @@ function TrackingPage() {
         ...options,
         active: showActive,
         inactive: showInactive,
+        serverZone: serverTime.zone,
       });
     },
-    [showActive, showInactive]
+    [showActive, showInactive, serverTime]
   );
 
   return (

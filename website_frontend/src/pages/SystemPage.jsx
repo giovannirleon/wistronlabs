@@ -174,6 +174,8 @@ function SystemPage() {
   const [downloads, setDownloads] = useState([]);
   const [releasedPallets, setreleasedPallets] = useState([]);
 
+  const [serverTimeZone, setServerTimeZone] = useState("UTC");
+
   // Root-cause UI state
   const [rootCauseOptions, setRootCauseOptions] = useState([]); // [{value,label}]
   const [rootCauseSubOptions, setRootCauseSubOptions] = useState([]); // [{value,label}]
@@ -1161,6 +1163,7 @@ function SystemPage() {
     const fetchDownloads = async () => {
       try {
         const { zone: serverZone = "UTC" } = await getServerTime();
+        setServerTimeZone(serverZone);
 
         const dirPart = logsDir
           ? logsDir.replace(/^\//, "").replace(/\/?$/, "/")
@@ -1208,9 +1211,7 @@ function SystemPage() {
                 });
 
             const formattedDate = modLux.isValid
-              ? formatDateHumanReadable(
-                  new Date(modLux.setZone(serverZone).toISO())
-                )
+              ? formatDateHumanReadable(new Date(modLux.toISO()), serverZone)
               : rawDate; // fallback if parsing fails
 
             const nameLux = DateTime.fromISO(name, { zone: "utc" });
@@ -4105,7 +4106,10 @@ function SystemPage() {
                       to_location_title: "To",
                       note_title: "Note",
                       changed_at_title: "Updated At",
-                      changed_at: formatDateHumanReadable(entry.changed_at),
+                      changed_at: formatDateHumanReadable(
+                        entry.changed_at,
+                        serverTimeZone
+                      ),
                       moved_by_title: "Moved By",
                       moved_by:
                         entry.moved_by === "deleted_user@example.com"
@@ -4187,7 +4191,10 @@ function SystemPage() {
                     }
                     actionButtonVisibleIf={{
                       field: "changed_at",
-                      equals: formatDateHumanReadable(history[0]?.changed_at), // only show action button for the most recent entry
+                      equals: formatDateHumanReadable(
+                        history[0]?.changed_at,
+                        serverTimeZone
+                      ), // only show action button for the most recent entry
                     }}
                   />
                 </>

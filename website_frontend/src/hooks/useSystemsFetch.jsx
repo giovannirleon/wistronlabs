@@ -31,6 +31,7 @@ export function useSystemsFetch() {
       inactive = true,
       all = false,
       filters,
+      serverZone = "UTC",
     } = options;
 
     const params = {
@@ -87,8 +88,8 @@ export function useSystemsFetch() {
 
     const formattedData = rows.map((d) => ({
       ...d,
-      date_created: formatDateHumanReadable(d.date_created),
-      date_modified: formatDateHumanReadable(d.date_modified),
+      date_created: formatDateHumanReadable(d.date_created, serverZone),
+      date_modified: formatDateHumanReadable(d.date_modified, serverZone),
       service_tag_title: "Service Tag",
       issue_title: "Issue",
       location_title: "Location",

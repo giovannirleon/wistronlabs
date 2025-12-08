@@ -18,15 +18,27 @@ function computeInOutCountsPerDay(
   history,
   activeLocationNames,
   timezone,
-  locationID1Name
+  locationID1Name,
+  rmaLocationNames = [] // <-- NEW
 ) {
   const dayMap = new Map();
+  const rmaSet = new Set(rmaLocationNames);
 
   history.forEach((entry) => {
+    const fromLoc = entry.from_location;
+    const toLoc = entry.to_location;
+
+    // 🔴 Skip RMA→RMA movements (VID/CID/PID to VID/CID/PID)
+    // If you only wanted 6→6, 7→7, 8→8, you could add "&& fromLoc === toLoc".
+    if (fromLoc && toLoc && rmaSet.has(fromLoc) && rmaSet.has(toLoc)) {
+      return;
+    }
+
     const dt = DateTime.fromISO(entry.changed_at, { zone: "utc" }).setZone(
       timezone
     );
     if (!dt.isValid) return;
+
     const dayKey = dt.startOf("day").toISODate();
     if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
     dayMap.get(dayKey).push(entry);
@@ -97,15 +109,33 @@ function SystemInOutChart({
 
   const locationID1Name = locations.find((loc) => loc.id === 1)?.name;
 
+  // RMA VID/CID/PID IDs
+  const RMA_LOCATION_IDS = [6, 7, 8];
+
+  const rmaLocationNames = useMemo(
+    () =>
+      locations
+        .filter((loc) => RMA_LOCATION_IDS.includes(loc.id))
+        .map((loc) => loc.name),
+    [locations]
+  );
+
   const inOutCounts = useMemo(() => {
     if (!history.length) return null;
     return computeInOutCountsPerDay(
       history,
       activeLocationNames,
       serverTime.zone,
-      locationID1Name
+      locationID1Name,
+      rmaLocationNames // <-- NEW
     );
-  }, [history, activeLocationNames, serverTime.zone, locationID1Name]);
+  }, [
+    history,
+    activeLocationNames,
+    serverTime.zone,
+    locationID1Name,
+    rmaLocationNames,
+  ]);
 
   if (!inOutCounts) return <div>No data</div>;
 
