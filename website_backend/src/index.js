@@ -16,6 +16,8 @@ app.use(
       "http://tss.wistronlabs.com",
       "http://localhost:5173",
       "https://tss.wistronlabs.com",
+      "https://frk.wistronlabs.com",
+      "http://frk.wistronlabs.com",
     ],
     credentials: true,
   })
