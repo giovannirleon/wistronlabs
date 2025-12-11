@@ -15,6 +15,11 @@ err() {
 LOCATIONS=("TSS" "FRK")
 BASE_URL="wistronlabs.com"
 USER="falab"
+
+SCRIPTS_DIR="$SCRIPT_DIR/scripts"
+REMOTE_SCRIPTS_DIR="/home/$USER/scripts"
+
+
 SSH_OPTS="-o BatchMode=yes -o PasswordAuthentication=no -o ConnectTimeout=5"
 
 cd "$SCRIPT_DIR" || { err "Failed to cd to script dir"; exit 1; }
@@ -147,9 +152,9 @@ EOF
     fi
     echo "Backend code uploaded to $loc."
 
-echo ""
-echo "Ensuring .env and secrets exist on $loc..."
-if ! ssh -T $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -s' <<'REMOTE'
+  echo ""
+  echo "Ensuring .env and secrets exist on $loc..."
+  if ! ssh -T $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -s' <<'REMOTE'
 cd /opt/docker/website_backend || { echo "Missing /opt/docker/website_backend" >&2; exit 1; }
 
 # Ensure .env file exists
@@ -226,27 +231,54 @@ fi
 # If we got here, everything is fine
 exit 0
 REMOTE
-then
-  echo "ERROR: Remote .env/secret setup failed on $loc"
-  exit 1
-fi
+    then
+      echo "ERROR: Remote .env/secret setup failed on $loc"
+      exit 1
+    fi
 
 
 
-# Start backend containers
-echo ""
-echo "Starting backend containers on $loc..."
-if ! ssh $SSH_OPTS "$USER@$loc.$BASE_URL" \
-    "cd /opt/docker/website_backend; sudo docker compose up --build -d app"; then
-    echo "ERROR: Failed to start backend containers on $loc"
-    exit 1
-fi
+    # Start backend containers
+    echo ""
+    echo "Starting backend containers on $loc..."
+    if ! ssh $SSH_OPTS "$USER@$loc.$BASE_URL" \
+        "cd /opt/docker/website_backend; sudo docker compose up --build -d app"; then
+        echo "ERROR: Failed to start backend containers on $loc"
+        exit 1
+    fi
 
 
     echo ""
     echo "============================================================"
     echo ">>> Backend deployment completed for: $loc"
     echo "============================================================"
+
+      # Return to main script directory
+    cd "$SCRIPT_DIR" || { err "Main folder does not exist"; exit 1; }
+
+    echo ""
+    echo "============================================================"
+    echo ">>> Starting script deployment for: $loc"
+    echo "============================================================"
+    echo ""
+
+    # Ensure local scripts directory exists
+    if [[ ! -d "$SCRIPTS_DIR" ]]; then
+      err "Local scripts directory '$SCRIPTS_DIR' does not exist."
+      exit 1
+    fi
+
+    echo "Uploading scripts from $SCRIPTS_DIR to $USER@$loc.$BASE_URL:~ ..."
+    if ! RSYNC_RSH="ssh $SSH_OPTS" rsync -av "$SCRIPTS_DIR/" "$USER@$loc.$BASE_URL:/home/$USER/"; then
+      err "Failed to deploy scripts to $loc"
+      exit 1
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo ">>> Script deployment completed for: $loc"
+    echo "============================================================"
+
 
     cd "$SCRIPT_DIR" || { err "Main folder does not exist"; exit 1; }
 done
