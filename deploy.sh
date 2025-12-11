@@ -253,7 +253,7 @@ REMOTE
     echo ">>> Backend deployment completed for: $loc"
     echo "============================================================"
 
-      # Return to main script directory
+    # Return to main script directory
     cd "$SCRIPT_DIR" || { err "Main folder does not exist"; exit 1; }
 
     echo ""
@@ -267,6 +267,10 @@ REMOTE
       err "Local scripts directory '$SCRIPTS_DIR' does not exist."
       exit 1
     fi
+
+    echo "Making all files in $SCRIPTS_DIR executable..."
+    # Mark all regular files (non-recursive) as executable
+    find "$SCRIPTS_DIR" -maxdepth 1 -type f -exec chmod +x {} \;
 
     echo "Uploading scripts from $SCRIPTS_DIR to $USER@$loc.$BASE_URL:~ ..."
     if ! RSYNC_RSH="ssh $SSH_OPTS" rsync -av "$SCRIPTS_DIR/" "$USER@$loc.$BASE_URL:/home/$USER/"; then
