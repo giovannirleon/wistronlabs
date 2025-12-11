@@ -201,9 +201,6 @@ function Header() {
         )}
       </div>
       <SmartSearchBar className="mb-10" />
-      <a href={url} className="text-blue-600 underline">
-        SSH to
-      </a>
     </header>
   );
 }
