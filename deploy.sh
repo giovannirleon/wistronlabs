@@ -12,7 +12,7 @@ err() {
 }
 
 # Define available locations, base domain, SSH user, and SSH options
-LOCATIONS=("TSS" "FRK")
+LOCATIONS=("FRK")
 BASE_URL="wistronlabs.com"
 USER="falab"
 SSH_OPTS="-o BatchMode=yes -o PasswordAuthentication=no -o ConnectTimeout=5"
@@ -147,8 +147,10 @@ EOF
     fi
     echo "Backend code uploaded to $loc."
 
-    # Ensure .env contains DB/port and secrets (only add if missing)
-    ssh $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -s' <<'REMOTE'
+# Ensure .env contains DB/port and secrets (only add if missing)
+echo ""
+echo "Ensuring .env and secrets exist on $loc..."
+if ! ssh $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -s' <<'REMOTE'
 set -e
 cd /opt/docker/website_backend
 
@@ -157,6 +159,22 @@ tr -d '\r' < .env > .env.tmp && mv .env.tmp .env
 
 ensure_newline() {
   [ -s .env ] && [ "$(tail -c1 .env)" != "" ] && echo >> .env
+}
+
+generate_base64() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48
+  else
+    head -c 48 /dev/urandom | base64
+  fi
+}
+
+generate_hex() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    hexdump -vn 32 -e ' /1 "%02x"' /dev/urandom
+  fi
 }
 
 # --- DATABASE_URL ---
@@ -176,7 +194,7 @@ fi
 # --- JWT_SECRET ---
 if ! grep -q '^JWT_SECRET=' .env; then
   echo "Generating new JWT_SECRET..."
-  SECRET=$(openssl rand -base64 48)
+  SECRET=$(generate_base64)
   ensure_newline
   echo "JWT_SECRET=$SECRET" >> .env
 fi
@@ -184,7 +202,7 @@ fi
 # --- INTERNAL_API_KEY ---
 if ! grep -q '^INTERNAL_API_KEY=' .env; then
   echo "Generating new INTERNAL_API_KEY..."
-  APIKEY=$(openssl rand -hex 32)
+  APIKEY=$(generate_hex)
   ensure_newline
   echo "INTERNAL_API_KEY=$APIKEY" >> .env
 fi
@@ -192,20 +210,25 @@ fi
 # --- WEBHOOK_TOKEN ---
 if ! grep -q '^WEBHOOK_TOKEN=' .env; then
   echo "Generating new WEBHOOK_TOKEN..."
-  TOKEN=$(openssl rand -hex 32)
+  TOKEN=$(generate_hex)
   ensure_newline
   echo "WEBHOOK_TOKEN=$TOKEN" >> .env
 fi
 REMOTE
+then
+  echo "ERROR: Remote .env/secret setup failed on $loc"
+  exit 1
+fi
 
-    # Start backend containers
-    echo ""
-    echo "Starting backend containers on $loc..."
-    if ! ssh $SSH_OPTS "$USER@$loc.$BASE_URL" \
-        "cd /opt/docker/website_backend; sudo docker compose up --build -d app"; then
-        echo "ERROR: Failed to start backend containers on $loc"
-        exit 1
-    fi
+# Start backend containers
+echo ""
+echo "Starting backend containers on $loc..."
+if ! ssh $SSH_OPTS "$USER@$loc.$BASE_URL" \
+    "cd /opt/docker/website_backend; sudo docker compose up --build -d app"; then
+    echo "ERROR: Failed to start backend containers on $loc"
+    exit 1
+fi
+
 
     echo ""
     echo "============================================================"
