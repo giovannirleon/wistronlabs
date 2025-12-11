@@ -12,7 +12,7 @@ err() {
 }
 
 # Define available locations, base domain, SSH user, and SSH options
-LOCATIONS=("FRK")
+LOCATIONS=("TSS" "FRK")
 BASE_URL="wistronlabs.com"
 USER="falab"
 SSH_OPTS="-o BatchMode=yes -o PasswordAuthentication=no -o ConnectTimeout=5"
@@ -118,9 +118,9 @@ EOF
     echo "============================================================"
     echo ""
 
-    # Ensure backup directory exists and is writable
-    ssh $SSH_OPTS "$USER@$loc.$BASE_URL" \
-      "sudo mkdir -p /opt/docker/database_backups && sudo chown $USER /opt/docker/database_backups"
+    # # Ensure backup directory exists and is writable
+    # ssh $SSH_OPTS "$USER@$loc.$BASE_URL" \
+    #   "sudo mkdir -p /opt/docker/database_backups && sudo chown $USER /opt/docker/database_backups"
 
     # Backup database on remote server
     echo "Creating PostgreSQL database backup on $loc..."
