@@ -147,14 +147,11 @@ EOF
     fi
     echo "Backend code uploaded to $loc."
 
-# Ensure .env contains DB/port and secrets (only add if missing)
-echo ""
-echo "Ensuring .env and secrets exist on $loc..."
-if ! ssh $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -s' <<'REMOTE'
-set -e
-cd /opt/docker/website_backend
+if ! ssh -T $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -se' <<'REMOTE'
+cd /opt/docker/website_backend || { echo "Missing /opt/docker/website_backend" >&2; exit 1; }
 
-[ -f .env ] || touch .env
+# ensure .env exists and normalize line endings
+touch .env
 tr -d '\r' < .env > .env.tmp && mv .env.tmp .env
 
 ensure_newline() {
@@ -162,63 +159,29 @@ ensure_newline() {
 }
 
 generate_base64() {
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -base64 48
-  else
-    head -c 48 /dev/urandom | base64
-  fi
+  command -v openssl >/dev/null 2>&1 && openssl rand -base64 48 || head -c 48 /dev/urandom | base64
 }
 
 generate_hex() {
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 32
-  else
-    hexdump -vn 32 -e ' /1 "%02x"' /dev/urandom
-  fi
+  command -v openssl >/dev/null 2>&1 && openssl rand -hex 32 || hexdump -vn 32 -e ' /1 "%02x"' /dev/urandom
 }
 
-# --- DATABASE_URL ---
-if ! grep -q '^DATABASE_URL=' .env; then
-  echo "Setting DATABASE_URL..."
-  ensure_newline
-  echo "DATABASE_URL=postgres://postgres:example@db:5432/mydb" >> .env
-fi
-
-# --- PORT ---
-if ! grep -q '^PORT=' .env; then
-  echo "Setting PORT..."
-  ensure_newline
-  echo "PORT=3000" >> .env
-fi
-
-# --- JWT_SECRET ---
-if ! grep -q '^JWT_SECRET=' .env; then
-  echo "Generating new JWT_SECRET..."
-  SECRET=$(generate_base64)
-  ensure_newline
-  echo "JWT_SECRET=$SECRET" >> .env
-fi
-
-# --- INTERNAL_API_KEY ---
-if ! grep -q '^INTERNAL_API_KEY=' .env; then
-  echo "Generating new INTERNAL_API_KEY..."
-  APIKEY=$(generate_hex)
-  ensure_newline
-  echo "INTERNAL_API_KEY=$APIKEY" >> .env
-fi
-
-# --- WEBHOOK_TOKEN ---
-if ! grep -q '^WEBHOOK_TOKEN=' .env; then
-  echo "Generating new WEBHOOK_TOKEN..."
-  TOKEN=$(generate_hex)
-  ensure_newline
-  echo "WEBHOOK_TOKEN=$TOKEN" >> .env
-fi
+# --- fill secrets if missing ---
+for var in DATABASE_URL PORT JWT_SECRET INTERNAL_API_KEY WEBHOOK_TOKEN; do
+  case $var in
+    DATABASE_URL) val="postgres://postgres:example@db:5432/mydb" ;;
+    PORT)         val="3000" ;;
+    JWT_SECRET)   val="$(generate_base64)" ;;
+    INTERNAL_API_KEY|WEBHOOK_TOKEN) val="$(generate_hex)" ;;
+  esac
+  grep -q "^$var=" .env || { ensure_newline; echo "$var=$val" >> .env; echo "Set $var"; }
+done
 REMOTE
 then
   echo "ERROR: Remote .env/secret setup failed on $loc"
   exit 1
 fi
+
 
 # Start backend containers
 echo ""
