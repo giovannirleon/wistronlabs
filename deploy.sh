@@ -12,7 +12,7 @@ err() {
 }
 
 # Define available locations, base domain, SSH user, and SSH options
-LOCATIONS=("TSS" "FRK")
+LOCATIONS=("FRK")
 BASE_URL="wistronlabs.com"
 USER="falab"
 SSH_OPTS="-o BatchMode=yes -o PasswordAuthentication=no -o ConnectTimeout=5"
