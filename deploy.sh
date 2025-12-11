@@ -147,40 +147,90 @@ EOF
     fi
     echo "Backend code uploaded to $loc."
 
-if ! ssh -T $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -se' <<'REMOTE'
+echo ""
+echo "Ensuring .env and secrets exist on $loc..."
+if ! ssh -T $SSH_OPTS "$USER@$loc.$BASE_URL" 'bash -s' <<'REMOTE'
 cd /opt/docker/website_backend || { echo "Missing /opt/docker/website_backend" >&2; exit 1; }
 
-# ensure .env exists and normalize line endings
-touch .env
-tr -d '\r' < .env > .env.tmp && mv .env.tmp .env
+# Ensure .env file exists
+[ -f .env ] || touch .env
+
+# Normalize line endings, but don't die if something is weird
+if [ -s .env ]; then
+  tr -d '\r' < .env > .env.tmp 2>/dev/null || cp .env .env.tmp
+  mv .env.tmp .env 2>/dev/null || true
+fi
 
 ensure_newline() {
-  [ -s .env ] && [ "$(tail -c1 .env)" != "" ] && echo >> .env
+  if [ -s .env ]; then
+    last_char=$(tail -c1 .env 2>/dev/null || echo "")
+    [ -n "$last_char" ] || return 0
+    echo >> .env
+  fi
 }
 
 generate_base64() {
-  command -v openssl >/dev/null 2>&1 && openssl rand -base64 48 || head -c 48 /dev/urandom | base64
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 2>/dev/null || echo "fallback_b64_$(date +%s)"
+  else
+    head -c 48 /dev/urandom 2>/dev/null | base64 || echo "fallback_b64_$(date +%s)"
+  fi
 }
 
 generate_hex() {
-  command -v openssl >/dev/null 2>&1 && openssl rand -hex 32 || hexdump -vn 32 -e ' /1 "%02x"' /dev/urandom
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32 2>/dev/null || echo "fallback_hex_$(date +%s)"
+  else
+    hexdump -vn 32 -e ' /1 "%02x"' /dev/urandom 2>/dev/null || echo "fallback_hex_$(date +%s)"
+  fi
 }
 
-# --- fill secrets if missing ---
-for var in DATABASE_URL PORT JWT_SECRET INTERNAL_API_KEY WEBHOOK_TOKEN; do
-  case $var in
-    DATABASE_URL) val="postgres://postgres:example@db:5432/mydb" ;;
-    PORT)         val="3000" ;;
-    JWT_SECRET)   val="$(generate_base64)" ;;
-    INTERNAL_API_KEY|WEBHOOK_TOKEN) val="$(generate_hex)" ;;
-  esac
-  grep -q "^$var=" .env || { ensure_newline; echo "$var=$val" >> .env; echo "Set $var"; }
-done
+# --- DATABASE_URL ---
+if ! grep -q '^DATABASE_URL=' .env; then
+  echo "Setting DATABASE_URL..."
+  ensure_newline
+  echo "DATABASE_URL=postgres://postgres:example@db:5432/mydb" >> .env
+fi
+
+# --- PORT ---
+if ! grep -q '^PORT=' .env; then
+  echo "Setting PORT..."
+  ensure_newline
+  echo "PORT=3000" >> .env
+fi
+
+# --- JWT_SECRET ---
+if ! grep -q '^JWT_SECRET=' .env; then
+  echo "Generating new JWT_SECRET..."
+  SECRET=$(generate_base64)
+  ensure_newline
+  echo "JWT_SECRET=$SECRET" >> .env
+fi
+
+# --- INTERNAL_API_KEY ---
+if ! grep -q '^INTERNAL_API_KEY=' .env; then
+  echo "Generating new INTERNAL_API_KEY..."
+  APIKEY=$(generate_hex)
+  ensure_newline
+  echo "INTERNAL_API_KEY=$APIKEY" >> .env
+fi
+
+# --- WEBHOOK_TOKEN ---
+if ! grep -q '^WEBHOOK_TOKEN=' .env; then
+  echo "Generating new WEBHOOK_TOKEN..."
+  TOKEN=$(generate_hex)
+  ensure_newline
+  echo "WEBHOOK_TOKEN=$TOKEN" >> .env
+fi
+
+# If we got here, everything is fine
+exit 0
 REMOTE
 then
   echo "ERROR: Remote .env/secret setup failed on $loc"
   exit 1
 fi
+
 
 
 # Start backend containers
