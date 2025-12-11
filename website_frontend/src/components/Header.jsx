@@ -39,7 +39,7 @@ function Header() {
   }, [token]);
 
   // ...
-
+  const url = `ssh://falab@tss.wistronlabs.com:22`;
   return (
     <header className="sticky top-0 z-10 bg-blue-900 text-white px-4 py-2 ">
       <div className="flex items-center justify-between h-[60px]">
@@ -201,6 +201,9 @@ function Header() {
         )}
       </div>
       <SmartSearchBar className="mb-10" />
+      <a href={url} className="text-blue-600 underline">
+        SSH to
+      </a>
     </header>
   );
 }

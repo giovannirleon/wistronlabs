@@ -1475,7 +1475,7 @@ function SystemPage() {
     const addedNotes = toCreate.map((b) => {
       const name = partNameById.get(b.part_id) || `#${b.part_id}`;
       const ppid = String(b.ppid).toUpperCase().trim();
-      return ` - ${name} (${ppid}) in system identified as non working.`;
+      return ` - ${name} (${ppid}) in system identified as non working with none in stock.`;
     });
 
     const removedNotes = removing.map((ppid) => {
@@ -2922,7 +2922,7 @@ function SystemPage() {
                                   {/* Part Select */}
                                   <div className="flex-1 min-w-0">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Part
+                                      Part Needed
                                     </label>
                                     <Select
                                       isDisabled={formDisabled}
@@ -2950,7 +2950,7 @@ function SystemPage() {
                                   {/* PPID Input */}
                                   <div className="flex-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      PPID
+                                      Defective Part PPID
                                     </label>
                                     <input
                                       type="text"
