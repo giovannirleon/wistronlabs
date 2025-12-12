@@ -1,13 +1,11 @@
 #!/bin/bash
 
-
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 err() {
     echo -e "${RED}Error:${NC} $*" >&2
 }
-
 
 # Check if SERVER_LOCATION environment variable is set
 if [[ -z "${SERVER_LOCATION:-}" ]]; then
@@ -16,7 +14,7 @@ if [[ -z "${SERVER_LOCATION:-}" ]]; then
   exit 1
 fi
 
-# Check if SERVER_LOCATION environment variable is set
+# Check if INTERNAL_API_KEY environment variable is set
 if [[ -z "${INTERNAL_API_KEY:-}" ]]; then
   echo "Error: environment variable INTERNAL_API_KEY is not set." >&2
   echo "       Please export INTERNAL_API_KEY in your shell (e.g. in ~/.bashrc)." >&2
@@ -71,39 +69,36 @@ if ! [[ "$1" =~ ^[0-9]+$ ]]; then
 fi
 
 session_number="$1"
-found=0
 
-for station in "${STATIONS[@]}"; do
-  if [[ "$station" == "$session_number" ]]; then
-    found=1
-    break
-  fi
-done
-
-if [[ $found -eq 0 ]]; then
-  err "stn_$session_number does not exist. Please choose from one of the below stations:"
-  cols=6
-
-  i=0
-  for stn in "${STATIONS[@]}"; do
-      printf "%-9s" "stn_$stn"
-      ((i++))
-      if (( i % cols == 0 )); then
-          echo
-      fi
-  done
-  # finish with newline if needed
-  if (( i % cols != 0 )); then
-      echo
-  fi
-
-  exit 1
-fi
-
-# Try to attach to an existing session; if it fails, create a new one
+# if a tmux session exists, kill it and restart, if it doesn't error out and list the existing sessions
 # - has-session returns 0 if session exists
 if tmux has-session -t "stn_$session_number" 2>/dev/null; then
-  tmux attach-session -t "stn_$session_number"
-else
+  tmux kill-session -t "stn_$session_number"
   tmux new-session -s "stn_$session_number"
+else
+  echo "Error: this station does not exist, please pick from one of the below stations:"
+
+  # Collect tmux sessions whose numeric suffix is in STATIONS[]
+  valid_sessions=()
+
+  # List tmux session names only; ignore errors if no sessions
+  while IFS= read -r sess; do
+    # Expect session names like stn_1, stn_2, etc.
+    if [[ "$sess" =~ ^stn_([0-9]+)$ ]]; then
+      num="${BASH_REMATCH[1]}"
+      # Check if num is in STATIONS array
+      for stn in "${STATIONS[@]}"; do
+        if [[ "$stn" == "$num" ]]; then
+          valid_sessions+=("$sess")
+          break
+        fi
+      done
+    fi
+  done < <(tmux ls -F '#S' 2>/dev/null || true)
+
+  if ((${#valid_sessions[@]} == 0)); then
+    echo "  (No active tmux station sessions match API stations.)"
+  else
+    printf '%s\n' "${valid_sessions[@]}"
+  fi
 fi

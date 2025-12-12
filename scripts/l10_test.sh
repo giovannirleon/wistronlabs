@@ -7,6 +7,8 @@ err() {
     echo -e "${RED}Error:${NC} $*" >&2
 }
 
+GB200_FOLDER="/home/nvidia/l10_diag_r8_386/"
+GB300_FOLDER=/home/nvidia/629-24059-0000-FLD-43538/
 
 # Check if SERVER_LOCATION environment variable is set
 if [[ -z "${SERVER_LOCATION:-}" ]]; then
@@ -92,8 +94,40 @@ read -p "Enter BMC MAC address (e.g., 001A2B3C4D5E): " BMC_MAC
 read -p "Enter HOST MAC address (e.g., 001A2B3C4D5E): " HOST_MAC
 read -p "Enter Service Tag (e.g., A1B264): " SERVICE_TAG
 
+CONFIG_TMP=$(mktemp)
+
+HTTP_CODE=$(curl -sS -w "%{http_code}" -o "$CONFIG_TMP" \
+  "https://backend.$SERVER_LOCATION.wistronlabs.com/api/v1/systems/$SERVICE_TAG") || {
+    err "Failed to reach backend when fetching config for $SERVICE_TAG."
+    rm -f "$CONFIG_TMP"
+    exit 1
+}
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+  case "$HTTP_CODE" in
+    404)
+      err "System $SERVICE_TAG not found in tracking website."
+      ;;
+    *)
+      err "Backend returned HTTP $HTTP_CODE when fetching config for $SERVICE_TAG."
+      ;;
+  esac
+  rm -f "$CONFIG_TMP"
+  exit 1
+fi
+
+CONFIG=$(jq -r '.config // empty' < "$CONFIG_TMP")
+rm -f "$CONFIG_TMP"
+
+if [[ -z "$CONFIG" || "$CONFIG" == "null" ]]; then
+  err "System $SERVICE_TAG has no known config in tracking website."
+  exit 1
+fi
+
+
+
 if [[ "$CURRENT_REMOTE_SERVICE_TAG" == "null" ]]; then
-    err “This system has not been assigned to ‘L10’ on Station $SESSION_NUMBER in the tracking website. Please update its status and re-run this command.”
+    err "This system has not been assigned to 'L10' on Station $SESSION_NUMBER in the tracking website. Please update its status and re-run this command."
     exit 1
 fi
 
@@ -107,19 +141,8 @@ if [[ "$CURRENT_REMOTE_SERVICE_TAG" != "$SERVICE_TAG" ]]; then
     exit 1
 fi
 
-
-while true; do
-    read -p "Enter Config Number (e.g., 1): " CONFIG    
-    if [[ "$CONFIG" =~ ^-?[0-9]+$ ]]; then
-        echo "Running L10 with config $CONFIG"
-        break
-    else
-        echo "Not a valid number. Try again."
-    fi
-done
-
 # list of all possible test modules
-MASTER_MODULE_LIST=(
+GB200_MASTER_MODULE_LIST=(
     "Inventory"
     "CxPcieProperties"
     "BfPcieProperties"
@@ -161,6 +184,52 @@ MASTER_MODULE_LIST=(
     "Cx8GpuDirectLoopback"
     "Cx8GpuDirectCrossGpu"
 )
+
+GB300_MASTER_MODULE_LIST=(
+  "Inventory"
+  "CxPcieProperties"
+  "SsdPcieProperties"
+  "TegraCpu"
+  "TegraMemory"
+  "CpuMemorySweep"
+  "TegraClink"
+  "Gpustress"
+  "Gpumem"
+  "Pcie"
+  "Connectivity"
+  "NvlBwStress"
+  "NvlBwStressBg610"
+  "C2C"
+  "C2CGpuPulsePower1kHz"
+  "C2CGpuPulsePower4kHz"
+  "CpuGpuSyncPulsePower1Hz50duty"
+  "CpuGpuSyncPulsePower50Hz50duty"
+  "CpuGpuSyncPulsePower500Hz50duty"
+  "CpuGpuSyncPulsePower1kHz50duty"
+  "CpuGpuSyncPulsePower4kHz50duty"
+  "Thermal"
+  "CxeyegradeStart"
+  "CxeyegradeStop"
+  "Cx8GpuDirectLoopback"
+  "Cx8GpuDirectCrossGpu_ETH"
+  "CpuCx8Phy"
+  "Cx8GpuDirectCrossGpu_IB"
+  "BF3PcieInterfaceTraffic"
+  "Ssd"
+  "DimmStress"
+)
+
+if [[ "$CONFIG" == "2" || "$CONFIG" == "4" || "$CONFIG" == "6" ]]; then
+    MASTER_MODULE_LIST=("${GB200_MASTER_MODULE_LIST[@]}")
+    DIAG_FOLDER="$GB200_FOLDER"
+elif [[ "$CONFIG" == "A" || "$CONFIG" == "B" ]]; then
+    MASTER_MODULE_LIST=("${GB300_MASTER_MODULE_LIST[@]}")
+    DIAG_FOLDER="$GB300_FOLDER"
+else
+    err "This config ($CONFIG) has not been implemented at L10 yet."
+    exit 1
+fi
+
 # defines the base modules that need to be skipped over for each configuration. 
 # note that these might change as we get more testing equiptment
 case "$CONFIG" in
@@ -205,6 +274,25 @@ case "$CONFIG" in
             #"CxeyegradeStop"
         )
         ;;
+      A)
+        SKIPPED_MODULES=(
+            "BF3PcieInterfaceTraffic"
+            "Cx8GpuDirectLoopback"
+            "Cx8GpuDirectCrossGpu_ETH"
+            "CpuCx8Phy"
+            "Cx8GpuDirectCrossGpu_IB"
+        )
+        ;;
+    B)
+        SKIPPED_MODULES=(
+            "BF3PcieInterfaceTraffic"
+            "CxeyegradeStop"
+            "Cx8GpuDirectLoopback"
+            "Cx8GpuDirectCrossGpu_ETH"
+            "CpuCx8Phy"
+            "Cx8GpuDirectCrossGpu_IB"
+        )
+        ;;
     *)
         echo "Configuration $CONFIG is not valid on this server"
         exit 1
@@ -228,7 +316,7 @@ for mod in "${MASTER_MODULE_LIST[@]}"; do
 done
 
 # if the -o (option) flaag is set, it will set up an interactive prompt where you can pick the module(s) you would like to test
-if [[ "$1" == "-o" ]]; then
+if [[ "${1:-}" == "-o" ]]; then
 
     while true; do
         selected=$(printf "%s\n" "${CONFIG_LIST[@]}" | fzf --multi \
@@ -282,6 +370,9 @@ exec 5> >(tee -a "$LOG_FILE")
 exec 1>&5 2>&5
 
 echo "==> Logging to $LOG_FILE"
+
+echo ""
+echo "System $SERVICE_TAG: Config $CONFIG"
 
 # Helpers to toggle logging
 log_off() {  exec 1>&3 2>&4; }   # to terminal only (no file)
@@ -340,7 +431,7 @@ done
 echo "INFO - IPMI response received!"
 echo ""
 
-echo "INFO - Getting system PPID"
+echo "INFO - verifying system PPID"
 SYSTEM_PPID=$(ipmitool -I lanplus -U admin -P admin -H $BMC_IP fru print 0 | grep "Product Serial" | cut -d':' -f2 | xargs)
 
 # Exit if empty
@@ -470,18 +561,14 @@ fi
 
 log_off
 # Runs the L10 validation test by SSHing into the remote system and attaching to a tmux session.
-# Executes the partnerdiag script with the correct config file and the specified skipped modules.
-# Logs are saved to output.log via `tee`.
-# Then:
-#   - Adds the falab server to known_hosts (if not already added)
-#   - Identifies the latest logs archive (logs-*.tgz)
-#   - Copies both the latest log archive and output.log back to the falab server
+# The tmux session runs partnerdiag + log copy and exits when finished.
+
 echo "Running config $CONFIG L10 Validation Tests"
 ssh -t nvidia@"$HOST_IP" 'tmux new-session -As '"$SERVICE_TAG"' "
     sleep 1
-    cd /home/nvidia/l10_diag_r8_386/
+    cd '"$DIAG_FOLDER"'
     sudo ./partnerdiag --mfg \
-        --run_spec=spec_gb200_nvl_2_4_board_pc_partner_mfg_gaines1_5_ps_config'"$CONFIG"'.json \
+        --run_spec=spec_config'"$CONFIG"'.json \
         --run_on_error --no_bmc \
         --skip_tests='"$SKIPPED_MODULES_FORMATTED$ADDED_SKIPPED_MODULES_FORMATTED"' \
         2>&1 | tee /home/nvidia/output.log
@@ -490,19 +577,22 @@ ssh -t nvidia@"$HOST_IP" 'tmux new-session -As '"$SERVICE_TAG"' "
     cd logs
     LATEST=\$(ls -1 logs-*.tgz | sort | tail -n1)
     ssh falab@'"$SERVER_LOCATION"'.wistronlabs.com mkdir -p '"$LOG_DIR"'
-    scp -r /home/nvidia/l10_diag_r8_386/logs/\$LATEST falab@'"$SERVER_LOCATION"'.wistronlabs.com:'"$LOG_DIR"'/\$LATEST
+    scp -r '"$DIAG_FOLDER"'logs/\$LATEST falab@'"$SERVER_LOCATION"'.wistronlabs.com:'"$LOG_DIR"'/\$LATEST
     scp /home/nvidia/output.log falab@'"$SERVER_LOCATION"'.wistronlabs.com:'"$LOG_DIR"'/diag_output.log
     sleep 8
 "'
 
 sleep 1
 log_on
+
+cat "$LOG_DIR/diag_output.log"
+ 
+echo ""
+
 echo "INFO - Powering off system"
 ipmitool -I lanplus -H $BMC_IP -U admin -P admin chassis power off
 
-echo ""
- 
-cat $LOG_DIR/diag_output.log
 log_off
-rm $LOG_DIR/diag_output.log
+rm "$LOG_DIR/diag_output.log"
 echo "logs are located at $LOG_DIR"
+

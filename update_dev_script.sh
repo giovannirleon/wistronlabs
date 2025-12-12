@@ -8,10 +8,10 @@ set -euo pipefail
 #   ./update_dev_script.sh my_test_script.sh
 #
 # This will:
-#   - copy ./scripts/<local-script-name> to frk:/opt/dev_scripts/
+#   - let you pick TSS or FRK via fzf
+#   - copy ./scripts/<local-script-name> to <loc>.wistronlabs.com:/opt/dev_scripts/
 #   - chmod +x it
 
-REMOTE_HOST="frk.wistronlabs.com"
 REMOTE_USER="falab"
 REMOTE_DIR="/opt/dev_scripts"
 
@@ -29,6 +29,20 @@ if [[ ! -f "scripts/$LOCAL_SCRIPT" ]]; then
   exit 1
 fi
 
+# Pick location with fzf
+LOCATIONS=("TSS" "FRK")
+echo "Select location:"
+SELECTED_LOC="$(printf '%s\n' "${LOCATIONS[@]}" | fzf --prompt='Location> ' --height=5 --border)" || {
+  echo "No location selected, aborting." >&2
+  exit 1
+}
+
+# Map to hostname (lowercase + .wistronlabs.com)
+LOWER_LOC="$(echo "$SELECTED_LOC" | tr '[:upper:]' '[:lower:]')"
+REMOTE_HOST="${LOWER_LOC}.wistronlabs.com"
+
+echo "==> Using location: $SELECTED_LOC ($REMOTE_HOST)"
+
 echo "==> Ensuring remote dir $REMOTE_DIR exists on $REMOTE_USER@$REMOTE_HOST ..."
 ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "mkdir -p '$REMOTE_DIR'"
 
@@ -37,7 +51,7 @@ scp $SSH_OPTS "scripts/$LOCAL_SCRIPT" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
 REMOTE_BASENAME="$(basename "$LOCAL_SCRIPT")"
 
-echo "==> Running $REMOTE_BASENAME on $REMOTE_HOST ..."
+echo "==> Setting +x on $REMOTE_BASENAME on $REMOTE_HOST ..."
 ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "cd '$REMOTE_DIR' && chmod +x '$REMOTE_BASENAME'"
 
 echo "==> Done."
