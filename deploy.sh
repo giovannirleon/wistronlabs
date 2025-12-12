@@ -25,6 +25,38 @@ SSH_OPTS="-o BatchMode=yes -o PasswordAuthentication=no -o ConnectTimeout=5"
 cd "$SCRIPT_DIR" || { err "Failed to cd to script dir"; exit 1; }
 
 echo "============================================================"
+echo "Verifying git branch and sync status..."
+echo "============================================================"
+
+# 1) Enforce main branch
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ "$current_branch" != "main" ]]; then
+  err "You must be on 'main' to run this deploy script (current: '$current_branch')."
+  exit 1
+fi
+
+# 2) Ensure we know about the latest remote commits
+git fetch origin --prune
+
+local_head=$(git rev-parse HEAD)
+remote_head=$(git rev-parse origin/main)
+base_head=$(git merge-base HEAD origin/main)
+
+if [[ "$local_head" != "$remote_head" ]]; then
+  if [[ "$local_head" = "$base_head" ]]; then
+    err "Local main is behind origin/main. Run 'git pull' and try again."
+  elif [[ "$remote_head" = "$base_head" ]]; then
+    err "Local main is ahead of origin/main. Push your commits (or revert) before deploying."
+  else
+    err "Local main and origin/main have diverged. Resolve the divergence before deploying."
+  fi
+  exit 1
+fi
+
+echo "Branch check OK: on 'main' and in sync with origin/main."
+
+echo ""
+echo "============================================================"
 echo "Checking for unstaged or uncommitted changes in git..."
 echo "============================================================"
 
@@ -35,6 +67,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "Please commit or stash your changes before running this script."
     exit 1
 fi
+
 
 # authorization check
 echo ""
