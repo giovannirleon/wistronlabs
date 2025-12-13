@@ -343,7 +343,8 @@ export default function PartsInventory() {
         unit_service_tag_title: "Unit",
         category_name_title: "Category",
         functional_title: "Functional",
-
+        dpn: p.dpn || "—",
+        dpn_title: "DPN",
         part_name: p.name || `#${r.part_id}`,
         ppid: r.ppid,
         place: place === "inventory" ? "Inventory" : "Unit",
@@ -419,9 +420,11 @@ export default function PartsInventory() {
 
   // CSV Export of current filtered rows
   const handleExportCsv = () => {
+    console.log(filtered);
     const headers = [
       "part_name",
       "category_name",
+      "dpn",
       "ppid",
       "place",
       "unit_service_tag",
@@ -493,6 +496,7 @@ export default function PartsInventory() {
   const displayOrder = [
     "part_name",
     "category_name",
+    "dpn",
     "ppid",
     "place",
     "functional",
@@ -501,6 +505,7 @@ export default function PartsInventory() {
   const visibleFields = [
     "part_name",
     "category_name",
+    "dpn",
     "ppid",
     "place",
     "functional",
