@@ -8,7 +8,8 @@ err() {
 }
 
 GB200_FOLDER="/home/nvidia/l10_diag_r8_386/"
-GB300_FOLDER=/home/nvidia/629-24059-0000-FLD-43538/
+GB300_FOLDER="/home/nvidia/629-24059-0000-FLD-43538/"
+CONFIG7_FOLDER="/home/nvidia/629-24975-0000-FLD-43749_rev13/"
 
 # Check if SERVER_LOCATION environment variable is set
 if [[ -z "${SERVER_LOCATION:-}" ]]; then
@@ -219,12 +220,50 @@ GB300_MASTER_MODULE_LIST=(
   "DimmStress"
 )
 
+CONFIG7_MASTER_MODULE_LIST=(
+  "inforom"
+  "Checkinforom"
+  "environmentcheck"
+  "Inventory"
+  "CxPcieProperties"
+  "BfPcieProperties"
+  "BfMgmtPcieProperties"
+  "TegraCpu"
+  "TegraMemory"
+  "CpuMemorySweep"
+  "TegraClink"
+  "Gpustress"
+  "Gpumem"
+  "Pcie"
+  "Connectivity"
+  "NvlBwStress"
+  "NvlBwStressBg610"
+  "NvlBwStressBg610Pulsy"
+  "CpuGpuSyncPulsePower"
+  "ThermalSteadyState"
+  "CxeyegradeStart"
+  "IbStressBf3PhyLoopback"
+  "IbStressBf3Loopout"
+  "CxeyegradeStop"
+  "Cx8CpuCrossNIC_ETH"
+  "Cx8CpuCrossNIC_IB"
+  "Cx8GpuDirectLoopback"
+  "Cx8GpuDirectCrossNIC_ETH"
+  "Cx8GpuDirectCrossNIC_IB"
+  "Bf3PcieInterfaceTraffic"
+  "Ssd"
+)
+
+
 if [[ "$CONFIG" == "2" || "$CONFIG" == "4" || "$CONFIG" == "6" ]]; then
     MASTER_MODULE_LIST=("${GB200_MASTER_MODULE_LIST[@]}")
     DIAG_FOLDER="$GB200_FOLDER"
 elif [[ "$CONFIG" == "A" || "$CONFIG" == "B" ]]; then
     MASTER_MODULE_LIST=("${GB300_MASTER_MODULE_LIST[@]}")
     DIAG_FOLDER="$GB300_FOLDER"
+elif [[ "$CONFIG" == "7" ]]; then
+    MASTER_MODULE_LIST=("${CONFIG7_MASTER_MODULE_LIST[@]}")
+    DIAG_FOLDER="$CONFIG7_FOLDER"
 else
     err "This config ($CONFIG) has not been implemented at L10 yet."
     exit 1
@@ -274,7 +313,17 @@ case "$CONFIG" in
             #"CxeyegradeStop"
         )
         ;;
-      A)
+     7)
+        SKIPPED_MODULES=(
+           "BfPcieProperties"
+            "BfMgmtPcieProperties"
+            "Bf3PcieInterfaceTraffic"
+            "Connectivity"
+            "NvlBwStress"
+            "NvlBwStressBg610"
+        )
+        ;;
+    A)
         SKIPPED_MODULES=(
             "BF3PcieInterfaceTraffic"
             "Cx8GpuDirectLoopback"
@@ -408,72 +457,107 @@ done
 
 echo ""
 
-IPMI_PING_TIMEOUT=$((5 * 60)) #10 minutes timeout
+IPMI_PING_TIMEOUT=$((5 * 60)) # 5 minutes timeout
 IPMI_PING_START_TIME=$(date +%s)
 
-while ! ipmitool -I lanplus -H $BMC_IP -U admin -P admin chassis power 2>/dev/null; do
-    
-    CURRENT_TIME=$(date +%s)
-    ELAPSED_TIME=$((CURRENT_TIME - IPMI_PING_START_TIME))
+# assumes: CONFIG, BMC_IP, IPMI_PING_START_TIME, IPMI_PING_TIMEOUT, err() exist
 
-    if ((ELAPSED_TIME > IPMI_PING_TIMEOUT)); then
-        err "It is taking too long to get a IPMI response"
-        echo "This is most likey a BMC hardware issue"
-        exit 1
-    fi
+bmc_check_cmd() {
+  if [[ "${CONFIG:-}" == "7" ]]; then
+    sshpass -p changeme ssh \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      -o ConnectTimeout=5 \
+      -o LogLevel=ERROR \
+      root@"$BMC_IP" 'exit' >/dev/null 2>&1
+  else
+    ipmitool -I lanplus -H "$BMC_IP" -U admin -P admin chassis power status >/dev/null 2>&1
+  fi
+}
 
-    echo ""
-    printf "%02dh %02dm %02ds - Waiting for valid IPMI response...... \n" $((ELAPSED_TIME/3600)) $(( (ELAPSED_TIME%3600)/60 )) $((ELAPSED_TIME%60))
 
-    sleep 5
+while ! bmc_check_cmd; do
+  CURRENT_TIME=$(date +%s)
+  ELAPSED_TIME=$((CURRENT_TIME - IPMI_PING_START_TIME))
+
+  if (( ELAPSED_TIME > IPMI_PING_TIMEOUT )); then
+    err "It is taking too long to get a valid BMC response"
+    echo "This is most likely a BMC hardware issue"
+    exit 1
+  fi
+
+  echo ""
+  printf "%02dh %02dm %02ds - Waiting for valid BMC response...... \n" \
+    $((ELAPSED_TIME/3600)) $(((ELAPSED_TIME%3600)/60)) $((ELAPSED_TIME%60))
+
+  sleep 5
 done
+
 
 echo "INFO - IPMI response received!"
 echo ""
 
-echo "INFO - verifying system PPID"
-SYSTEM_PPID=$(ipmitool -I lanplus -U admin -P admin -H $BMC_IP fru print 0 | grep "Product Serial" | cut -d':' -f2 | xargs)
 
-# Exit if empty
-if [[ -z "$SYSTEM_PPID" ]]; then
-  echo "ERROR: Could not get PPID, something might be wrong with the FRU data"
-  exit 1
-fi
+if [[ "${CONFIG:-}" != "7" ]]; then
 
-echo "Info - PPID is $SYSTEM_PPID"
+    echo "INFO - verifying system PPID"
+    SYSTEM_PPID=$(ipmitool -I lanplus -U admin -P admin -H $BMC_IP fru print 0 | grep "Product Serial" | cut -d':' -f2 | xargs)
 
-# Send PPID to tracking API and capture response
-response=$(curl -sS -X PATCH "https://backend.$SERVER_LOCATION.wistronlabs.com/api/v1/systems/$SERVICE_TAG/ppid" \
-  -H "Authorization: Bearer $INTERNAL_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{\"ppid\": \"$SYSTEM_PPID\"}")
-
-# Extract fields
-msg=$(echo "$response" | jq -r '.message // empty')
-err_msg=$(echo "$response" | jq -r '.error // empty')
-
-# Output accordingly
-if [[ -n "$err_msg" ]]; then
-    err "Cannot update PPID, $err_msg" 
-    echo ""
+    # Exit if empty
+    if [[ -z "$SYSTEM_PPID" ]]; then
+    echo "ERROR: Could not get PPID, something might be wrong with the FRU data"
     exit 1
-elif [[ -n "$msg" ]]; then
-    echo "INFO - $msg"
+    fi
+
+    echo "Info - PPID is $SYSTEM_PPID"
+
+    # Send PPID to tracking API and capture response
+    response=$(curl -sS -X PATCH "https://backend.$SERVER_LOCATION.wistronlabs.com/api/v1/systems/$SERVICE_TAG/ppid" \
+    -H "Authorization: Bearer $INTERNAL_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "{\"ppid\": \"$SYSTEM_PPID\"}")
+
+    # Extract fields
+    msg=$(echo "$response" | jq -r '.message // empty')
+    err_msg=$(echo "$response" | jq -r '.error // empty')
+
+    # Output accordingly
+    if [[ -n "$err_msg" ]]; then
+        err "Cannot update PPID, $err_msg" 
+        echo ""
+        exit 1
+    elif [[ -n "$msg" ]]; then
+        echo "INFO - $msg"
+        echo ""
+    else
+        echo "Unexpected response: $response"
+        echo ""
+    fi
+fi  
+
+
+if [[ "${CONFIG:-}" == "7" ]]; then
+
     echo ""
+    echo "INFO - Powering on system"
+
+    sshpass -p changeme ssh -tt \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=5 \
+    -o LogLevel=ERROR \
+    root@"$BMC_IP" 'start -script /SYS'
 else
-    echo "Unexpected response: $response"
+
+    echo "INFO - Changing Boot Device to PXE"
+    ipmitool -I lanplus -H $BMC_IP -U admin -P admin chassis bootdev pxe
+
     echo ""
+    echo "INFO - Powering on system"
+
+  ipmitool -I lanplus -H "$BMC_IP" -U admin -P admin chassis power on
 fi
 
-
-
-echo "INFO - Changing Boot Device to PXE"
-ipmitool -I lanplus -H $BMC_IP -U admin -P admin chassis bootdev pxe
-
-echo ""
-
-echo "INFO - Powering on system"
-ipmitool -I lanplus -H $BMC_IP -U admin -P admin chassis power on
 
 echo ""
 
@@ -590,7 +674,17 @@ cat "$LOG_DIR/diag_output.log"
 echo ""
 
 echo "INFO - Powering off system"
-ipmitool -I lanplus -H $BMC_IP -U admin -P admin chassis power off
+if [[ "${CONFIG:-}" == "7" ]]; then
+    sshpass -p changeme ssh -tt \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=5 \
+    -o LogLevel=ERROR \
+    root@"$BMC_IP" 'stop -script /SYS'
+else
+  ipmitool -I lanplus -H "$BMC_IP" -U admin -P admin chassis power off
+fi
+
 
 log_off
 rm "$LOG_DIR/diag_output.log"
