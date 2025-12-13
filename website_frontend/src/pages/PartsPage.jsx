@@ -420,36 +420,48 @@ export default function PartsInventory() {
 
   // CSV Export of current filtered rows
   const handleExportCsv = () => {
-    console.log(filtered);
     const headers = [
       "part_name",
       "category_name",
       "dpn",
       "ppid",
       "place",
+      "functional",
       "unit_service_tag",
     ];
+
+    const now = new Date();
+    const human = now.toLocaleString(); // e.g. "12/13/2025, 2:05:31 PM"
+    const stamp = now
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}Z$/, "Z"); // e.g. "20251213T200531Z"
+
     const lines = [
+      `report_generated_at,${human}`, // <-- extra row at top
       headers.join(","),
       ...filtered.map((r) =>
         headers
           .map((h) => {
             const val = r[h] ?? "";
-            const needsQuote = /[",\n]/.test(String(val));
-            return needsQuote
-              ? `"${String(val).replace(/"/g, '""')}"`
-              : String(val);
+            const s = String(val);
+            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
           })
           .join(",")
       ),
     ];
+
     const blob = new Blob([lines.join("\n")], {
       type: "text/csv;charset=utf-8;",
     });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "parts_inventory_report.csv";
+
+    // <-- timestamped filename
+    a.download = `parts_inventory_report_${stamp}.csv`;
+
     a.click();
     URL.revokeObjectURL(url);
   };
