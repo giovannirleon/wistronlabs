@@ -438,7 +438,6 @@ export default function PartsInventory() {
       .replace(/\.\d{3}Z$/, "Z"); // e.g. "20251213T200531Z"
 
     const lines = [
-      `report_generated_at,${human}`, // <-- extra row at top
       headers.join(","),
       ...filtered.map((r) =>
         headers
