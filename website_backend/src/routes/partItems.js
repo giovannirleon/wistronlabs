@@ -135,11 +135,11 @@ router.get("/", async (req, res) => {
 
         -- open pallet + still assigned
         CASE
-          WHEN ps_active.pallet_number IS NULL THEN false
-          WHEN pal.pallet_number IS NULL THEN false
-          WHEN pal.released_at IS NOT NULL THEN false
+          WHEN pal.id IS NULL THEN false
+          WHEN pal.status <> 'open' THEN false
           ELSE true
         END AS unit_on_active_pallet,
+
 
         -- ✅ NEW: activity state
         CASE
@@ -233,11 +233,11 @@ router.get("/:ppid", async (req, res) => {
         ) AS unit_pallet_status,
 
         CASE
-          WHEN ps_active.pallet_number IS NULL THEN false
-          WHEN pal.pallet_number IS NULL THEN false
-          WHEN pal.released_at IS NOT NULL THEN false
+          WHEN pal.id IS NULL THEN false
+          WHEN pal.status <> 'open' THEN false
           ELSE true
         END AS unit_on_active_pallet,
+
 
         -- ✅ NEW: activity state
         CASE
