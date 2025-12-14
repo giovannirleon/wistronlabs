@@ -9,6 +9,7 @@ const router = express.Router();
  * Filters (all optional):
  * - place=inventory|unit
  * - is_functional=true|false
+ * - replacement_defective=true|false
  * - part_id=#
  * - part_name=<text>                (ILIKE)
  * - part_category_id=#
@@ -34,27 +35,20 @@ router.get("/", async (req, res) => {
   const where = [];
   const params = [];
 
+  const parseBool = (v) => v === "true" || v === "1" || v === true || v === 1;
+
   if (place) {
     params.push(place);
     where.push(`pl.place = $${params.length}`);
   }
 
   if (typeof is_functional !== "undefined") {
-    // Accept "true"/"false"/"1"/"0"
-    const val =
-      is_functional === "true" ||
-      is_functional === "1" ||
-      is_functional === true;
-    params.push(val);
+    params.push(parseBool(is_functional));
     where.push(`pl.is_functional = $${params.length}`);
   }
 
   if (typeof replacement_defective !== "undefined") {
-    const val =
-      replacement_defective === "true" ||
-      replacement_defective === "1" ||
-      replacement_defective === true;
-    params.push(val);
+    params.push(parseBool(replacement_defective));
     where.push(`pl.replacement_defective = $${params.length}`);
   }
 
@@ -89,7 +83,6 @@ router.get("/", async (req, res) => {
   }
 
   if (q && q.trim()) {
-    // single placeholder reused in the ORs on purpose
     params.push(`%${q.trim()}%`);
     const idx = params.length;
     where.push(
@@ -116,8 +109,50 @@ router.get("/", async (req, res) => {
         pl.place,
         pl.unit_id,
         s.service_tag AS unit_service_tag,
+
+        -- system location
+        s.location_id AS system_location_id,
+        loc.name AS system_location,
+
         pl.last_unit_id,
         s_last.service_tag AS last_unit_service_tag,
+
+        s_last.location_id AS last_unit_location_id,
+        loc_last.name AS last_unit_location,
+
+        -- ✅ NEW: pallet context for unit_id (only when still assigned; removed_at IS NULL)
+        ps_active.pallet_number AS unit_pallet_number,
+
+        -- prefer pallet.status if you have it; otherwise fall back to released_at-derived state
+        COALESCE(
+          pal.status,
+          CASE
+            WHEN pal.pallet_number IS NULL THEN NULL
+            WHEN pal.released_at IS NULL THEN 'open'
+            ELSE 'released'
+          END
+        ) AS unit_pallet_status,
+
+        -- open pallet + still assigned
+        CASE
+          WHEN ps_active.pallet_number IS NULL THEN false
+          WHEN pal.pallet_number IS NULL THEN false
+          WHEN pal.released_at IS NOT NULL THEN false
+          ELSE true
+        END AS unit_on_active_pallet,
+
+        -- ✅ NEW: activity state
+        CASE
+          WHEN pl.unit_id IS NULL THEN NULL
+          WHEN loc.name ILIKE 'RMA%' THEN
+            CASE
+              WHEN ps_active.pallet_number IS NOT NULL AND pal.released_at IS NULL THEN 'inactive_on_active_pallet'
+              ELSE 'inactive'
+            END
+          WHEN loc.name = 'Sent to L11' THEN 'inactive'
+          ELSE 'active'
+        END AS unit_activity_state,
+
         pl.is_functional,
         pl.replacement_defective,
         pl.created_at,
@@ -125,13 +160,32 @@ router.get("/", async (req, res) => {
       FROM part_list pl
       JOIN parts p ON p.id = pl.part_id
       LEFT JOIN part_categories pc ON pc.id = p.part_category_id
+
       LEFT JOIN system s ON s.id = pl.unit_id
+      LEFT JOIN location loc ON loc.id = s.location_id
+
+      -- ✅ NEW: find the unit's current pallet assignment (removed_at IS NULL)
+      LEFT JOIN LATERAL (
+        SELECT ps.pallet_number
+        FROM pallet_system ps
+        WHERE ps.system_id = s.id
+          AND ps.removed_at IS NULL
+        ORDER BY ps.added_at DESC NULLS LAST, ps.id DESC
+        LIMIT 1
+      ) ps_active ON TRUE
+
+      -- ✅ NEW: pallet row (open if released_at IS NULL)
+      LEFT JOIN pallet pal ON pal.pallet_number = ps_active.pallet_number
+
       LEFT JOIN system s_last ON s_last.id = pl.last_unit_id
+      LEFT JOIN location loc_last ON loc_last.id = s_last.location_id
+
       ${whereSQL}
       ORDER BY pl.created_at DESC
       `,
       params
     );
+
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -145,6 +199,7 @@ router.get("/", async (req, res) => {
  */
 router.get("/:ppid", async (req, res) => {
   const ppid = String(req.params.ppid || "").toUpperCase();
+
   try {
     const { rows } = await db.query(
       `
@@ -157,20 +212,74 @@ router.get("/:ppid", async (req, res) => {
         pl.place,
         pl.unit_id,
         s.service_tag AS unit_service_tag,
+
+        s.location_id AS system_location_id,
+        loc.name AS system_location,
+
         pl.last_unit_id,
         s_last.service_tag AS last_unit_service_tag,
+
+        s_last.location_id AS last_unit_location_id,
+        loc_last.name AS last_unit_location,
+
+        -- ✅ NEW: pallet context for unit_id
+        ps_active.pallet_number AS unit_pallet_number,
+        COALESCE(
+          pal.status,
+          CASE
+            WHEN pal.pallet_number IS NULL THEN NULL
+            WHEN pal.released_at IS NULL THEN 'open'
+            ELSE 'released'
+          END
+        ) AS unit_pallet_status,
+
+        CASE
+          WHEN ps_active.pallet_number IS NULL THEN false
+          WHEN pal.pallet_number IS NULL THEN false
+          WHEN pal.released_at IS NOT NULL THEN false
+          ELSE true
+        END AS unit_on_active_pallet,
+
+        -- ✅ NEW: activity state
+        CASE
+          WHEN pl.unit_id IS NULL THEN NULL
+          WHEN loc.name ILIKE 'RMA%' THEN
+            CASE
+              WHEN ps_active.pallet_number IS NOT NULL AND pal.released_at IS NULL THEN 'inactive_on_active_pallet'
+              ELSE 'inactive'
+            END
+          WHEN loc.name = 'Sent to L11' THEN 'inactive'
+          ELSE 'active'
+        END AS unit_activity_state,
+
         pl.is_functional,
         pl.replacement_defective,
         pl.created_at,
         pl.updated_at
       FROM part_list pl
-      JOIN parts  p  ON p.id = pl.part_id
+      JOIN parts p ON p.id = pl.part_id
+
       LEFT JOIN system s ON s.id = pl.unit_id
+      LEFT JOIN location loc ON loc.id = s.location_id
+
+      LEFT JOIN LATERAL (
+        SELECT ps.pallet_number
+        FROM pallet_system ps
+        WHERE ps.system_id = s.id
+          AND ps.removed_at IS NULL
+        ORDER BY ps.added_at DESC NULLS LAST, ps.id DESC
+        LIMIT 1
+      ) ps_active ON TRUE
+      LEFT JOIN pallet pal ON pal.pallet_number = ps_active.pallet_number
+
       LEFT JOIN system s_last ON s_last.id = pl.last_unit_id
+      LEFT JOIN location loc_last ON loc_last.id = s_last.location_id
+
       WHERE pl.ppid = $1
       `,
       [ppid]
     );
+
     if (!rows.length)
       return res.status(404).json({ error: "Part item not found" });
     res.json(rows[0]);

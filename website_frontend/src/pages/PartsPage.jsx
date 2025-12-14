@@ -274,6 +274,10 @@ export default function PartsInventory() {
   const [busyAdd, setBusyAdd] = useState(false);
   const [functionalFilter, setFunctionalFilter] = useState("all"); // "all" | "functional" | "nonfunctional"
 
+  // Unit visibility toggle (applies only to Unit rows)
+  const [unitScope, setUnitScope] = useState("active");
+  // "active" | "rma_on_active_pallet" | "all"
+
   const { token } = useContext(AuthContext);
 
   // Fetch all parts + items
@@ -354,7 +358,19 @@ export default function PartsInventory() {
         functional: funcBool === null ? "—" : funcBool ? "Yes" : "No",
         is_functional: funcBool, // keep raw boolean for filtering
 
-        // Optional sort helpers:
+        // ✅ New unit activity / pallet context (unit rows only)
+        unit_activity_state:
+          place === "unit" ? r.unit_activity_state ?? null : null,
+        unit_on_active_pallet:
+          place === "unit" ? r.unit_on_active_pallet ?? false : false,
+        unit_pallet_number:
+          place === "unit" ? r.unit_pallet_number ?? null : null,
+        unit_pallet_status:
+          place === "unit" ? r.unit_pallet_status ?? null : null,
+
+        // Optional: keep location text if you want to display/debug it
+        system_location: place === "unit" ? r.system_location ?? "" : "",
+
         created_at: r.created_at,
       };
     };
@@ -369,6 +385,19 @@ export default function PartsInventory() {
       selectedCategories.size === 0;
 
     return unified.filter((row) => {
+      // ✅ New: unitScope filter (applies only to Unit rows)
+      if (row.place === "Unit") {
+        if (unitScope === "active" && row.unit_activity_state !== "active") {
+          return false;
+        }
+        if (
+          unitScope === "rma_on_active_pallet" &&
+          row.unit_activity_state !== "inactive_on_active_pallet"
+        ) {
+          return false;
+        }
+      }
+
       if (placeFilter !== "all") {
         if (placeFilter === "inventory" && row.place !== "Inventory")
           return false;
@@ -388,7 +417,14 @@ export default function PartsInventory() {
       }
       return true;
     });
-  }, [unified, placeFilter, allCats, selectedCategories, functionalFilter]);
+  }, [
+    unified,
+    placeFilter,
+    allCats,
+    selectedCategories,
+    functionalFilter,
+    unitScope,
+  ]);
 
   const toggleCategory = (cat) => {
     setSelectedCategories((prev) => {
@@ -610,6 +646,39 @@ export default function PartsInventory() {
                   </button>
                 ))}
               </div>
+            </div>
+            {/* Unit Activity */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Unit Parts
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { v: "active", label: "Active Units Only" },
+                  {
+                    v: "rma_on_active_pallet",
+                    label: "RMA Units on Active Pallet",
+                  },
+                  { v: "all", label: "All Unit Parts" },
+                ].map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setUnitScope(opt.v)}
+                    className={`px-3 py-1.5 rounded-lg text-sm shadow-sm border ${
+                      unitScope === opt.v
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Applies only to rows where Place = Unit.
+              </p>
             </div>
           </div>
         </div>
