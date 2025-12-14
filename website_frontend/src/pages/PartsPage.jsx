@@ -274,9 +274,8 @@ export default function PartsInventory() {
   const [busyAdd, setBusyAdd] = useState(false);
   const [functionalFilter, setFunctionalFilter] = useState("all"); // "all" | "functional" | "nonfunctional"
 
-  // Unit visibility toggle (applies only to Unit rows)
-  const [unitScope, setUnitScope] = useState("active");
-  // "active" | "rma_on_active_pallet" | "all"
+  // active_units | rma_on_active_pallet | all
+  const [unitScope, setUnitScope] = useState("active_units");
 
   const { token } = useContext(AuthContext);
 
@@ -361,12 +360,12 @@ export default function PartsInventory() {
         // ✅ New unit activity / pallet context (unit rows only)
         unit_activity_state:
           place === "unit" ? r.unit_activity_state ?? null : null,
-        unit_on_active_pallet:
-          place === "unit" ? r.unit_on_active_pallet ?? false : false,
         unit_pallet_number:
           place === "unit" ? r.unit_pallet_number ?? null : null,
         unit_pallet_status:
           place === "unit" ? r.unit_pallet_status ?? null : null,
+        unit_on_active_pallet:
+          place === "unit" ? r.unit_on_active_pallet ?? null : null,
 
         // Optional: keep location text if you want to display/debug it
         system_location: place === "unit" ? r.system_location ?? "" : "",
@@ -385,16 +384,15 @@ export default function PartsInventory() {
       selectedCategories.size === 0;
 
     return unified.filter((row) => {
-      // ✅ New: unitScope filter (applies only to Unit rows)
+      // ✅ New unit scope filter based on backend-derived unit_activity_state
       if (row.place === "Unit") {
-        if (unitScope === "active" && row.unit_activity_state !== "active") {
-          return false;
-        }
-        if (
-          unitScope === "rma_on_active_pallet" &&
-          row.unit_activity_state !== "inactive_on_active_pallet"
-        ) {
-          return false;
+        if (unitScope === "active_units") {
+          if (row.unit_activity_state !== "active") return false;
+        } else if (unitScope === "rma_on_active_pallet") {
+          if (row.unit_activity_state !== "inactive_on_active_pallet")
+            return false;
+        } else {
+          // "all" => no filtering
         }
       }
 
@@ -647,17 +645,17 @@ export default function PartsInventory() {
                 ))}
               </div>
             </div>
-            {/* Unit Activity */}
+            {/* Unit Scope */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit Parts
+                Unit Scope
               </label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { v: "active", label: "Active Units Only" },
+                  { v: "active_units", label: "Active Units" },
                   {
                     v: "rma_on_active_pallet",
-                    label: "RMA Units on Active Pallet",
+                    label: "RMA Units on Open Pallet",
                   },
                   { v: "all", label: "All Unit Parts" },
                 ].map((opt) => (
@@ -675,10 +673,6 @@ export default function PartsInventory() {
                   </button>
                 ))}
               </div>
-
-              <p className="text-xs text-gray-500 mt-1">
-                Applies only to rows where Place = Unit.
-              </p>
             </div>
           </div>
         </div>
