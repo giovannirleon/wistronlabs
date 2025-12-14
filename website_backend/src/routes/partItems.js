@@ -121,7 +121,7 @@ router.get("/", async (req, res) => {
         loc_last.name AS last_unit_location,
 
         -- ✅ NEW: pallet context for unit_id (only when still assigned; removed_at IS NULL)
-        ps_active.pallet_number AS unit_pallet_number,
+        pal.pallet_number AS unit_pallet_number,
 
         -- prefer pallet.status if you have it; otherwise fall back to released_at-derived state
         COALESCE(
@@ -146,7 +146,7 @@ router.get("/", async (req, res) => {
           WHEN pl.unit_id IS NULL THEN NULL
           WHEN loc.name ILIKE 'RMA%' THEN
             CASE
-              WHEN ps_active.pallet_number IS NOT NULL AND pal.released_at IS NULL THEN 'inactive_on_active_pallet'
+              WHEN pal.id IS NOT NULL AND pal.status = 'open' THEN 'inactive_on_active_pallet'
               ELSE 'inactive'
             END
           WHEN loc.name = 'Sent to L11' THEN 'inactive'
@@ -164,9 +164,8 @@ router.get("/", async (req, res) => {
       LEFT JOIN system s ON s.id = pl.unit_id
       LEFT JOIN location loc ON loc.id = s.location_id
 
-      -- ✅ NEW: find the unit's current pallet assignment (removed_at IS NULL)
       LEFT JOIN LATERAL (
-        SELECT ps.pallet_number
+        SELECT ps.pallet_id
         FROM pallet_system ps
         WHERE ps.system_id = s.id
           AND ps.removed_at IS NULL
@@ -174,8 +173,8 @@ router.get("/", async (req, res) => {
         LIMIT 1
       ) ps_active ON TRUE
 
-      -- ✅ NEW: pallet row (open if released_at IS NULL)
-      LEFT JOIN pallet pal ON pal.pallet_number = ps_active.pallet_number
+      LEFT JOIN pallet pal ON pal.id = ps_active.pallet_id
+
 
       LEFT JOIN system s_last ON s_last.id = pl.last_unit_id
       LEFT JOIN location loc_last ON loc_last.id = s_last.location_id
@@ -223,7 +222,7 @@ router.get("/:ppid", async (req, res) => {
         loc_last.name AS last_unit_location,
 
         -- ✅ NEW: pallet context for unit_id
-        ps_active.pallet_number AS unit_pallet_number,
+        pal.pallet_number AS unit_pallet_number,
         COALESCE(
           pal.status,
           CASE
@@ -245,12 +244,13 @@ router.get("/:ppid", async (req, res) => {
           WHEN pl.unit_id IS NULL THEN NULL
           WHEN loc.name ILIKE 'RMA%' THEN
             CASE
-              WHEN ps_active.pallet_number IS NOT NULL AND pal.released_at IS NULL THEN 'inactive_on_active_pallet'
+              WHEN pal.id IS NOT NULL AND pal.status = 'open' THEN 'inactive_on_active_pallet'
               ELSE 'inactive'
             END
           WHEN loc.name = 'Sent to L11' THEN 'inactive'
           ELSE 'active'
         END AS unit_activity_state,
+
 
         pl.is_functional,
         pl.replacement_defective,
@@ -262,15 +262,17 @@ router.get("/:ppid", async (req, res) => {
       LEFT JOIN system s ON s.id = pl.unit_id
       LEFT JOIN location loc ON loc.id = s.location_id
 
-      LEFT JOIN LATERAL (
-        SELECT ps.pallet_number
+     LEFT JOIN LATERAL (
+        SELECT ps.pallet_id
         FROM pallet_system ps
         WHERE ps.system_id = s.id
           AND ps.removed_at IS NULL
         ORDER BY ps.added_at DESC NULLS LAST, ps.id DESC
         LIMIT 1
       ) ps_active ON TRUE
-      LEFT JOIN pallet pal ON pal.pallet_number = ps_active.pallet_number
+
+      LEFT JOIN pallet pal ON pal.id = ps_active.pallet_id
+
 
       LEFT JOIN system s_last ON s_last.id = pl.last_unit_id
       LEFT JOIN location loc_last ON loc_last.id = s_last.location_id
