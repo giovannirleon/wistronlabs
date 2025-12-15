@@ -274,8 +274,9 @@ export default function PartsInventory() {
   const [busyAdd, setBusyAdd] = useState(false);
   const [functionalFilter, setFunctionalFilter] = useState("all"); // "all" | "functional" | "nonfunctional"
 
-  // active_units | rma_on_active_pallet | all
-  const [unitScope, setUnitScope] = useState("active_units");
+  // Multi-select: can include both at once
+  // Keys: "in_house" | "shipped"
+  const [unitScopes, setUnitScopes] = useState(() => new Set(["in_house"])); // default: In House
 
   const { token } = useContext(AuthContext);
 
@@ -307,6 +308,22 @@ export default function PartsInventory() {
     load();
   }, []);
 
+  const toggleUnitScope = (key) => {
+    setUnitScopes((prev) => {
+      const next = new Set(prev);
+
+      if (next.has(key)) {
+        // Don't allow unselecting the last remaining option
+        if (next.size === 1) return prev;
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+
+      return next;
+    });
+  };
+
   const categories = useMemo(() => {
     const set = new Set(
       (parts || []).map((p) => p.category_name || "Uncategorized")
@@ -337,6 +354,18 @@ export default function PartsInventory() {
           : r.is_functional === false
           ? false
           : null; // handle unknowns gracefully
+      // Derived: In House vs Shipped (only meaningful for Unit rows)
+      // Derived: Unit Scope (table/csv) - more detailed than filter toggle
+      const unitScopeLabel =
+        place === "unit"
+          ? r.unit_activity_state === "active"
+            ? "Active"
+            : r.unit_activity_state === "inactive_on_active_pallet"
+            ? "RMA (Active)"
+            : r.unit_activity_state === "inactive"
+            ? "RMA (Inactive)"
+            : "—"
+          : "";
 
       return {
         // Display fields expected by SearchContainer:
@@ -366,6 +395,8 @@ export default function PartsInventory() {
           place === "unit" ? r.unit_pallet_status ?? null : null,
         unit_on_active_pallet:
           place === "unit" ? r.unit_on_active_pallet ?? null : null,
+        unit_scope_title: "Unit Scope",
+        unit_scope: unitScopeLabel,
 
         // Optional: keep location text if you want to display/debug it
         system_location: place === "unit" ? r.system_location ?? "" : "",
@@ -384,16 +415,20 @@ export default function PartsInventory() {
       selectedCategories.size === 0;
 
     return unified.filter((row) => {
-      // ✅ New unit scope filter based on backend-derived unit_activity_state
+      // ✅ Parts in Units filter (multi-select)
       if (row.place === "Unit") {
-        if (unitScope === "active_units") {
-          if (row.unit_activity_state !== "active") return false;
-        } else if (unitScope === "rma_on_active_pallet") {
-          if (row.unit_activity_state !== "inactive_on_active_pallet")
-            return false;
-        } else {
-          // "all" => no filtering
-        }
+        // If user deselects everything => show no Unit parts
+        if (unitScopes.size === 0) return false;
+
+        const st = row.unit_activity_state;
+
+        const allowInHouse =
+          unitScopes.has("in_house") &&
+          (st === "active" || st === "inactive_on_active_pallet");
+
+        const allowShipped = unitScopes.has("shipped") && st === "inactive";
+
+        if (!allowInHouse && !allowShipped) return false;
       }
 
       if (placeFilter !== "all") {
@@ -421,7 +456,7 @@ export default function PartsInventory() {
     allCats,
     selectedCategories,
     functionalFilter,
-    unitScope,
+    unitScopes,
   ]);
 
   const toggleCategory = (cat) => {
@@ -462,6 +497,7 @@ export default function PartsInventory() {
       "place",
       "functional",
       "unit_service_tag",
+      "unit_scope",
     ];
 
     const now = new Date();
@@ -537,7 +573,6 @@ export default function PartsInventory() {
     }
   };
 
-  // SearchContainer config
   const displayOrder = [
     "part_name",
     "category_name",
@@ -546,13 +581,16 @@ export default function PartsInventory() {
     "place",
     "functional",
     "unit_service_tag",
+    "unit_scope",
   ];
+
   const visibleFields = [
     "part_name",
     "category_name",
     "dpn",
     "ppid",
     "place",
+    "unit_scope",
     "functional",
     "unit_service_tag",
   ];
@@ -618,7 +656,6 @@ export default function PartsInventory() {
                 ))}
               </div>
             </div>
-
             {/* Functional */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -645,35 +682,36 @@ export default function PartsInventory() {
                 ))}
               </div>
             </div>
-            {/* Unit Scope */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit Scope
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { v: "active_units", label: "Active Units" },
-                  {
-                    v: "rma_on_active_pallet",
-                    label: "RMA Units on Open Pallet",
-                  },
-                  { v: "all", label: "All Unit Parts" },
-                ].map((opt) => (
-                  <button
-                    key={opt.v}
-                    type="button"
-                    onClick={() => setUnitScope(opt.v)}
-                    className={`px-3 py-1.5 rounded-lg text-sm shadow-sm border ${
-                      unitScope === opt.v
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+            {/* Parts in Units */}
+            {placeFilter !== "inventory" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Parts in Units
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { k: "in_house", label: "In House" },
+                    { k: "shipped", label: "Shipped" },
+                  ].map((opt) => {
+                    const active = unitScopes.has(opt.k);
+                    return (
+                      <button
+                        key={opt.k}
+                        type="button"
+                        onClick={() => toggleUnitScope(opt.k)}
+                        className={`px-3 py-1.5 rounded-lg text-sm shadow-sm border ${
+                          active
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
         {/* Categories (right, pinned to box edge) */}
@@ -735,6 +773,15 @@ export default function PartsInventory() {
               : "text-gray-400 text-xs italic",
           unit_service_tag: (v) =>
             v ? "font-mono text-xs" : "text-gray-400 text-xs italic",
+          unit_scope: (v) =>
+            v === "Active"
+              ? { type: "pill", color: "bg-blue-100 text-blue-800" }
+              : v === "RMA (Active)"
+              ? { type: "pill", color: "bg-yellow-100 text-yellow-800" }
+              : v === "RMA (Inactive)"
+              ? { type: "pill", color: "bg-gray-200 text-gray-800" }
+              : "text-gray-400 text-xs italic",
+
           ppid: "font-mono text-xs",
         }}
         visibleFields={visibleFields}
