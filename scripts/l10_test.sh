@@ -309,12 +309,17 @@ case "$CONFIG" in
         ;;
      7)
         SKIPPED_MODULES=(
-           "BfPcieProperties"
+            "BfPcieProperties"
             "BfMgmtPcieProperties"
             "Bf3PcieInterfaceTraffic"
             "Connectivity"
             "NvlBwStress"
             "NvlBwStressBg610"
+            "Cx8CpuCrossNIC_ETH"
+            "Cx8CpuCrossNIC_IB"
+            "Cx8GpuDirectLoopback"
+            "Cx8GpuDirectCrossNIC_ETH"
+            "Cx8GpuDirectCrossNIC_IB"
         )
         ;;
     A)
