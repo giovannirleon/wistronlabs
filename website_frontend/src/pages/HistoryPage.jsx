@@ -31,7 +31,7 @@ export default function LocationHistoryEntry() {
     }
 
     fetchEntry();
-  }, [id, getHistoryById]);
+  }, [id]);
 
   const { changed_at, from_location, to_location, moved_by, note } =
     historyEntry || {};
