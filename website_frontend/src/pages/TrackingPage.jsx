@@ -45,6 +45,8 @@ function TrackingPage() {
   const [addSystemFormError, setAddSystemFormError] = useState(null);
   const [idiotProof, setIdiotProof] = useState(false);
   const [printFriendly, setPrintFriendly] = useState(true);
+  const [dellCustomers, setDellCustomers] = useState([]);
+  const [factories, setFactories] = useState([]);
 
   const [serverTime, setServerTime] = useState([]);
 
@@ -61,7 +63,9 @@ function TrackingPage() {
   const inactiveLocationIDs = [6, 7, 8, 9];
 
   const {
+    getDpns,
     getLocations,
+    getFactories,
     getHistory,
     createSystem,
     moveSystemToReceived,
@@ -75,9 +79,11 @@ function TrackingPage() {
     setLoading(true);
 
     try {
-      const [locationsData, serverTimeData] = await Promise.all([
+      const [locationsData, serverTimeData, dpnsData, factoriesData] = await Promise.all([
         getLocations(),
         getServerTime(),
+        getDpns(),
+        getFactories(),
       ]);
 
       const activeLocationNames = locationsData
@@ -154,6 +160,8 @@ function TrackingPage() {
       setLocationChartHistory(filteredHistory);
       setServerTime(serverTimeData);
       setSnapshot(activeLocationSnapshotFirstDay);
+      setDellCustomers(dpnsData.map((d) => d.dell_customer).filter((d,i, self) => d && i === self.indexOf(d)));
+      setFactories(factoriesData.map((f) => f.name));
     } catch (err) {
       setError(err.message);
       console.error(err.message);
@@ -461,7 +469,6 @@ function TrackingPage() {
       showToast("Failed to generate report", "error", 3000, "top-right");
     }
   }
-
   const fetchSystemsWithFlags = useCallback(
     (options) => {
       return fetchSystems({
@@ -603,6 +610,12 @@ function TrackingPage() {
                       "date_modified",
                     ]
               }
+              possibleSearchTags={[
+                ...locations.map((l) => ({field: "location", value: l.name})),
+                ...[2, 4, 6, 7].map((c) => ({field: "config", value: c})),
+                ...dellCustomers.map((d) => ({field: "dell_customer", value: d})),
+                ...factories.map((f) => ({field: "factory", value: f})),
+              ]}
             />
             <button
               onClick={() => setIsModalOpen(true)}
