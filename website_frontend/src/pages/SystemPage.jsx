@@ -1600,10 +1600,9 @@ function SystemPage() {
       ...returnedNotes,
       ...fulfilledNotes,
     ];
-
-    const noteToSend = noteLines.length
+    const noteToSend = (noteLines.length
       ? `${note.trim()}${note.trim() ? "\n" : ""}${noteLines.join(" ")}`
-      : note;
+      : note).replace(/\r\n|\r|\n/g, ". ");
 
     if (movingToL10 && remainingBad > 0 && !hasAnyBadReplacementChosen) {
       setFormError(
