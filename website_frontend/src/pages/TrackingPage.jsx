@@ -268,6 +268,10 @@ function TrackingPage() {
         setAddSystemFormError("All fields are required.");
         return;
       }
+      if (issue.length > 50) {
+        setAddSystemFormError(`Please keep issue field under 50 characters (current: ${issue.length})`);
+        return;
+      }
       setAddSystemFormError(null);
 
       let printable = null;
@@ -318,6 +322,7 @@ function TrackingPage() {
       const rawLines = csv.split(/\r?\n/).map((l) => l.trim());
       const lines = rawLines.filter((l) => l.length > 0); // skip blank lines
 
+      const longIssues = [];
       const badLines = [];
       const parsed = lines.map((line, idx) => {
         const parts = line.split(/\t|,/).map((s) => (s ?? "").trim());
@@ -327,6 +332,7 @@ function TrackingPage() {
           parts.length === 4 && rawTag && issue && ppid && rackServiceTag;
 
         if (!ok) badLines.push(idx + 1); // 1-based line number
+        if (issue.length > 50) longIssues.push(idx+1);
         return { rawTag, issue, ppid, rackServiceTag };
       });
 
@@ -345,6 +351,14 @@ function TrackingPage() {
         //   "top-right"
         // );
         return; // stop before doing any mutations
+      }
+      if (longIssues.length > 0) {
+        setAddSystemFormError(
+          `Issue error: issues on lines exceed 50 characters → ${longIssues.join(
+            ", "
+          )}`
+        );
+        return;
       }
 
       // 2) Process lines now that we know all are valid
