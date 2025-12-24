@@ -20,6 +20,7 @@ export default function SearchContainerSS({
   itemsPerPage = 10,
   page: externalPage,
   onPageChange,
+  possibleSearchTags = [],
 }) {
   const [internalPage, setInternalPage] = useState(1);
   const [sortBy, setSortBy] = useState(defaultSortBy || displayOrder[0]);
@@ -30,6 +31,10 @@ export default function SearchContainerSS({
   const [displayedData, setDisplayedData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  const [open, setOpen] = useState(false);
+  const [searchTags, setSearchTags] = useState([]);
+  const [availableTags, setAvailableTags] = useState(possibleSearchTags);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -48,6 +53,14 @@ export default function SearchContainerSS({
       sort_by: sortBy,
       sort_order: sortAsc ? "asc" : "desc",
       search: debouncedSearchTerm || undefined,
+      filters: searchTags.length > 0 ? { op: "AND", conditions: [
+        { op: "AND", conditions: searchTags.map((t) => ({
+          field: t.field,
+          values: [t.value],
+          op: "=",
+        }))}, 
+        { field: "issue", values: [debouncedSearchTerm], op: "ILIKE" }
+      ]} : null,
     })
       .then((res) => {
         setData(res.data);
@@ -55,7 +68,7 @@ export default function SearchContainerSS({
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [debouncedSearchTerm, page, sortBy, sortAsc, itemsPerPage, fetchData]);
+  }, [debouncedSearchTerm, page, sortBy, sortAsc, itemsPerPage, fetchData, searchTags]);
 
   useEffect(() => {
     if (!loading) setDisplayedData(data);
@@ -76,6 +89,8 @@ export default function SearchContainerSS({
           item[actionButtonVisibleIf.field] === actionButtonVisibleIf.equals
       ));
 
+  const matchTag = (word, tag) => `${tag.field}: ${tag.value}`.toLowerCase().includes(word.toLowerCase());
+
   const getHeaderLabel = (data, field) => {
     const titleField = `${field}_title`;
     return data?.[0]?.[titleField] || field;
@@ -86,16 +101,82 @@ export default function SearchContainerSS({
       <div className="flex justify-between items-center mb-6 gap-3">
         <h1 className="text-2xl font-semibold">{title}</h1>
         {allowSearch && (
-          <input
-            type="text"
-            placeholder="Search…"
-            className="border rounded px-2 py-1 text-sm w-64 md:w-96 lg:w-[32rem]" // 👈 wider
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              handlePageChange(1);
-            }}
-          />
+          <div className={"relative"}>
+            {searchTags.length > 0 && (
+              <div
+                className="border rounded px-1 py-1 text-sm w-64 md:w-96 lg:w-[32rem]"
+              >
+                {
+                  searchTags.map((t, i) => (
+                    <span
+                      className={`inline-flex items-center my-1 px-2 py-0.5 rounded-full text-xs font-medium mx-2 
+                        caret-transparent bg-yellow-100 text-yellow-800 || "bg-gray-200 text-gray-700"
+                      `}
+                      key={`tag-${i}`}
+                    >
+                      {`${t.field}: ${t.value}`}
+                      <span 
+                        className="relative w-5 h-5 rounded-full flex items-center justify-center 
+                          hover:bg-black/10 hover:cursor-pointer"
+                        onClick={() => {
+                          setSearchTags(searchTags.filter((st) => !matchTag(`${t.field}: ${t.value}`, st)));
+                          setAvailableTags([...availableTags, t]);
+                        }}
+                      >
+                        <span
+                          className="relative w-2.5 h-2.5 flex items-center justify-center before:content-['']
+                            before:absolute before:w-0.5 before:h-2.5 before:bg-[#888] before:rounded-full
+                            before:rotate-45 after:content-[''] after:absolute after:w-0.5 after:h-2.5 after:bg-[#888]
+                            after:rounded-full after:-rotate-45"
+                        ></span>
+                      </span>
+                    </span>
+                  ))
+                }
+              </div>
+            )}
+            <input
+              type="text"
+              placeholder="Search…"
+              className="border rounded px-2 py-1 text-sm w-64 md:w-96 lg:w-[32rem]" // 👈 wider
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setOpen(e.target.value.length > 0 && availableTags.length > 0);
+                handlePageChange(1);
+              }}
+              onFocus={() => {
+                setOpen(searchTerm.length > 0 && availableTags.length > 0);
+              }}
+              onBlur={() => {
+                setOpen(false);
+              }}
+            />
+
+            {(open && availableTags.some((t) => matchTag(searchTerm, t))) && (
+              <div
+                className="absolute z-20 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-36 overflow-auto"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {
+                  availableTags.filter((t) => matchTag(searchTerm, t)).map((t,i) => (
+                    <div 
+                      key={`tag-${i}`}
+                      onClick={() => {
+                        setAvailableTags(availableTags.filter((at) => !matchTag(`${at.field}: ${at.value}`, t)));
+                        setSearchTags([...searchTags, t]);
+                        setSearchTerm("");
+                        setOpen(false);
+                      }}
+                      className="block px-3 py-2 text-sm hover:bg-gray-50"
+                    >
+                      {`${t.field}: ${t.value}`}
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+          </div>
         )}
       </div>
 
