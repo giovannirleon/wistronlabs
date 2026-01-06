@@ -155,8 +155,7 @@ export default function SearchContainerSS({
                 handlePageChange(1);
               }}
               onFocus={() => {
-                // setOpen(searchTerm.length > 0 && availableTags.length > 0);
-                setOpen(true);
+                setOpen(possibleSearchTags.length > 0);
               }}
               onBlur={() => {
                 setOpen(false);
