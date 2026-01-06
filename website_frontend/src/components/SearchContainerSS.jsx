@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import Select from "react-select";
 import ReactPaginate from "react-paginate";
 import { useDebounce } from "../hooks/useDebounce.jsx";
 
@@ -31,6 +32,7 @@ export default function SearchContainerSS({
   const [displayedData, setDisplayedData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [pageSize, setPageSize] = useState(itemsPerPage);
 
   const [open, setOpen] = useState(false);
   const [searchTags, setSearchTags] = useState([]);
@@ -39,6 +41,7 @@ export default function SearchContainerSS({
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   const page = externalPage ?? internalPage;
+  const pageSizes = [10, 20, 50]
 
   const handlePageChange = (newPage) => {
     if (onPageChange) onPageChange(newPage);
@@ -49,7 +52,7 @@ export default function SearchContainerSS({
     setLoading(true);
     fetchData({
       page,
-      page_size: itemsPerPage,
+      page_size: pageSize,
       sort_by: sortBy,
       sort_order: sortAsc ? "asc" : "desc",
       search: debouncedSearchTerm || undefined,
@@ -68,13 +71,13 @@ export default function SearchContainerSS({
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [debouncedSearchTerm, page, sortBy, sortAsc, itemsPerPage, fetchData, searchTags]);
+  }, [debouncedSearchTerm, page, sortBy, sortAsc, pageSize, fetchData, searchTags]);
 
   useEffect(() => {
     if (!loading) setDisplayedData(data);
   }, [loading, data]);
 
-  const pageCount = Math.ceil(totalCount / itemsPerPage);
+  const pageCount = Math.ceil(totalCount / pageSize);
 
   const filteredDisplayOrder = visibleFields
     ? displayOrder.filter((field) => visibleFields.includes(field))
@@ -339,7 +342,7 @@ export default function SearchContainerSS({
               })}
 
               {/* Fill empty rows */}
-              {Array.from({ length: itemsPerPage - displayedData.length }).map(
+              {Array.from({ length: pageSize - displayedData.length }).map(
                 (_, idx) => (
                   <div
                     key={`empty-${idx}`}
@@ -350,22 +353,43 @@ export default function SearchContainerSS({
               )}
 
               {/* Pagination */}
-              <ReactPaginate
-                breakLabel="…"
-                nextLabel="›"
-                previousLabel="‹"
-                pageRangeDisplayed={1}
-                marginPagesDisplayed={1}
-                pageCount={pageCount}
-                onPageChange={({ selected }) => handlePageChange(selected + 1)}
-                forcePage={page - 1}
-                containerClassName="flex flex-wrap justify-center items-center gap-1 mt-4 text-xs sm:text-sm"
-                pageLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"
-                activeLinkClassName="cursor-pointer select-none bg-blue-600 text-white border-blue-600"
-                previousLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"
-                nextLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"
-                breakLinkClassName="select-none px-2 sm:px-3 py-1 text-gray-400"
-              />
+              <div
+                className="flex center"
+              >
+                <div className="mx-auto">
+                  <ReactPaginate
+                    breakLabel="…"
+                    nextLabel="›"
+                    previousLabel="‹"
+                    pageRangeDisplayed={1}
+                    marginPagesDisplayed={1}
+                    pageCount={pageCount}
+                    onPageChange={({ selected }) => handlePageChange(selected + 1)}
+                    forcePage={page - 1}
+                    containerClassName="flex flex-wrap justify-center items-center gap-1 mt-4 text-xs sm:text-sm"
+                    pageLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"
+                    activeLinkClassName="cursor-pointer select-none bg-blue-600 text-white border-blue-600"
+                    previousLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"
+                    nextLinkClassName="cursor-pointer select-none px-2 sm:px-3 py-1 rounded-md border border-gray-300"
+                    breakLinkClassName="select-none px-2 sm:px-3 py-1 text-gray-400"
+                  />
+                </div>
+                <div>
+                  <label>Page Count: </label>
+                  <Select
+                    className={"react-select-container"}
+                    isSearchable={false}
+                    value={
+                      {value: pageSize, label: pageSize}
+                    }
+                    onChange={(option) => {
+                      setPageSize(option ? option.value : itemsPerPage);
+                      handlePageChange(1);
+                    }}
+                    options={pageSizes.map((s) => ({value: s, label: s}))}
+                  />
+                </div>
+              </div>
             </>
           )}
         </div>
