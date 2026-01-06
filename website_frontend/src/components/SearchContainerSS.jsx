@@ -41,7 +41,7 @@ export default function SearchContainerSS({
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   const page = externalPage ?? internalPage;
-  const pageSizes = [10, 20, 50]
+  const pageSizes = [10, 20, 50];
 
   const handlePageChange = (newPage) => {
     if (onPageChange) onPageChange(newPage);
