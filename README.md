@@ -103,6 +103,7 @@ This script prepares PXE boot configuration, waits for BMC and host readiness, a
 
 ## Common Options
 
+- `-m, --manual` — Enter BMC MAC, host MAC, and config manually.
 - `-t, --tag [SERVICE_TAG]` — Pull BMC MAC, host MAC, and config from backend. If omitted, you will be prompted for the service tag.
 - `-b, --bmc-mac BMC_MAC` — Manual BMC MAC input.
 - `-s, --sys-mac SYS_MAC` — Manual host MAC input.
@@ -112,7 +113,10 @@ This script prepares PXE boot configuration, waits for BMC and host readiness, a
 ## Notes
 
 - Must be run from a valid station tmux session such as `stn_<n>`.
-- If neither `-t`, `-b`, nor `-s` is given, the script prompts for manual MAC/config input.
+- In backend mode, with no input flags, the script boots the system assigned to the active station in backend.
+- If the active station has no assigned system, it prompts for a service tag; if that tag is not found, it prompts for BMC MAC, host MAC, and config and reminds the operator to receive the unit into tracking.
+- Use `-m` for the interactive manual flow, or provide `-b`, `-s`, and `-c` for fully specified manual input.
+- `-t` explicitly boots a system by service tag, regardless of the station assignment.
 - If only one of `-b` or `-s` is given, the other will be prompted.
 
 ---

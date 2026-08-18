@@ -2,9 +2,9 @@
 # About:
 #   Prepares PXE boot configuration, waits for BMC and host readiness, and
 #   boots a unit into the Wistron PXE OS.
-#   Backend mode can pull unit data from the backend. Field mode uses local
-#   stations plus a single default config from FIELD_DEFAULT_CONFIG or
-#   scripts/config/field_stations.json.
+#   In backend mode, the default pulls the unit assigned to the current station.
+#   Field mode uses local stations plus a single default config from
+#   FIELD_DEFAULT_CONFIG or scripts/config/field_stations.json.
 #
 # Usage:
 #   WISTRON_MODE=backend ./boot.sh [options]
@@ -45,6 +45,7 @@ LIVE_MODE=0
 LIVE_CHILD=0
 LIVE_BIOS_CHILD=0
 TAG_MODE=0
+MANUAL_MODE=0
 SERVICE_TAG=""
 BMC_MAC="${BMC_MAC:-}"
 HOST_MAC="${HOST_MAC:-}"
@@ -63,12 +64,14 @@ Usage:
   Must be run inside a valid station tmux session.
 
 Options:
+  -m, --manual
+      Enter BMC MAC, system MAC, and config manually.
   -b, --bmc-mac BMC_MAC
       The BMC MAC used when booting via MAC address.
   -s, --sys-mac SYS_MAC
       The System MAC used when booting via MAC address.
   -c CONFIG
-      Config of the unit. Field mode only supports ${FIELD_DEFAULT_CONFIG:-$(field_default_config)}.
+      Config of the unit. Field mode only supports ${FIELD_DEFAULT_CONFIG:-the configured default}.
   -l, --live
       Split the current station tmux pane and show BIOS serial on the right.
   -h, --help
@@ -91,6 +94,8 @@ Usage:
   Must be run inside a valid station tmux session.
 
 Options:
+  -m, --manual
+      Enter BMC MAC, system MAC, and config manually.
   -t, --tag [SERVICE_TAG]
       Pull BMC MAC, Host MAC, and config from backend.
       If SERVICE_TAG is omitted, you will be prompted for it.
@@ -106,16 +111,17 @@ Options:
       Show this help and exit.
 
 What it does:
-  - Collects BMC, host, and config inputs.
+  - With no input flags, pulls the system assigned to the active station.
+  - Can instead pull a system by service tag or accept manual inputs.
   - Writes the matching PXE grub config.
   - Waits for BMC, host IP, and SSH readiness.
   - Boots the unit into the Wistron PXE OS.
   - SSHes into the host when ready.
 
 Mode rules:
-  - You must choose either tag mode or manual MAC mode.
-  - -t/--tag cannot be used with -b/--bmc-mac, -s/--sys-mac, or -c and vice versa.
-  - If neither -t, -b, nor -s is provided, the script defaults to prompts for MACs and config.
+  - With no input flags, the active station must have a system assigned in backend.
+  - -m/--manual (or -b, -s, or -c) uses manual-input mode.
+  - -t/--tag cannot be used with manual options.
 
 Live mode:
   Keeps the current station pane on the left, opens BIOS serial on the right,
@@ -124,6 +130,8 @@ Live mode:
 Examples:
   ./boot.sh
   ./boot.sh -l
+  ./boot.sh -m
+  ./boot.sh -l -m
   ./boot.sh -t ABC1234
   ./boot.sh -l -t ABC1234
   ./boot.sh -b 001a2b3c4d5e -s 00aa11bb22cc -c F
@@ -152,7 +160,7 @@ mac_dash() {
 }
 
 load_auto_inputs() {
-  local sys_json bmc_raw host_raw config_raw
+  local sys_json
 
   if is_field_mode; then
     err "Tag mode is not available in field mode. Use manual MAC input."
@@ -170,6 +178,12 @@ load_auto_inputs() {
 
   require_server_location
   sys_json="$(fetch_system_from_backend "$SERVICE_TAG")"
+
+  load_auto_inputs_from_json "$sys_json"
+}
+
+load_auto_inputs_from_json() {
+  local sys_json="$1" bmc_raw host_raw config_raw
 
   bmc_raw="$(printf '%s' "$sys_json" | jq -r '.bmc_mac // empty')"
   host_raw="$(printf '%s' "$sys_json" | jq -r '.host_mac // empty')"
@@ -200,7 +214,77 @@ load_auto_inputs() {
   echo "CONFIG=$CONFIG"
 }
 
+load_auto_inputs_if_found() {
+  local api_base tmp_json http_code sys_json
+
+  require_cmd curl
+  require_cmd jq
+  require_server_location
+
+  api_base="https://backend.$SERVER_LOCATION.wistronlabs.com/api/v1"
+  tmp_json="$(mktemp)"
+  http_code="$(curl -sS --max-time 5 -o "$tmp_json" -w "%{http_code}" \
+    "$api_base/systems/$SERVICE_TAG" 2>/dev/null || true)"
+
+  if [[ "$http_code" == "404" ]]; then
+    rm -f "$tmp_json"
+    return 1
+  fi
+  if [[ "$http_code" != "200" ]]; then
+    rm -f "$tmp_json"
+    err "Backend returned HTTP $http_code when fetching $SERVICE_TAG."
+    exit 1
+  fi
+
+  sys_json="$(<"$tmp_json")"
+  rm -f "$tmp_json"
+  load_auto_inputs_from_json "$sys_json"
+}
+
+load_station_inputs() {
+  local api_base station_json station_tag
+
+  if is_field_mode; then
+    err "Backend station lookup is not available in field mode. Use -m/--manual."
+    exit 1
+  fi
+
+  require_cmd curl
+  require_cmd jq
+  require_server_location
+
+  api_base="https://backend.$SERVER_LOCATION.wistronlabs.com/api/v1"
+  if ! station_json="$(curl -fsS --max-time 8 "$api_base/stations/$STATION_SESSION_NUMBER")"; then
+    err "Unable to fetch assignment for station $STATION_SESSION_NUMBER."
+    exit 1
+  fi
+
+  station_tag="$(printf '%s' "$station_json" | jq -r '.system_service_tag // empty')"
+  SERVICE_TAG="$(printf '%s' "$station_tag" | tr '[:lower:]' '[:upper:]' | xargs)"
+  if [[ -z "$SERVICE_TAG" ]]; then
+    echo "No system is currently assigned to Station $STATION_SESSION_NUMBER in the tracking website."
+    echo "Enter the unit's service tag to continue."
+    SERVICE_TAG="$(prompt_service_tag)"
+
+    if ! load_auto_inputs_if_found; then
+      echo "Service tag $SERVICE_TAG was not found in the tracking website."
+      echo "Enter the BMC MAC, host MAC, and config manually to continue."
+      echo "WARNING - Receive this unit into the tracking website as soon as possible to avoid losing FA information."
+      BMC_MAC=""
+      HOST_MAC=""
+      CONFIG=""
+      MANUAL_MODE=1
+      load_inputs 1
+    fi
+    return 0
+  fi
+
+  echo "Using system $SERVICE_TAG assigned to station $STATION_SESSION_NUMBER."
+  load_auto_inputs
+}
+
 load_inputs() {
+  local prompt_config="${1:-0}"
   local config_found api_base dpn_json
 
   if [[ -z "$BMC_MAC" ]]; then
@@ -224,6 +308,18 @@ load_inputs() {
   if [[ -z "$CONFIG" ]]; then
     if is_field_mode; then
       CONFIG="$(field_default_config)"
+    elif [[ "$prompt_config" == "1" ]]; then
+      while [[ -z "$CONFIG" ]]; do
+        read -r -p "Config: " CONFIG
+        CONFIG="$(printf '%s' "$CONFIG" | tr '[:lower:]' '[:upper:]' | xargs)"
+        if [[ -z "$CONFIG" ]]; then
+          err "Config cannot be empty."
+        fi
+      done
+      # Re-enter the normal manual path so the entered config is validated
+      # against the backend list before booting.
+      load_inputs
+      return 0
     else
       require_cmd fzf
       CONFIG="$(pick_config_from_backend)"
@@ -770,6 +866,10 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       ;;
+    -m|--manual)
+      MANUAL_MODE=1
+      shift
+      ;;
     -b|--bmc-mac)
       shift
       if [[ $# -eq 0 || "$1" == -* ]]; then
@@ -834,14 +934,16 @@ fi
 
 require_station_tmux_session
 
-if [[ "$TAG_MODE" == "1" && (-n "$BMC_MAC" || -n "$HOST_MAC" || -n "$CONFIG") ]]; then
-  err "-t/--tag cannot be combined with -b/--bmc-mac, -s/--sys-mac, or -c."
+if [[ "$TAG_MODE" == "1" && ("$MANUAL_MODE" == "1" || -n "$BMC_MAC" || -n "$HOST_MAC" || -n "$CONFIG") ]]; then
+  err "-t/--tag cannot be combined with -m/--manual, -b/--bmc-mac, -s/--sys-mac, or -c."
   print_help
   exit 1
 fi
 
 if [[ "$TAG_MODE" == "1" ]]; then
   load_auto_inputs
+elif is_backend_mode && [[ "$MANUAL_MODE" == "0" && -z "$BMC_MAC" && -z "$HOST_MAC" && -z "$CONFIG" ]]; then
+  load_station_inputs
 else
   load_inputs
 fi
