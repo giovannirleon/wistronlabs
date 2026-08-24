@@ -113,7 +113,9 @@ function SystemPage() {
   const PENDING_MRB_REQUIRED_BAD_ERROR =
     "Track all estimated CID-damaged parts before moving to Pending MRB.";
   const PENDING_MRB_GOOD_PARTS_ERROR =
-    "Return/remove all good parts before moving to Pending MRB.";
+    "Remove or return all good parts added or updated since the most recent Received before moving to Pending MRB.";
+  const PENDING_L11_GOOD_PARTS_ERROR =
+    "Remove or return all good parts added or updated since the most recent Received before moving to Pending L11 Logs.";
 
   const { serviceTag } = useParams();
 
@@ -2095,7 +2097,7 @@ function SystemPage() {
       return;
     }
 
-    if (movingToPendingMrb && willHaveGoodAfterSubmit) {
+    if (movingToPendingMrb && willHaveRecentGoodAfterSubmit) {
       setFormError(PENDING_MRB_GOOD_PARTS_ERROR);
       return;
     }
@@ -3542,9 +3544,11 @@ function SystemPage() {
                             isEvidenceRequiredDestination &&
                             !hasSystemFolderEvidence;
                           const pendingL11GoodPartsBlocked =
-                            isPendingL11Destination && willHaveGoodAfterSubmit;
+                            isPendingL11Destination &&
+                            willHaveRecentGoodAfterSubmit;
                           const pendingMrbGoodPartsBlocked =
-                            isPendingMrbDestination && willHaveGoodAfterSubmit;
+                            isPendingMrbDestination &&
+                            willHaveRecentGoodAfterSubmit;
                           const pendingMrbPhotoBlocked =
                             isPendingMrbDestination &&
                             !hasFreshPhotoEvidenceForCid;
@@ -3587,7 +3591,7 @@ function SystemPage() {
                                       : pendingMrbGoodPartsBlocked
                                         ? PENDING_MRB_GOOD_PARTS_ERROR
                                         : pendingL11GoodPartsBlocked
-                                          ? "Return/remove all good parts before moving to Pending L11 Logs"
+                                          ? PENDING_L11_GOOD_PARTS_ERROR
                                           : l10Blocked
                                             ? "Add a Replacement PPID for at least one defective part to move to In L10."
                                             : isResolved
