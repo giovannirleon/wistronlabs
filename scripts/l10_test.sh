@@ -1328,7 +1328,7 @@ else
     fi
 fi
 
-
+save_hmc_logs "$HMC_POST_CLEAR_LOG_FILE"
 log_off
 if is_backend_mode; then
     rm -f -- "$LOG_DIR/diag_output.log"
